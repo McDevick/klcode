@@ -211,7 +211,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 1.4 | Built-in file/search tools | Done (`f46b628`) |
 | 1.5 | ToolExecutor error isolation | Done (`d5bb526`) |
 | 1.6 | Feedback sensors | Done (`e46c504`) |
-| 1.7 | SQLite storage and sessions/tasks | Pending |
+| 1.7 | SQLite storage and sessions/tasks | Done (`4e7761f`) |
 | 1.8 | Config and credentials | Pending |
 | 1.9 | Basic AgentLoop | Pending |
 | 1.10 | Credential backends (keyring / encrypted file / .env) | Pending |
@@ -1131,7 +1131,7 @@ git commit -m "feat: add deterministic feedback classification"
 - Create: `server/kl_server/core/task_manager.py`
 - Test: `server/tests/test_storage.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import pytest
@@ -1155,12 +1155,12 @@ async def test_session_and_task_persist(tmp_path):
     assert (await tasks.get("t1")).status == TaskStatus.SUCCEEDED
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_storage.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement storage**
+- [x] **Step 3: Implement storage**
 
 ```python
 import sqlite3
@@ -1230,12 +1230,12 @@ class TaskManager:
         self.db.conn.commit()
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_storage.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/storage server/kl_server/core/session_manager.py server/kl_server/core/task_manager.py server/tests/test_storage.py
