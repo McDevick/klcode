@@ -169,3 +169,6 @@ async def test_task_manage_crud(tmp_path):
     created = await TaskManageTool().execute({"action": "create", "title": "fix bug"}, ctx)
     listed = await TaskManageTool().execute({"action": "list"}, ctx)
     assert created.ok and '"fix bug"' in listed.output
+    updated = await TaskManageTool().execute({"action": "update", "item_id": "1", "status": "done"}, ctx)
+    listed_after = await TaskManageTool().execute({"action": "list"}, ctx)
+    assert updated.ok and '"done"' in listed_after.output
