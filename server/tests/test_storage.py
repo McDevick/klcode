@@ -1,6 +1,9 @@
+import asyncio
 import sqlite3
 from datetime import datetime, timezone
+from unittest.mock import patch
 
+import aiosqlite
 import pytest
 from kl_server.core.session_manager import SessionManager
 from kl_server.core.task_manager import TaskManager
@@ -68,6 +71,17 @@ async def test_full_field_roundtrip_after_reopen(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_concurrent_connect_opens_single_connection(tmp_path):
+    db = Database(tmp_path / "kl.db")
+    try:
+        with patch("aiosqlite.connect", wraps=aiosqlite.connect) as connect:
+            await asyncio.gather(db.connect(), db.connect())
+            connect.assert_called_once()
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
 async def test_get_missing_ids_raise_key_error(tmp_path):
     db = Database(tmp_path / "kl.db")
     sessions = SessionManager(db)
@@ -111,5 +125,16 @@ async def test_update_missing_task_raises_key_error(tmp_path):
         missing = Task(id="missing-task", session_id=session.id, description="fix")
         with pytest.raises(KeyError):
             await tasks.update(missing)
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_task_requires_existing_session(tmp_path):
+    db = Database(tmp_path / "kl.db")
+    tasks = TaskManager(db)
+    try:
+        with pytest.raises(sqlite3.IntegrityError):
+            await tasks.create(Task(id="orphan", session_id="missing", description="x"))
     finally:
         await db.close()
