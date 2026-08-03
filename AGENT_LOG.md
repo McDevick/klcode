@@ -58,6 +58,20 @@
 - 完成时补充 commit hash、验证输出、评审结论和人工干预。
 - 若发现范围越界或未授权功能，必须立即记录并停止。
 
+## 2026-08-03 Task 1.8：Config and credentials（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`server/kl_server/config/` 下 `config.py`、`credentials.py`、`__init__.py` 与 `server/tests/test_credentials.py`。
+- 计划：从最新 `dev` 创建独立 worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后合入 `dev`。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-1.8-config`
+- 分支：`worktree-task-1.8-config`
+- Implementer：subagent `019fc7be-6150-7561-b571-96a66cfb3148`
+- Commit：`4c52648`、`9540243`（roundtrip 修复）、`4f92975`（契约测试补强）
+- TDD 红：`ModuleNotFoundError: No module named 'kl_server.config'`
+- TDD 绿：`8 passed`；完整 server 套件 `61 passed`
+- 评审：spec 合规通过；质量评审通过（safe snapshot、clear、默认值、嵌套验证、extra forbid）
+
 ## 2026-08-03 Task 1.7：SQLite storage and session/task management（已完成并验证）
 
 - 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`

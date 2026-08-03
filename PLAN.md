@@ -212,7 +212,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 1.5 | ToolExecutor error isolation | Done (`d5bb526`) |
 | 1.6 | Feedback sensors | Done (`e46c504`) |
 | 1.7 | SQLite storage and sessions/tasks | Done (`4e7761f`) |
-| 1.8 | Config and credentials | Pending |
+| 1.8 | Config and credentials | Done (`4f92975`) |
 | 1.9 | Basic AgentLoop | Pending |
 | 1.10 | Credential backends (keyring / encrypted file / .env) | Pending |
 | 1.11 | Complete built-in tool set (shell/git/patch/validation/task/delete) | Pending |
@@ -1251,7 +1251,7 @@ git commit -m "feat: add sqlite session and task persistence"
 - Create: `server/kl_server/config/credentials.py`
 - Test: `server/tests/test_credentials.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from kl_server.config.credentials import InMemoryCredentialStore
@@ -1265,12 +1265,12 @@ def test_credential_store_never_returns_plaintext_config():
     assert "sk-test" not in store.safe_snapshot()
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_credentials.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement credential store**
+- [x] **Step 3: Implement credential store**
 
 ```python
 from typing import Protocol
@@ -1306,12 +1306,12 @@ class InMemoryCredentialStore:
 
 Create `server/kl_server/config/config.py` with Pydantic models `ProviderConfig` and `AppConfig`; provider config stores `name`, `type`, `base_url`, `default_model`, `credential_ref` and rejects secret fields.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_credentials.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/config server/tests/test_credentials.py
