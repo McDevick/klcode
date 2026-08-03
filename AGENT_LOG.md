@@ -58,6 +58,21 @@
 - 完成时补充 commit hash、验证输出、评审结论和人工干预。
 - 若发现范围越界或未授权功能，必须立即记录并停止。
 
+## 2026-08-03 Task 1.10：Credential backends (keyring / encrypted file / .env)（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`server/kl_server/config/backends.py`、`credentials.py` factory、`server/pyproject.toml` 的 `cryptography`、`server/tests/test_credentials.py`。
+- 计划：从最新 `dev` 创建独立 worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后合入 `dev`。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-1.10-backends`
+- 分支：`worktree-task-1.10-backends`
+- Implementer：subagent `019fc7d9-159f-7242-b720-ae175c0d6bf5`
+- Commit：`23fdec1`、`363ae30`（安全重构）、`889db38`（keyring/注释修复）
+- TDD 红：`ModuleNotFoundError: No module named 'kl_server.config.backends'`
+- TDD 绿：`22 passed`；完整 server 套件 `80 passed`
+- 实现说明：`KeyringBackend` 使用哨兵区分“自动检测 keyring”与“显式内存回退”，以满足测试语义。
+- 评审：spec 合规通过；质量评审通过（随机 salt、错误封装、keyring 探测/降级、.env 注释）
+
 ## 2026-08-03 Task 1.9：Basic AgentLoop（已完成并验证）
 
 - 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`

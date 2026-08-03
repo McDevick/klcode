@@ -214,7 +214,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 1.7 | SQLite storage and sessions/tasks | Done (`4e7761f`) |
 | 1.8 | Config and credentials | Done (`4f92975`) |
 | 1.9 | Basic AgentLoop | Done (`df5993d`) |
-| 1.10 | Credential backends (keyring / encrypted file / .env) | Pending |
+| 1.10 | Credential backends (keyring / encrypted file / .env) | Done (`889db38`) |
 | 1.11 | Complete built-in tool set (shell/git/patch/validation/task/delete) | Pending |
 | 1.12 | ToolExecutor timeout and output truncation | Pending |
 | 1.13 | Feedback re-injection into AgentLoop | Pending |
@@ -1431,7 +1431,7 @@ Requirement §2.1 mandates at least one secure credential storage; `InMemoryCred
 - Modify: `server/pyproject.toml` (add `cryptography`)
 - Test: `server/tests/test_credentials.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import pytest
@@ -1481,12 +1481,12 @@ def test_load_env_file_parses_and_marks_plaintext(tmp_path):
     assert load_env_file(env) == {"KL_OPENAI_KEY": "sk-env"}
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_credentials.py -v`
 Expected: FAIL with missing `backends` module.
 
-- [ ] **Step 3: Implement the backends**
+- [x] **Step 3: Implement the backends**
 
 ```python
 # server/kl_server/config/backends.py
@@ -1600,12 +1600,12 @@ def create_credential_store(prefer_keyring: bool = True, fallback_path=None, pas
 
 Add `cryptography` to `server/pyproject.toml` dependencies.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_credentials.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/config server/pyproject.toml server/tests/test_credentials.py
