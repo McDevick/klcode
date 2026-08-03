@@ -13,6 +13,7 @@ dependencies = [
     "pydantic-settings",
     "aiosqlite",
     "keyring",
+    "cryptography",
 ]
 
 [project.optional-dependencies]
