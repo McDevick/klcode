@@ -1,11 +1,11 @@
 import json
 from dataclasses import dataclass
 
+from kl_server.core.tool_executor import ToolExecutor
 from kl_server.models.action import Action
 from kl_server.models.task import Session
 from kl_server.providers.base import ProviderRequest
 from kl_server.tools.base import ToolContext
-from kl_server.tools.registry import ToolRegistry
 
 
 @dataclass
@@ -14,7 +14,7 @@ class LoopSettings:
 
 
 class AgentLoop:
-    def __init__(self, provider, tools: ToolRegistry, settings: LoopSettings):
+    def __init__(self, provider, tools: ToolExecutor, settings: LoopSettings):
         self.provider = provider
         self.tools = tools
         self.settings = settings
@@ -31,11 +31,25 @@ class AgentLoop:
             except json.JSONDecodeError:
                 history.append({"role": "assistant", "content": text})
                 continue
-            result = await self.tools.execute(
-                payload["tool"],
-                payload.get("args", {}),
-                ToolContext(workspace=session.workspace),
+            if not self._is_valid_action(payload):
+                history.append({"role": "assistant", "content": text})
+                continue
+            action = Action(
+                tool=payload["tool"],
+                args=payload["args"],
+                task_id=session.id,
+                workspace=session.workspace,
             )
+            result = await self.tools.execute(action.tool, action.args, ToolContext(workspace=session.workspace))
             history.append({"role": "assistant", "content": text})
-            history.append({"role": "tool", "content": result.output})
+            result_text = result.output or result.error or ""
+            history.append({"role": "system", "content": f"tool_result: {result_text}"})
         return "MAX_ITERATIONS"
+
+    @staticmethod
+    def _is_valid_action(payload: object) -> bool:
+        return (
+            isinstance(payload, dict)
+            and isinstance(payload.get("tool"), str)
+            and isinstance(payload.get("args"), dict)
+        )
