@@ -344,3 +344,10 @@
 ### 9.5 反思
 
 本次执行再次验证 §5"第一版范围偏大"的判断：Phase 0 骨架就暴露了"PLAN 对可复现性/仓库卫生（依赖锁定、gitignore）约定不足"。后续任务应把"安装与构建产物可复现"作为 task 规格的一部分明确写进 PLAN，而不是靠 implementer 自行补充。
+
+### 9.6 后续状态
+
+- 远端 PR #1、#2 已由用户合并。
+- 本地 `dev` 已 merge 远端结果，合并提交：`6bcd2a2`。
+- 本地复验：server `1 passed`，cli `1 passed`。
+- 已补 `AGENT_LOG.md`，并更新 PLAN Task 0.1/0.2 状态。

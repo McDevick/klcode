@@ -201,8 +201,8 @@ Execution note: task numbering is organizational, not a strict execution order. 
 
 | Task | Name | Status |
 |---|---|---|
-| 0.1 | Server package skeleton | Pending |
-| 0.2 | CLI package skeleton | Pending |
+| 0.1 | Server package skeleton | Done (`7d4554d`) |
+| 0.2 | CLI package skeleton | Done (`c45547b`) |
 | 0.3 | Makefile and test runner | Pending |
 | 0.4 | CI configuration | Pending |
 | 1.1 | Core models | Pending |
@@ -271,7 +271,7 @@ Every completed task updates this table, `AGENT_LOG.md`, and the relevant `- [ ]
 - Create: `server/kl_server/__init__.py`
 - Create: `server/tests/test_package.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from kl_server import __version__
@@ -281,12 +281,12 @@ def test_package_version():
     assert __version__ == "0.1.0"
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_package.py -v`
 Expected: FAIL with `ImportError` or missing `__version__`.
 
-- [ ] **Step 3: Implement the minimal package**
+- [x] **Step 3: Implement the minimal package**
 
 ```python
 __version__ = "0.1.0"
@@ -294,12 +294,12 @@ __version__ = "0.1.0"
 
 Create `server/pyproject.toml` with `[project] name = "kl-server"`, `version = "0.1.0"`, dependencies `fastapi`, `uvicorn`, `pydantic`, `pydantic-settings`, `aiosqlite`, `keyring`, and dev dependencies `pytest`, `pytest-asyncio`, `httpx`.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_package.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/pyproject.toml server/kl_server/__init__.py server/tests/test_package.py
@@ -315,7 +315,7 @@ git commit -m "feat: bootstrap kl-server package"
 - Create: `cli/src/main.ts`
 - Create: `cli/test/main.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { expect, test } from 'vitest';
@@ -326,12 +326,12 @@ test('cli exposes package name', () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npm test`
 Expected: FAIL with missing `cliName`.
 
-- [ ] **Step 3: Implement the minimal module**
+- [x] **Step 3: Implement the minimal module**
 
 ```ts
 export function cliName(): string {
@@ -341,17 +341,26 @@ export function cliName(): string {
 
 Create `cli/package.json` with name `@kl-code/cli`, `type: module`, dependencies `ink`, `react`, `commander`, dev dependencies `typescript`, `vitest`, `tsx`, `@types/react`.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `npm test`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add cli/package.json cli/tsconfig.json cli/src/main.ts cli/test/main.test.ts
 git commit -m "feat: bootstrap kl-code cli"
 ```
+
+### Phase 0 cold-start follow-ups
+
+Cold-start execution exposed repository hygiene requirements that must be folded into Phase 0:
+
+- Task 0.3 must extend `.gitignore` with `__pycache__/`, `*.egg-info/`, `.pytest_cache/`, and `node_modules/`.
+- Task 0.4 or the next CLI task must commit `cli/package-lock.json` and replace `*` dependencies with caret ranges.
+- Before Phase 1 async tests, add `[tool.pytest.ini_options]` to `server/pyproject.toml`.
+- Task 5.3 distribution must add server dependency lower bounds and a reproducible install path.
 
 ### Task 0.3: Makefile and test runner
 

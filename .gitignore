@@ -3,3 +3,11 @@ requirement_file/
 
 # Claude Code worktrees / scratch
 .claude/
+
+# Python
+__pycache__/
+*.egg-info/
+.pytest_cache/
+
+# Node
+node_modules/
