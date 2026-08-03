@@ -4,6 +4,9 @@
   "description": "KL Code CLI",
   "type": "module",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "vitest run"
   },
