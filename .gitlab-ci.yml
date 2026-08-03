@@ -1,0 +1,12 @@
+image: python:3.11
+
+unit-test:
+  stage: test
+  before_script:
+    - apt-get update
+    - apt-get install -y curl
+    - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    - apt-get install -y nodejs
+  script:
+    - make ci
+    - make test
