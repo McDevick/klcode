@@ -58,6 +58,20 @@
 - 完成时补充 commit hash、验证输出、评审结论和人工干预。
 - 若发现范围越界或未授权功能，必须立即记录并停止。
 
+## 2026-08-03 Task 1.5：ToolExecutor error isolation（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`server/kl_server/core/tool_executor.py`、`server/kl_server/core/__init__.py` 与 `server/tests/test_tool_executor.py`。
+- 计划：从最新 `dev` 创建独立 worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后合入 `dev`。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-1.5-executor`
+- 分支：`worktree-task-1.5-executor`
+- Implementer：subagent `019fc793-8b6c-7e81-bcff-01042a5ce61e`
+- Commit：`901536c`、`d5bb526`（评审修复）
+- TDD 红：`ModuleNotFoundError: No module named 'kl_server.core'`
+- TDD 绿：`5 passed`；完整 server 套件 `39 passed`
+- 评审：spec 合规通过；质量评审通过（成功透传、未知工具、CancelledError 传播、错误回退）
+
 ## 2026-08-03 Task 1.4：Built-in file/search tools（已完成并验证）
 
 - 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`

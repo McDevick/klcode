@@ -209,7 +209,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 1.2 | Provider abstraction and mock | Done (`2864928`) |
 | 1.3 | Tool interface and registry | Done (`67988b7`) |
 | 1.4 | Built-in file/search tools | Done (`f46b628`) |
-| 1.5 | ToolExecutor error isolation | Pending |
+| 1.5 | ToolExecutor error isolation | Done (`d5bb526`) |
 | 1.6 | Feedback sensors | Pending |
 | 1.7 | SQLite storage and sessions/tasks | Pending |
 | 1.8 | Config and credentials | Pending |
@@ -993,7 +993,7 @@ git commit -m "feat: add built-in file and search tools"
 - Create: `server/kl_server/core/tool_executor.py`
 - Test: `server/tests/test_tool_executor.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import pytest
@@ -1022,12 +1022,12 @@ async def test_crash_returns_tool_error():
     assert result.error == "boom"
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_tool_executor.py -v`
 Expected: FAIL because exception propagates.
 
-- [ ] **Step 3: Implement ToolExecutor**
+- [x] **Step 3: Implement ToolExecutor**
 
 ```python
 from kl_server.models.action import ToolResult
@@ -1046,12 +1046,12 @@ class ToolExecutor:
             return ToolResult(ok=False, output="", error=str(exc))
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_tool_executor.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/core/tool_executor.py server/tests/test_tool_executor.py
