@@ -9,14 +9,17 @@ from kl_server.tools.base import Tool, ToolContext
 class GrepTool(Tool):
     name = "grep"
     description = "Search file contents by regex inside the workspace"
-    schema = {"type": "object", "properties": {"pattern": {"type": "string"}, "path": {"type": "string"}}, "required": ["pattern"]}
+    schema = {"type": "object", "properties": {"pattern": {"type": "string"}, "path": {"type": "string", "default": "."}}, "required": ["pattern"]}
 
     async def execute(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         root = Path(ctx.workspace).resolve()
         search_root = (root / args.get("path", ".")).resolve()
         if not search_root.is_relative_to(root):
             return ToolResult(ok=False, output="", error="path outside workspace")
-        pattern = re.compile(args["pattern"])
+        try:
+            pattern = re.compile(args["pattern"])
+        except re.error as exc:
+            return ToolResult(ok=False, output="", error=f"invalid regex: {exc}")
         matches = []
         for path in search_root.rglob("*"):
             resolved = path.resolve()

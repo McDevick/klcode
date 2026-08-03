@@ -53,3 +53,52 @@ async def test_grep_respects_path(tmp_path):
     result = await GrepTool().execute({"pattern": "needle", "path": "sub"}, ctx)
     assert str(Path("sub") / "match.txt") in result.output
     assert "root.txt" not in result.output
+
+
+@pytest.mark.asyncio
+async def test_read_missing_file_returns_error(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    result = await ReadFileTool().execute({"path": "missing.txt"}, ctx)
+    assert not result.ok
+    assert result.error
+
+
+@pytest.mark.asyncio
+async def test_read_non_utf8_file_returns_error(tmp_path):
+    (tmp_path / "binary.bin").write_bytes(b"\xff\xfe")
+    ctx = ToolContext(workspace=str(tmp_path))
+    result = await ReadFileTool().execute({"path": "binary.bin"}, ctx)
+    assert not result.ok
+    assert result.error
+
+
+@pytest.mark.asyncio
+async def test_grep_invalid_regex_returns_error(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    result = await GrepTool().execute({"pattern": "["}, ctx)
+    assert not result.ok
+    assert "invalid regex" in result.error
+
+
+@pytest.mark.asyncio
+async def test_list_missing_dir_returns_error(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    result = await ListDirTool().execute({"path": "missing"}, ctx)
+    assert not result.ok
+    assert result.error
+
+
+@pytest.mark.asyncio
+async def test_list_outside_returns_error(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    result = await ListDirTool().execute({"path": "../outside"}, ctx)
+    assert not result.ok
+    assert "outside workspace" in result.error
+
+
+@pytest.mark.asyncio
+async def test_write_to_directory_returns_error(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    result = await WriteFileTool().execute({"path": ".", "content": "x"}, ctx)
+    assert not result.ok
+    assert result.error

@@ -15,7 +15,10 @@ class ListDirTool(Tool):
         target = (root / args.get("path", ".")).resolve()
         if not target.is_relative_to(root):
             return ToolResult(ok=False, output="", error="path outside workspace")
-        lines = [p.name for p in target.iterdir()]
+        try:
+            lines = [p.name for p in target.iterdir()]
+        except OSError as exc:
+            return ToolResult(ok=False, output="", error=str(exc))
         return ToolResult(ok=True, output="\n".join(lines))
 
 
@@ -29,7 +32,11 @@ class ReadFileTool(Tool):
         target = (root / args["path"]).resolve()
         if not target.is_relative_to(root):
             return ToolResult(ok=False, output="", error="path outside workspace")
-        return ToolResult(ok=True, output=target.read_text(encoding="utf-8"))
+        try:
+            content = target.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            return ToolResult(ok=False, output="", error=str(exc))
+        return ToolResult(ok=True, output=content)
 
 
 class WriteFileTool(Tool):
@@ -46,6 +53,9 @@ class WriteFileTool(Tool):
         target = (root / args["path"]).resolve()
         if not target.is_relative_to(root):
             return ToolResult(ok=False, output="", error="path outside workspace")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(args["content"], encoding="utf-8")
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(args["content"], encoding="utf-8")
+        except OSError as exc:
+            return ToolResult(ok=False, output="", error=str(exc))
         return ToolResult(ok=True, output=str(target))
