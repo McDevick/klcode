@@ -208,7 +208,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 1.1 | Core models | Done (`0b78bda`) |
 | 1.2 | Provider abstraction and mock | Done (`2864928`) |
 | 1.3 | Tool interface and registry | Done (`67988b7`) |
-| 1.4 | Built-in file/search tools | Pending |
+| 1.4 | Built-in file/search tools | Done (`f46b628`) |
 | 1.5 | ToolExecutor error isolation | Pending |
 | 1.6 | Feedback sensors | Pending |
 | 1.7 | SQLite storage and sessions/tasks | Pending |
@@ -848,7 +848,7 @@ git commit -m "feat: add tool interface and registry"
 - Create: `server/kl_server/tools/builtin/search.py`
 - Test: `server/tests/test_builtin_tools.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import pytest
@@ -875,12 +875,12 @@ async def test_grep_and_glob(tmp_path):
     assert "a.py" in grep.output and "a.py" in glob.output
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_builtin_tools.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement tools**
+- [x] **Step 3: Implement tools**
 
 ```python
 # server/kl_server/tools/builtin/filesystem.py
@@ -973,12 +973,12 @@ class GlobTool(Tool):
         return ToolResult(ok=True, output="\n".join(matches))
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_builtin_tools.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/tools/builtin server/tests/test_builtin_tools.py

@@ -58,6 +58,20 @@
 - 完成时补充 commit hash、验证输出、评审结论和人工干预。
 - 若发现范围越界或未授权功能，必须立即记录并停止。
 
+## 2026-08-03 Task 1.4：Built-in file/search tools（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`server/kl_server/tools/builtin/` 下 `filesystem.py`、`search.py`、`__init__.py` 与 `server/tests/test_builtin_tools.py`。
+- 计划：从 Task 1.3 分支创建 stacked worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后并入本地待推送链。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-1.4-builtin`
+- 分支：`worktree-task-1.4-builtin`
+- Implementer：subagent `019fc77e-13e6-7103-b616-4d3efed5f8bd`
+- Commit：`d98d67a`、`0d04310`（越界修复）、`f46b628`（结构化错误修复）
+- TDD 红：`ModuleNotFoundError: No module named 'kl_server.tools.builtin'`
+- TDD 绿：`11 passed`；完整 server 套件 `34 passed`
+- 评审：spec 合规通过；质量评审通过（工作区边界、结构化错误、schema 默认值）
+
 ## 2026-08-03 Task 1.3：Tool interface and registry（已完成并验证）
 
 - 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
