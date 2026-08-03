@@ -69,18 +69,19 @@
   - `.gitlab-ci.yml` 的 NodeSource 安装建议先下载再执行，避免管道退出码掩盖下载失败。
 - 验证证据：server pytest `1 passed`；CLI `npm test` `1 passed`（0.3/0.4 worktree）；YAML OK；`git diff --check` 干净。
 
-## 2026-08-03 Task 1.1：Core models（进行中）
+## 2026-08-03 Task 1.1：Core models（已完成并验证）
 
 - 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
 - 范围：`server/kl_server/models/` 下 `action.py`、`feedback.py`、`task.py` 与 `server/tests/test_models.py`。
 - 计划：从 `worktree-task-0.4-ci` 创建 stacked worktree，派 fresh implementer 按 TDD 红-绿实现并提交，再进行两阶段评审。
-- 当前状态：实现完成，等待评审。
+- 当前状态：已完成并验证。
 - Worktree：`.claude/worktrees/task-1.1-models`
 - 分支：`worktree-task-1.1-models`
 - Implementer：subagent `019fc75b-d191-7f23-b6ea-224c52f2519a`
-- Commit：`3c7602f`
+- Commit：`68df8e0`（rebase 后）、`0b78bda`（评审修复）
 - TDD 红：`ModuleNotFoundError: No module named 'kl_server.models'`
-- TDD 绿：`3 passed`；完整 server 套件 `4 passed`
+- TDD 绿：`10 passed`；完整 server 套件 `11 passed`
+- 评审：spec 合规通过；质量评审通过（契约测试补强、清理未使用导入）
 
 ## 2026-08-03 Task 0.3：Makefile and test runner（进行中）
 

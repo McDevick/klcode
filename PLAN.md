@@ -205,7 +205,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 0.2 | CLI package skeleton | Done (`c45547b`) |
 | 0.3 | Makefile and test runner | Done (`908b864`) |
 | 0.4 | CI configuration | Done (`dd1cb9b`) |
-| 1.1 | Core models | Pending |
+| 1.1 | Core models | Done (`0b78bda`) |
 | 1.2 | Provider abstraction and mock | Pending |
 | 1.3 | Tool interface and registry | Pending |
 | 1.4 | Built-in file/search tools | Pending |
@@ -485,7 +485,7 @@ git commit -m "ci: add python and node unit-test pipeline"
 - Create: `server/kl_server/models/task.py`
 - Test: `server/tests/test_models.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from kl_server.models.action import Action, ToolResult
@@ -511,16 +511,16 @@ def test_session_and_task_relationships():
     assert task.session_id == "s1"
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_models.py -v`
 Expected: FAIL with missing modules.
 
-- [ ] **Step 3: Implement the models**
+- [x] **Step 3: Implement the models**
 
 ```python
 # server/kl_server/models/action.py
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -607,12 +607,12 @@ class Task:
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_models.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/models server/tests/test_models.py
