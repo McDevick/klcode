@@ -257,7 +257,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 5.5 | Final CI pass and deliverables | Pending |
 | 5.6 | Application bootstrap and server composition | Pending |
 
-Every completed task updates this table, `AGENT_LOG.md`, and the relevant `- [ ]` checkboxes in this file.
+Every task opens a `AGENT_LOG.md` entry before implementation and updates it in real time. Every completed task also updates this table and the relevant `- [ ]` checkboxes in this file.
 
 ---
 
