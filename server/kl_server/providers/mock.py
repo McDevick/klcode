@@ -3,7 +3,7 @@ from kl_server.providers.base import ProviderRequest, ProviderResponse
 
 class MockProvider:
     def __init__(self, responses: list[str] | None = None):
-        self.responses = responses or []
+        self.responses = list(responses or [])
         self.calls: list[ProviderRequest] = []
 
     async def complete(self, request: ProviderRequest) -> ProviderResponse:
