@@ -1,0 +1,21 @@
+{
+  "name": "@kl-code/cli",
+  "version": "0.1.0",
+  "description": "KL Code CLI",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "commander": "*",
+    "ink": "*",
+    "react": "*"
+  },
+  "devDependencies": {
+    "@types/react": "*",
+    "tsx": "*",
+    "typescript": "*",
+    "vitest": "*"
+  }
+}
