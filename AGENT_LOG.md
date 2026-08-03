@@ -57,3 +57,25 @@
 - 每个 task 开工时先新增一条“进行中”记录。
 - 完成时补充 commit hash、验证输出、评审结论和人工干预。
 - 若发现范围越界或未授权功能，必须立即记录并停止。
+
+## 2026-08-03 Task 0.3：Makefile and test runner（进行中）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`Makefile`、根 `.gitignore` 校验、`server/pyproject.toml` 的 `[tool.pytest.ini_options]`、`cli/package.json` caret 依赖与 `cli/package-lock.json` 纳入版本库。
+- 计划：从 `dev` 创建独立 worktree，派 fresh implementer subagent，TDD/配置验证后提交，再进行 spec 与质量评审。
+- 当前状态：已完成并验证。
+- Implementer：subagent `019fc72d-e2ec-71b2-a2ba-e35619547d44`
+- Worktree：`.claude/worktrees/task-0.3-make`
+- 分支：`worktree-task-0.3-make`
+- Commit：`1d22c60`（Makefile）、`f3af5f5`（cli deps lock + pytest config）、`908b864`（评审修复）
+- 验证：server `1 passed`；cli `1 passed`；本机无 `make`，CI 负责 `make test` 权威验证。
+- 评审：spec 合规通过；质量评审通过（`make dev` 改为明确守卫、`engines.node >=22`、新增 `make ci` 使用 `npm ci`）。
+- PR：https://github.com/McDevick/klcode/pull/3
+- 遗留事项：`make dev` 在 server main 和 CLI TUI 入口完成后恢复；lockfile resolved URL 仍为 `registry.npmmirror.com`，后续可考虑官方 registry 重生成。
+
+## 2026-08-03 Task 0.4：CI configuration（进行中）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`.github/workflows/ci.yml` 补依赖安装与 `unit-test` job、新建 `.gitlab-ci.yml`，并验证 YAML 可解析。
+- 计划：Task 0.3 完成后从更新后的 `dev` 创建独立 worktree，派 fresh implementer subagent，提交后两阶段评审并创建 PR。
+- 当前状态：等待 Task 0.3 完成。

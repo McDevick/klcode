@@ -203,7 +203,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 |---|---|---|
 | 0.1 | Server package skeleton | Done (`7d4554d`) |
 | 0.2 | CLI package skeleton | Done (`c45547b`) |
-| 0.3 | Makefile and test runner | Pending |
+| 0.3 | Makefile and test runner | Done (`908b864`) |
 | 0.4 | CI configuration | Pending |
 | 1.1 | Core models | Pending |
 | 1.2 | Provider abstraction and mock | Pending |
@@ -368,30 +368,34 @@ Cold-start execution exposed repository hygiene requirements that must be folded
 
 - Create: `Makefile`
 
-- [ ] **Step 1: Write the Makefile**
+- [x] **Step 1: Write the Makefile**
 
 ```make
-.PHONY: install test dev
+.PHONY: install ci test dev
 
 install:
 	python -m pip install -e "server[dev]"
 	cd cli && npm install
+
+ci:
+	python -m pip install -e "server[dev]"
+	cd cli && npm ci
 
 test:
 	python -m pytest server/tests -q
 	cd cli && npm test
 
 dev:
-	cd server && uvicorn kl_server.main:app --reload --port 8700 &
-	cd cli && npm run tui
+	@echo "make dev is not available until server main and cli tui entrypoints exist"
+	@exit 1
 ```
 
-- [ ] **Step 2: Verify `make test` runs both suites**
+- [x] **Step 2: Verify `make test` runs both suites**
 
 Run: `make test`
 Expected: server tests and CLI tests both run and pass.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add Makefile
