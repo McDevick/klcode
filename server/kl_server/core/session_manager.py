@@ -1,4 +1,6 @@
-from kl_server.models.task import Session, Task, TaskStatus
+from datetime import datetime
+
+from kl_server.models.task import Session
 from kl_server.storage.database import Database
 
 
@@ -7,17 +9,44 @@ class SessionManager:
         self.db = db
 
     async def create(self, session: Session) -> Session:
-        self.db.conn.execute(
-            "INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?)",
-            (session.id, session.workspace, session.name, session.provider, session.model, session.status),
+        conn = await self.db.connect()
+        await conn.execute(
+            """
+            INSERT INTO sessions (id, workspace, name, provider, model, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                session.id,
+                session.workspace,
+                session.name,
+                session.provider,
+                session.model,
+                session.status,
+                session.created_at.isoformat(),
+            ),
         )
-        self.db.conn.commit()
+        await conn.commit()
         return session
 
     async def get(self, session_id: str) -> Session:
-        row = self.db.conn.execute(
-            "SELECT id, workspace, name, provider, model, status FROM sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        conn = await self.db.connect()
+        cursor = await conn.execute(
+            """
+            SELECT id, workspace, name, provider, model, status, created_at
+            FROM sessions
+            WHERE id = ?
+            """,
+            (session_id,),
+        )
+        row = await cursor.fetchone()
         if row is None:
             raise KeyError(session_id)
-        return Session(id=row[0], workspace=row[1], name=row[2], provider=row[3], model=row[4], status=row[5])
+        return Session(
+            id=row["id"],
+            workspace=row["workspace"],
+            name=row["name"],
+            provider=row["provider"],
+            model=row["model"],
+            status=row["status"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+        )
