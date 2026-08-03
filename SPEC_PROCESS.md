@@ -297,3 +297,50 @@
 - subagent 预留为 `ToolRegistry` 中的受治理工具，并预留 `Task.parent_task_id`。
 - WebUI 复用 `/api/v1` REST + WebSocket，TUI 不持有领域状态。
 - 这些预留不改变开工门禁，未获用户允许前不进入 PLAN 实现任务。
+
+---
+
+## 9. [claude code] Phase 0 执行记录（Task 0.1 / 0.2）
+
+> 本节由 Claude Code 在正式实现会话中编写，时间：2026-08-03。
+> 目的：记录 Phase 0 Bootstrap 的 Task 0.1（server 包骨架）与 Task 0.2（cli 包骨架）的执行过程、暂停提问点、SPEC/PLAN 暴露的缺陷与模糊点，供后续任务（0.3/0.4/1.x）参考。
+> 关联提交：`7d4554d`（server 骨架）、`c45547b`（cli 骨架）；关联 PR：#1、#2（合回 `dev`）。
+
+### 9.1 执行方式与结果
+
+- 按开发要求执行：git worktree 隔离（每个独立模块一个 worktree 对应一个 PR）、subagent 驱动（每 task 派一个新鲜 implementer）、TDD 强制（红→绿→重构）、两阶段评审（先 spec 合规检查 → 再代码质量检查）、完成分支由 finishing-a-development-branch 决定。
+- Task 0.1（server）：`pyproject.toml` + `kl_server/__init__.py`（`__version__="0.1.0"`）+ `tests/test_package.py`。红：`ModuleNotFoundError` → 绿：`1 passed`。
+- Task 0.2（cli）：`package.json` + `tsconfig.json` + `src/main.ts`（`cliName()`）+ `test/main.test.ts`。红：`Cannot find module '../src/main'` → 绿：`1 passed`。
+- 两 task 的 task 评审均 Spec ✅ + 质量 Approved，无 Critical/Important。整分支最终评审：Ready to merge = Yes，无 Critical。
+- 环境：server 测试用 Python 3.11 venv（本机默认 `python` 为无 pip 的 msys2 3.14，见 §9.3 之 6）；cli 用 Node 22 / npm 10。
+
+### 9.2 暂停提问点（用户裁决）
+
+| # | 问题 | 用户裁决 |
+|---|---|---|
+| 1 | Task 0.1/0.2 是独立模块，worktree/PR 结构？ | 两个 worktree、两个 PR |
+| 2 | worktree 分叉与 PR 目标分支？ | 从 `dev` 分叉，PR 合回 `dev` |
+| 3 | origin/dev 落后本地 dev 5 个提交（缺 SPEC/PLAN 文档），PR 基准如何处理？ | 先推送 dev，再建 PR |
+
+另有一处工具行为问题未打扰用户：`EnterWorktree` 的 `worktree.baseRef` 在会话启动后才写入 settings.json 未生效，默认从 origin/main 分叉；改用 `git worktree add <path> -b <branch> dev` 显式分叉解决。
+
+### 9.3 SPEC/PLAN 暴露的缺陷与模糊点（含处理方式）
+
+1. **PLAN Task 0.2 缺 `test` 脚本**：package.json 规格未列 scripts，但 Step 2 要求跑 `npm test` → 补充 `"scripts": {"test": "vitest run"}`。
+2. **PLAN Task 0.1 测试命令的导入路径问题**：从仓库根 `python -m pytest server/tests/...` 无法导入 `kl_server`（包未安装）→ 先 `pip install -e "server[dev]"`（与后续 Task 0.3 Makefile 的安装命令一致）。
+3. **PLAN Task 0.2 未给 tsconfig 内容** → 实现最小 strict 配置（ES2022/ESNext/bundler）。
+4. **依赖版本全未固定**：server pyproject 按 brief 未固定版本；cli 依赖被 npm 写成 `"*"` 且 `package-lock.json` 未跟踪 → 当前**不可复现安装**；最终评审建议在 **Task 0.4 CI / phase-3 TUI 前**提交 lockfile 并改 caret 范围（风险最高项，需有意提交）。
+5. **根 `.gitignore` 缺 Python 构建产物规则**（`__pycache__/`、`*.egg-info/`、`.pytest_cache/`）与 `node_modules/` → 每次 `make install`/`npm install` 后 `git status` 变脏，建议并入 **Task 0.3/0.4** PR。
+6. **环境与 PLAN 字面命令不符**：本机默认 `python` 是 msys2 3.14.3 且无 pip/pytest，与 SPEC §8 的 3.11+ 不符 → 改用 Python 3.11 venv 执行测试命令（语义等价，非字面）。
+7. **PLAN 未规定依赖锁定策略与 PR 模板**：spec §4.5 要求 CI pass 记录，但 lockfile 策略无约定；仓库无 PR 模板。
+8. **cli tsconfig 未覆盖 test/**（`include:["src"]`）、无 `noEmit`/build 脚本；`"private": true` 为未规划但合理的添加——均为 minor，记录在案。
+
+### 9.4 留给后续任务的已知事项（最终评审裁决：不阻塞本次合并）
+
+- Task 0.3/0.4：根 `.gitignore` 补 `__pycache__/`、`*.egg-info/`、`.pytest_cache/`、`node_modules/`；Makefile 固化安装命令。
+- Task 0.4 CI / phase-3 前：cli 依赖改 caret 范围并提交 `package-lock.json`。
+- Task 5.3 分发前：server 依赖加下界/lockfile；补 `[tool.pytest.ini_options]`。
+
+### 9.5 反思
+
+本次执行再次验证 §5"第一版范围偏大"的判断：Phase 0 骨架就暴露了"PLAN 对可复现性/仓库卫生（依赖锁定、gitignore）约定不足"。后续任务应把"安装与构建产物可复现"作为 task 规格的一部分明确写进 PLAN，而不是靠 implementer 自行补充。
