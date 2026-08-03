@@ -29,23 +29,10 @@ class FakeKeyring:
 
     @classmethod
     def delete_password(cls, service, ref):
-        cls.store.pop((service, ref), None)
-
-
-class FailingDeleteKeyring:
-    store: dict[tuple, str] = {}
-
-    @classmethod
-    def set_password(cls, service, ref, secret):
-        cls.store[(service, ref)] = secret
-
-    @classmethod
-    def get_password(cls, service, ref):
-        return cls.store.get((service, ref))
-
-    @classmethod
-    def delete_password(cls, service, ref):
-        raise PasswordDeleteError("missing credential")
+        key = (service, ref)
+        if key not in cls.store:
+            raise PasswordDeleteError("missing credential")
+        cls.store.pop(key, None)
 
 
 class ExplodingKeyring:
@@ -60,6 +47,22 @@ class ExplodingKeyring:
     @classmethod
     def delete_password(cls, service, ref):
         raise RuntimeError("keyring unavailable")
+
+
+class GetFailsKeyring:
+    store: dict[tuple, str] = {}
+
+    @classmethod
+    def set_password(cls, service, ref, secret):
+        cls.store[(service, ref)] = secret
+
+    @classmethod
+    def get_password(cls, service, ref):
+        raise RuntimeError("keyring unavailable")
+
+    @classmethod
+    def delete_password(cls, service, ref):
+        cls.store.pop((service, ref), None)
 
 
 def test_encrypted_file_roundtrip_hides_secret(tmp_path):
@@ -112,13 +115,24 @@ def test_keyring_backend_falls_back_in_memory():
 
 def test_keyring_backend_clear_missing_is_idempotent():
     backend = KeyringBackend(service="kl-code", keyring_module=FakeKeyring)
+    backend.set("clear-me", "sk-test")
+
     backend.clear("missing")
+    assert backend.available is True
+
+    backend.clear("clear-me")
+    assert FakeKeyring.store.get(("kl-code", "clear-me")) is None
+    assert backend.available is True
+
+    backend.set("after-clear", "sk-after")
+    assert backend.get("after-clear") == "sk-after"
 
 
 def test_keyring_backend_falls_back_to_memory_on_runtime_error():
     backend = KeyringBackend(service="kl-code", keyring_module=ExplodingKeyring)
 
-    backend.set("openai", "sk-test")
+    with pytest.warns(RuntimeWarning, match="falling back to in-memory"):
+        backend.set("openai", "sk-test")
     assert backend.available is False
     assert backend.get("openai") == "sk-test"
 
@@ -127,15 +141,31 @@ def test_keyring_backend_falls_back_to_memory_on_runtime_error():
     assert backend.safe_snapshot() == {}
 
 
-def test_keyring_backend_delete_error_is_idempotent():
-    backend = KeyringBackend(service="kl-code", keyring_module=FailingDeleteKeyring)
+def test_keyring_backend_password_delete_error_keeps_keyring():
+    backend = KeyringBackend(service="kl-code", keyring_module=FakeKeyring)
     backend.set("openai", "sk-test")
 
-    backend.clear("openai")
     backend.clear("missing")
 
+    assert backend.available is True
+    backend.set("after-delete-error", "sk-after")
+    assert backend.get("after-delete-error") == "sk-after"
+
+
+def test_keyring_backend_get_failure_warns_and_resets_snapshot():
+    backend = KeyringBackend(service="kl-code", keyring_module=GetFailsKeyring)
+    backend.set("openai", "sk-test")
+    assert backend.safe_snapshot() == {"openai": True}
+
+    with pytest.warns(RuntimeWarning, match="falling back to in-memory"):
+        assert backend.get("openai") is None
+
     assert backend.available is False
-    assert backend.get("openai") is None
+    assert backend.safe_snapshot() == {}
+
+    backend.set("openai", "memory-test")
+    assert backend.get("openai") == "memory-test"
+    assert backend.safe_snapshot() == {"openai": True}
 
 
 def test_keyring_backend_auto_detection_ignores_fail_backend(monkeypatch):
@@ -155,11 +185,12 @@ def test_keyring_backend_auto_detection_ignores_fail_backend(monkeypatch):
 def test_load_env_file_parses_comments_quotes_and_empty_lines(tmp_path):
     env = tmp_path / ".env"
     env.write_text(
-        "# comment\n\nKEY=value # comment\nQUOTED=\"quoted value\"\nEQ='a=b'\n",
+        "# comment\n\nKEY=value # comment\nHASH=abc#def\nQUOTED=\"quoted value\"\nEQ='a=b'\n",
         encoding="utf-8",
     )
     assert load_env_file(env) == {
         "KEY": "value",
+        "HASH": "abc#def",
         "QUOTED": "quoted value",
         "EQ": "a=b",
     }

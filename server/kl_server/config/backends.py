@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import warnings
 from pathlib import Path
 from typing import Protocol
 
@@ -8,6 +9,13 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
 _AUTO_KEYRING = object()
+
+try:
+    import keyring.errors
+except ImportError:
+    _PasswordDeleteError = Exception
+else:
+    _PasswordDeleteError = getattr(keyring.errors, "PasswordDeleteError", Exception)
 
 
 class CredentialFileError(Exception):
@@ -105,6 +113,12 @@ class KeyringBackend:
     def _fallback_to_memory(self) -> None:
         self._keyring = None
         self._memory = {}
+        self._refs = set(self._memory)
+        warnings.warn(
+            "keyring backend failed; falling back to in-memory",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     def set(self, ref, secret):
         if self._keyring is not None:
@@ -132,6 +146,8 @@ class KeyringBackend:
         if self._keyring is not None:
             try:
                 self._keyring.delete_password(self.service, ref)
+            except _PasswordDeleteError:
+                pass
             except Exception:
                 self._fallback_to_memory()
         self._refs.discard(ref)
@@ -139,6 +155,7 @@ class KeyringBackend:
             self._memory.pop(ref, None)
 
     def safe_snapshot(self):
+        """Return refs known to this process; for keyring-backed stores use has(ref) for authoritative checks."""
         return {ref: True for ref in self._refs}
 
 
@@ -150,7 +167,7 @@ def _strip_inline_comment(value: str) -> str:
                 quote = None
         elif char in ('"', "'"):
             quote = char
-        elif char == "#":
+        elif char == "#" and (index == 0 or value[index - 1].isspace()):
             return value[:index]
     return value
 
