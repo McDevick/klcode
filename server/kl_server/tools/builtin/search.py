@@ -13,16 +13,21 @@ class GrepTool(Tool):
 
     async def execute(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         root = Path(ctx.workspace).resolve()
+        search_root = (root / args.get("path", ".")).resolve()
+        if not search_root.is_relative_to(root):
+            return ToolResult(ok=False, output="", error="path outside workspace")
         pattern = re.compile(args["pattern"])
         matches = []
-        for path in root.rglob("*"):
-            if path.is_file():
-                try:
-                    text = path.read_text(encoding="utf-8", errors="ignore")
-                except OSError:
-                    continue
-                if pattern.search(text):
-                    matches.append(str(path.relative_to(root)))
+        for path in search_root.rglob("*"):
+            resolved = path.resolve()
+            if not resolved.is_relative_to(root) or not resolved.is_file():
+                continue
+            try:
+                text = resolved.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            if pattern.search(text):
+                matches.append(str(resolved.relative_to(root)))
         return ToolResult(ok=True, output="\n".join(matches))
 
 
@@ -33,5 +38,9 @@ class GlobTool(Tool):
 
     async def execute(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         root = Path(ctx.workspace).resolve()
-        matches = [str(p.relative_to(root)) for p in root.glob(args["pattern"]) if p.is_file()]
+        matches = []
+        for p in root.glob(args["pattern"]):
+            resolved = p.resolve()
+            if resolved.is_relative_to(root) and resolved.is_file():
+                matches.append(str(resolved.relative_to(root)))
         return ToolResult(ok=True, output="\n".join(matches))
