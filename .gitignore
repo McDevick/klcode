@@ -1,2 +1,5 @@
 # 需求文件
 requirement_file/
+
+# Claude Code worktrees / scratch
+.claude/
