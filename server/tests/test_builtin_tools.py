@@ -102,3 +102,70 @@ async def test_write_to_directory_returns_error(tmp_path):
     result = await WriteFileTool().execute({"path": ".", "content": "x"}, ctx)
     assert not result.ok
     assert result.error
+
+
+import json
+import subprocess
+
+import pytest
+
+from kl_server.tools.base import ToolContext
+from kl_server.tools.builtin.filesystem import DeleteFileTool
+from kl_server.tools.builtin.git import GitStatusTool
+from kl_server.tools.builtin.patch import ApplyPatchTool
+from kl_server.tools.builtin.shell import RunCommandTool
+from kl_server.tools.builtin.task import TaskManageTool
+from kl_server.tools.builtin.validation import RunTestsTool
+
+
+@pytest.mark.asyncio
+async def test_delete_file(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    (tmp_path / "a.txt").write_text("x", encoding="utf-8")
+    result = await DeleteFileTool().execute({"path": "a.txt"}, ctx)
+    assert result.ok is True
+    assert not (tmp_path / "a.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_run_command_returns_structured_output(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    result = await RunCommandTool().execute({"command": "python -c \"import sys; sys.exit(3)\""}, ctx)
+    payload = json.loads(result.output)
+    assert payload["exit_code"] == 3
+
+
+@pytest.mark.asyncio
+async def test_apply_patch_single_hunk(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    (tmp_path / "a.txt").write_text("one\ntwo\n", encoding="utf-8")
+    diff = "--- a.txt\n+++ b.txt\n@@ -1,2 +1,2 @@\n-one\n+one!\n two\n"
+    result = await ApplyPatchTool().execute({"patch": diff}, ctx)
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "one!\ntwo\n"
+
+
+@pytest.mark.asyncio
+async def test_git_status_in_repo(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=tmp_path)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path)
+    result = await GitStatusTool().execute({}, ctx)
+    assert result.ok is True
+
+
+@pytest.mark.asyncio
+async def test_validation_tool_reports_failed_tests(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    (tmp_path / "test_x.py").write_text("def test_x(): assert False\n", encoding="utf-8")
+    result = await RunTestsTool().execute({}, ctx)
+    payload = json.loads(result.output)
+    assert payload["exit_code"] != 0
+
+
+@pytest.mark.asyncio
+async def test_task_manage_crud(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    created = await TaskManageTool().execute({"action": "create", "title": "fix bug"}, ctx)
+    listed = await TaskManageTool().execute({"action": "list"}, ctx)
+    assert created.ok and '"fix bug"' in listed.output

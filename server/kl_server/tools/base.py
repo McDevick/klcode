@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from kl_server.models.action import ToolResult
@@ -8,6 +8,7 @@ from kl_server.models.action import ToolResult
 class ToolContext:
     workspace: str
     task_id: str = ""
+    task_state: dict = field(default_factory=dict)
 
 
 class Tool(Protocol):
