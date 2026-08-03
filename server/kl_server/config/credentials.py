@@ -1,5 +1,7 @@
 from typing import Protocol
 
+from kl_server.config.backends import EncryptedFileBackend, KeyringBackend
+
 
 class CredentialStore(Protocol):
     def set(self, ref: str, secret: str) -> None: ...
@@ -27,3 +29,13 @@ class InMemoryCredentialStore:
 
     def safe_snapshot(self) -> dict[str, bool]:
         return {ref: True for ref in self._secrets}
+
+
+def create_credential_store(prefer_keyring: bool = True, fallback_path=None, password: str = ""):
+    if prefer_keyring:
+        store = KeyringBackend(service="kl-code")
+        if store._keyring is not None:
+            return store
+    if fallback_path is not None and password:
+        return EncryptedFileBackend(fallback_path, password=password)
+    return InMemoryCredentialStore()

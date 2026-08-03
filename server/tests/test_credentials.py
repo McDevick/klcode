@@ -1,8 +1,52 @@
 import pytest
 from pydantic import ValidationError
 
+from kl_server.config.backends import EncryptedFileBackend, KeyringBackend, load_env_file
 from kl_server.config.config import AppConfig, ProviderConfig
 from kl_server.config.credentials import InMemoryCredentialStore
+
+
+class FakeKeyring:
+    store: dict[tuple, str] = {}
+
+    @classmethod
+    def set_password(cls, service, ref, secret):
+        cls.store[(service, ref)] = secret
+
+    @classmethod
+    def get_password(cls, service, ref):
+        return cls.store.get((service, ref))
+
+    @classmethod
+    def delete_password(cls, service, ref):
+        cls.store.pop((service, ref), None)
+
+
+def test_encrypted_file_roundtrip_hides_secret(tmp_path):
+    backend = EncryptedFileBackend(tmp_path / "secrets.enc", password="pw")
+    backend.set("openai", "sk-test")
+    assert backend.get("openai") == "sk-test"
+    raw = (tmp_path / "secrets.enc").read_bytes()
+    assert b"sk-test" not in raw
+
+
+def test_keyring_backend_uses_os_keyring():
+    backend = KeyringBackend(service="kl-code", keyring_module=FakeKeyring)
+    backend.set("openai", "sk-test")
+    assert FakeKeyring.store[("kl-code", "openai")] == "sk-test"
+
+
+def test_keyring_backend_falls_back_in_memory():
+    backend = KeyringBackend(service="kl-code", keyring_module=None)
+    backend.set("openai", "sk-test")
+    assert backend.get("openai") == "sk-test"
+    assert backend.safe_snapshot() == {"openai": True}
+
+
+def test_load_env_file_parses_and_marks_plaintext(tmp_path):
+    env = tmp_path / ".env"
+    env.write_text("# comment\nKL_OPENAI_KEY=sk-env\n", encoding="utf-8")
+    assert load_env_file(env) == {"KL_OPENAI_KEY": "sk-env"}
 
 
 def test_safe_snapshot_hides_credentials():
