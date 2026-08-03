@@ -58,6 +58,26 @@
 - 完成时补充 commit hash、验证输出、评审结论和人工干预。
 - 若发现范围越界或未授权功能，必须立即记录并停止。
 
+## 2026-08-03 Task 0.3/0.4 最终评审（Superpowers）
+
+- 触发的技能：`requesting-code-review`、`verification-before-completion`、`subagent-driven-development`
+- Reviewer：subagent `019fc757-317c-7ca2-a6c2-1508a5c3e57b`
+- 评审范围：`3cc121d..dd1cb9b`，覆盖 PR #3 与 PR #4 的完整 diff。
+- 结论：Ready to merge = Yes；无 Critical/Important。
+- Minor：
+  - `cli/package-lock.json` 的 `resolved` 地址指向 `registry.npmmirror.com`，后续应显式 `.npmrc` 或用官方 registry 重生成。
+  - `.gitlab-ci.yml` 的 NodeSource 安装建议先下载再执行，避免管道退出码掩盖下载失败。
+- 验证证据：server pytest `1 passed`；CLI `npm test` `1 passed`（0.3/0.4 worktree）；YAML OK；`git diff --check` 干净。
+
+## 2026-08-03 Task 1.1：Core models（进行中）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`server/kl_server/models/` 下 `action.py`、`feedback.py`、`task.py` 与 `server/tests/test_models.py`。
+- 计划：从 `worktree-task-0.4-ci` 创建 stacked worktree，派 fresh implementer 按 TDD 红-绿实现并提交，再进行两阶段评审。
+- 当前状态：等待 implementer。
+- Worktree：`.claude/worktrees/task-1.1-models`
+- 分支：`worktree-task-1.1-models`
+
 ## 2026-08-03 Task 0.3：Makefile and test runner（进行中）
 
 - 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
