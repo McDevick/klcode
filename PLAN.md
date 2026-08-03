@@ -213,7 +213,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 1.6 | Feedback sensors | Done (`e46c504`) |
 | 1.7 | SQLite storage and sessions/tasks | Done (`4e7761f`) |
 | 1.8 | Config and credentials | Done (`4f92975`) |
-| 1.9 | Basic AgentLoop | Pending |
+| 1.9 | Basic AgentLoop | Done (`df5993d`) |
 | 1.10 | Credential backends (keyring / encrypted file / .env) | Pending |
 | 1.11 | Complete built-in tool set (shell/git/patch/validation/task/delete) | Pending |
 | 1.12 | ToolExecutor timeout and output truncation | Pending |
@@ -1325,7 +1325,7 @@ git commit -m "feat: add credential-safe config layer"
 - Create: `server/kl_server/core/agent_loop.py`
 - Test: `server/tests/test_agent_loop.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import pytest
@@ -1357,12 +1357,12 @@ async def test_loop_runs_tool_and_stops():
     assert len(provider.calls) == 2
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_agent_loop.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement basic loop**
+- [x] **Step 3: Implement basic loop**
 
 ```python
 import json
@@ -1408,12 +1408,12 @@ class AgentLoop:
         return "MAX_ITERATIONS"
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_agent_loop.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/core/agent_loop.py server/tests/test_agent_loop.py
