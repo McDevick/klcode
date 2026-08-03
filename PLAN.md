@@ -207,7 +207,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 0.4 | CI configuration | Done (`dd1cb9b`) |
 | 1.1 | Core models | Done (`0b78bda`) |
 | 1.2 | Provider abstraction and mock | Done (`2864928`) |
-| 1.3 | Tool interface and registry | Pending |
+| 1.3 | Tool interface and registry | Done (`67988b7`) |
 | 1.4 | Built-in file/search tools | Pending |
 | 1.5 | ToolExecutor error isolation | Pending |
 | 1.6 | Feedback sensors | Pending |
@@ -737,7 +737,7 @@ git commit -m "feat: add provider abstraction and mock provider"
 - Create: `server/kl_server/tools/registry.py`
 - Test: `server/tests/test_tool_registry.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import pytest
@@ -769,12 +769,12 @@ def test_registry_unknown_tool():
         registry.get("missing")
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_tool_registry.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement tool layer**
+- [x] **Step 3: Implement tool layer**
 
 ```python
 # server/kl_server/tools/base.py
@@ -827,12 +827,12 @@ class ToolRegistry:
         return await self.get(name).execute(args, ctx)
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_tool_registry.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/tools server/tests/test_tool_registry.py
