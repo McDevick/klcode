@@ -204,7 +204,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 0.1 | Server package skeleton | Done (`7d4554d`) |
 | 0.2 | CLI package skeleton | Done (`c45547b`) |
 | 0.3 | Makefile and test runner | Done (`908b864`) |
-| 0.4 | CI configuration | Pending |
+| 0.4 | CI configuration | Done (`dd1cb9b`) |
 | 1.1 | Core models | Pending |
 | 1.2 | Provider abstraction and mock | Pending |
 | 1.3 | Tool interface and registry | Pending |
@@ -409,7 +409,7 @@ git commit -m "chore: add make test and dev runner"
 - Modify: `.github/workflows/ci.yml`
 - Create: `.gitlab-ci.yml`
 
-- [ ] **Step 1: Update GitHub Actions**
+- [x] **Step 1: Update GitHub Actions**
 
 ```yaml
 name: CI
@@ -433,34 +433,38 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install dependencies
-        run: make install
+        run: make ci
 
       - name: Run tests
         run: make test
 ```
 
-- [ ] **Step 2: Create GitLab CI**
+- [x] **Step 2: Create GitLab CI**
 
 ```yaml
 image: python:3.11
 
 unit-test:
   stage: test
+  before_script:
+    - apt-get update
+    - apt-get install -y curl
+    - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    - apt-get install -y nodejs
   script:
-    - apt-get update && apt-get install -y nodejs npm
-    - make install
+    - make ci
     - make test
 ```
 
-- [ ] **Step 3: Verify CI files are valid YAML**
+- [x] **Step 3: Verify CI files are valid YAML**
 
 Run: `python -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml')); yaml.safe_load(open('.gitlab-ci.yml'))"`
 Expected: no exception.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add .github/workflows/ci.yml .gitlab-ci.yml

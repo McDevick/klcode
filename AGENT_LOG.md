@@ -77,5 +77,12 @@
 
 - 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
 - 范围：`.github/workflows/ci.yml` 补依赖安装与 `unit-test` job、新建 `.gitlab-ci.yml`，并验证 YAML 可解析。
-- 计划：Task 0.3 完成后从更新后的 `dev` 创建独立 worktree，派 fresh implementer subagent，提交后两阶段评审并创建 PR。
-- 当前状态：等待 Task 0.3 完成。
+- 计划：Task 0.3 完成后从 `worktree-task-0.3-make` 创建 stacked worktree，派 fresh implementer subagent，提交后两阶段评审并创建 PR。
+- 当前状态：实现完成，等待评审。
+- Worktree：`.claude/worktrees/task-0.4-ci`
+- 分支：`worktree-task-0.4-ci`
+- 基分支：`worktree-task-0.3-make`（PR 目标仍为 `dev`，待 0.3 合并后 diff 收敛）
+- Implementer：subagent `019fc749-c49b-7d21-a9e5-2dab8e412389`
+- Commit：`dd1cb9b`
+- 验证：YAML OK；server `1 passed`；cli `npm ci` + `1 passed`；本地未运行真实 runner。
+- 评审：spec 合规通过；质量评审通过，无 Critical/Important；Minor 为 GitLab NodeSource 脚本加固、镜像 tag 漂移和 lockfile mirror registry，非阻塞。
