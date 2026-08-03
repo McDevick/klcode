@@ -58,6 +58,20 @@
 - 完成时补充 commit hash、验证输出、评审结论和人工干预。
 - 若发现范围越界或未授权功能，必须立即记录并停止。
 
+## 2026-08-03 Task 1.6：Feedback sensors（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`server/kl_server/core/feedback.py` 与 `server/tests/test_feedback.py`。
+- 计划：从最新 `dev` 创建独立 worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后合入 `dev`。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-1.6-feedback`
+- 分支：`worktree-task-1.6-feedback`
+- Implementer：subagent `019fc79d-703f-7a10-b1a0-cd560f6190cd`
+- Commit：`e6b4f5d`、`e46c504`（评审修复）
+- TDD 红：`ModuleNotFoundError: No module named 'kl_server.core.feedback'`
+- TDD 绿：`7 passed`；完整 server 套件 `46 passed`
+- 评审：spec 合规通过；质量评审通过（原始 summary、UNKNOWN/截断/大小写覆盖）
+
 ## 2026-08-03 Task 1.5：ToolExecutor error isolation（已完成并验证）
 
 - 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`

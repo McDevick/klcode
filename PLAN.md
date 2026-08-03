@@ -210,7 +210,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 1.3 | Tool interface and registry | Done (`67988b7`) |
 | 1.4 | Built-in file/search tools | Done (`f46b628`) |
 | 1.5 | ToolExecutor error isolation | Done (`d5bb526`) |
-| 1.6 | Feedback sensors | Pending |
+| 1.6 | Feedback sensors | Done (`e46c504`) |
 | 1.7 | SQLite storage and sessions/tasks | Pending |
 | 1.8 | Config and credentials | Pending |
 | 1.9 | Basic AgentLoop | Pending |
@@ -1065,7 +1065,7 @@ git commit -m "feat: isolate tool crashes from agent loop"
 - Create: `server/kl_server/core/feedback.py`
 - Test: `server/tests/test_feedback.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from kl_server.core.feedback import classify_command_result
@@ -1087,12 +1087,12 @@ def test_timeout_is_timeout():
     assert feedback.category == FeedbackCategory.TIMEOUT
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_feedback.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement feedback sensor**
+- [x] **Step 3: Implement feedback sensor**
 
 ```python
 from kl_server.models.feedback import Feedback, FeedbackCategory
@@ -1109,12 +1109,12 @@ def classify_command_result(exit_code: int | None, stdout: str, stderr: str) -> 
     return Feedback(category=FeedbackCategory.UNKNOWN, summary=combined[-1000:])
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_feedback.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/core/feedback.py server/tests/test_feedback.py
