@@ -38,5 +38,7 @@ def test_app_config_roundtrip():
         },
         default_provider="openai",
     )
-    assert app.default_provider == "openai"
-    assert app.providers["openai"].credential_ref == "openai"
+    payload = app.model_dump()
+    loaded = AppConfig.model_validate(payload)
+    assert loaded == app
+    assert loaded.providers["openai"].credential_ref == "openai"
