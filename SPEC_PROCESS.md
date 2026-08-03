@@ -300,7 +300,7 @@
 
 ---
 
-## 9. [claude code] Phase 0 执行记录（Task 0.1 / 0.2）
+## 9. [claude code][cold start check] Phase 0 执行记录（Task 0.1 / 0.2）
 
 > 本节由 Claude Code 在正式实现会话中编写，时间：2026-08-03。
 > 目的：记录 Phase 0 Bootstrap 的 Task 0.1（server 包骨架）与 Task 0.2（cli 包骨架）的执行过程、暂停提问点、SPEC/PLAN 暴露的缺陷与模糊点，供后续任务（0.3/0.4/1.x）参考。
