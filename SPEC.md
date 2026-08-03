@@ -280,7 +280,7 @@ KL Code 是一个长期可用的本地 coding agent。它面向“在已有代�
 - skill 是 manifest + Markdown 内容，按任务类型/关键词按需加载。
 - hook 支持事件：任务开始/结束、动作前/后、反馈生成、审批请求/完成、错误、中止。
 - hook 支持 `command` 和 `http` 两类，payload 自动脱敏。
-- MCP 工具通过 adapter 进入 `ToolRegistry`。
+- MCP 工具通过 adapter 进入 `ToolRegistry`；第一版实现 stdio 与 streamable-http 两种传输，传输不可用时返回结构化工具错误。
 - 用户工具使用 Python 插件 API，与内置工具同等治理。
 
 输出：
@@ -308,7 +308,7 @@ KL Code 是一个长期可用的本地 coding agent。它面向“在已有代�
 
 - `kl init`
 - `kl config provider add/list/test`
-- `kl config key set/test/clear`
+- `kl config key set/test/clear/show`
 - `kl server start/stop/status`
 - `kl run "<task>"`
 - `kl tui`
@@ -479,7 +479,7 @@ flowchart TD
 ## 6. 数据模型
 
 - `Session`：id、名称、工作区路径、provider/model、规则快照、状态、时间戳。
-- `Task`：id、session_id、任务描述、状态、工作区模式、分支/快照引用、token 用量、摘要、时间戳。
+- `Task`：id、session_id、任务描述、状态、工作区模式、分支/快照引用、token 用量、摘要、时间戳；预留 `parent_task_id` 供后续 subagent 使用。
 - `Action`：id、task_id、序号、工具名、参数、治理结果、沙箱结果、审批状态、执行结果。
 - `Approval`：id、action_id、危险等级、原因、结果、用户备注。
 - `Feedback`：id、task_id、action_id、类别、摘要、原始输出引用。
@@ -501,8 +501,9 @@ flowchart TD
 - `kl init` 通过隐藏输入录入 API key。
 - key 优先存入系统钥匙串：Windows Credential Manager、macOS Keychain、Linux Secret Service。
 - 钥匙串不可用时，允许带主密码的本地加密文件，并在初始化时说明风险。
+- 允许环境变量经 `.env` 加载作为可选来源（不写入源码），并在初始化时说明其明文风险。
 - 配置文件只保存 `credential_ref`。
-- 支持 `kl config key set/test/clear` 和 TUI `/key`。
+- 支持 `kl config key set/test/clear/show` 和 TUI `/key`。
 - `kl config key show` 只显示是否已配置。
 
 ### 7.2 分发
@@ -542,7 +543,7 @@ flowchart TD
 - 系统钥匙串在部分 Linux 环境可能不可用，加密文件 fallback 需要明确提示。
 - MCP server 和用户工具属于外部代码，存在数据泄露风险，需要信任边界和日志审计。
 - LLM 供应商接口差异可能导致行为不一致，provider adapter 需要独立测试。
-- subagent、WebUI、远程部署、Docker、语义检索、用户自定义斜杠指令为后续范围，在 `PLAN.md` 中记录为未完成项。
+- subagent、WebUI、远程部署、Docker 沙箱 / Docker 部署为后续范围（见 §12），未获用户允许前不得开工。
 
 ## 11. 领域与机制设计
 
@@ -571,3 +572,45 @@ Coding agent 的工具必须覆盖读代码、搜代码、改代码、执行命�
 - 移除 LLM 后仍可确定性验证，最符合本项目“机制必须可测试”的要求。
 
 反馈闭环、工具扩展、记忆和上下文管理提供基础可用实现；subagent、WebUI 和远程化作为后续扩展。
+
+## 12. 后续范围与开工门禁
+
+### 12.1 已记录但未授权的后续功能
+
+以下功能已记录为 KL Code 的后续版本方向，但不属于第一版范围：
+
+- Subagent 编排
+- WebUI
+- 远程部署
+- Docker 沙箱 / Docker 部署
+
+这些内容出现在 SPEC 中只代表“被纳入长期方向”，不代表“已授权开工”。
+
+### 12.2 开工门禁
+
+- 任何后续功能必须由用户明确允许后才能进入 `PLAN.md` 并开始实现。
+- 允许的表述包括用户明确说“开始”“允许”“纳入本版本”等；不能由 agent 自行推断。
+- 若 subagent 或执行流程发现自己在实现未授权后续功能，必须立即停止、回退该任务范围，并在 `AGENT_LOG.md` 记录越界原因。
+- 每项后续功能开工前必须更新本节状态和对应 PLAN 任务状态，并由用户确认。
+- 当前所有后续功能状态均为：未授权。
+
+### 12.3 扩展性预留（仅声明接口，不实现）
+
+以下接口预留用于保证后续版本扩展时不需要重写核心 harness：
+
+**Subagent**
+
+- `AgentLoop` 保持“provider -> action -> tool dispatch -> feedback”的固定主循环，subagent 以后作为 `ToolRegistry` 中的受治理工具接入。
+- 预留工具名：`spawn_subagent`、`await_subagent`、`list_subagents`、`abort_subagent`。
+- 预留 `Task.parent_task_id` 字段，用于表达父子任务关系。
+- `ToolResult.meta` 预留用于携带 subagent id、状态和结果引用。
+- `TaskManager` 后续可以在此基础上增加任务图持久化，而不改变 API 主形态。
+
+**WebUI**
+
+- FastAPI REST + WebSocket 是唯一客户端 API，TUI 只是其中一个消费者。
+- API 统一使用 `/api/v1` 前缀，WebUI 复用任务、会话、配置、事件流接口。
+- 服务端不保存 TUI 专属状态，避免 WebUI 需要复制领域逻辑。
+- 远程部署预留 TLS、认证、CORS 和 token/SSO 接入点。
+
+这些预留只声明接口和兼容边界，不改变 §12.2 的开工门禁。

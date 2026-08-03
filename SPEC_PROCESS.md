@@ -147,6 +147,7 @@
 - 智能体建议第一版只做 Git 仓库，被用户修正为同时支持非 Git 目录。
 - 智能体建议第一版上下文压缩以确定性裁剪为主，被用户修正为第一版就整合 LLM 摘要。
 - 智能体推荐反馈闭环作为重点维度，用户选择治理；设计随之调整。
+- 后续范围原包含语义检索、用户自定义斜杠指令等方向，用户要求只保留 subagent、WebUI、远程部署、Docker 沙箱/部署，并为未授权后续功能增加开工门禁。
 
 ## 5. 反思
 
@@ -177,3 +178,122 @@
 - 根据结果修订 SPEC/PLAN，并在本文件记录修订前后差异。
 
 当前状态：尚未执行，等待 Phase 0/1 有可实现的 task 后开始。
+
+---
+
+## 7. [claude code] 设计复查与补全记录
+
+> 本节由 **Claude Code**（独立于主开发 agent 的复查会话）编写，时间：2026-08-03。
+> 目的：在正式实现前，对照 `requirement_file/项目要求.md` 逐项核对 `SPEC.md` 与 `PLAN.md`，记录发现的问题、采取的修正与关键取舍。
+> 本节之后的补充内容一律以 `[claude code]` 前缀标注，与原 Superpowers 流程产出区分。
+
+### 7.1 复查方法
+
+- 逐项核对需求文档 §1.1–§6.2 与 SPEC 的 11 项结构要求、PLAN 的 task 覆盖。
+- 检查"SPEC 承诺的机制"与"PLAN 中是否有对应实现任务"是否一一对应。
+- 检查任务间的数据流是否闭环（主循环 ↔ 治理 ↔ 反馈 ↔ 上下文 ↔ 日志 ↔ 审批）。
+
+### 7.2 发现的问题
+
+**总体结论：设计骨架合格（SPEC 结构完整覆盖需求 11 项、PLAN TDD 纪律好、治理维度拆解清晰），但 PLAN 的落地完整性不足——大量 SPEC 承诺的机制没有对应实现任务，尤其是"主循环串联治理/反馈/日志"这条项目立意的核心线。**
+
+#### 重要缺口（直接影响硬性验收）
+
+1. **凭据持久化未落地**：需求 §2.1 为必做项，SPEC §7.1 承诺"钥匙串 + 加密文件 fallback"，但 PLAN 只有 `InMemoryCredentialStore`（测试假实现），无 keyring/加密文件 backend 任务，`kl init`/`kl config key` 无法真正存 key → 验收标准 1 无法通过。
+2. **内置工具大量占位未实现**：SPEC §3.5 承诺 17 个内置工具，PLAN 只实现 6 个；`apply_patch`（用户明确接受加入）、`run_command`、git 工具、`run_tests/run_lint/typecheck`、`delete_file`、`task_manage`（用户明确要求）只有目录占位 → 验收标准 3 无法通过。
+3. **主循环与治理/反馈/上下文/日志未串联**：AgentLoop 只是"调 provider → 执行工具 → 循环"，Guardrail、Feedback、ContextAssembler、EventLogger 各自孤立，无集成任务 → 需求 §4.4 演示 ②、验收标准 4"反馈回灌"无法落地，这也是 harness 内核的立意缺失。
+4. **审批/暂停/恢复链路未闭环**：`awaiting_approval`/`paused` 状态、`/pause`/`/continue`/`/abort`、审批面板都有，但 HITL→WS 通知→TUI 操作→结果回传→AgentLoop 恢复的中间链路无任务。
+5. **daemon 认证未落地**：SPEC §4.2 承诺"随机本地 token"，但 API/CLI client 无认证实现。
+6. **hook 只实现一半**：SPEC 承诺 `command` 与 `http` 两类，Task 4.5 只实现 `command`。
+
+#### 次要遗漏
+
+- 非 Git 工作区"更严格审批"无 `workspace_mode` 概念，未落地。
+- `.env` 支持未提及（需求 §2.1 明确写了）。
+- Session 的 provider/model 未持久化（sessions 表只有 3 列，与 SPEC §3.1 不符）。
+- 工具超时未实现（SPEC §3.5 边界承诺）。
+- MCP 只有 stub（`not connected`），是否算"可运行的最低实现"存疑。
+- CLI 顶层命令（`kl init`/`kl run`/`kl server`）无实现任务。
+- `feedback_demo` 深度不够：是"分类器演示"，非需求 §4.4 要求的"agent 收到失败后改变下一步"闭环演示。
+- WebSocket 测试缺失（`test_ws.py` 只测 `/health`）。
+- 小不一致：`kl config key show`（§7.1 有）未进 §3.10 命令列表；同步 `sqlite3` 在 async 环境下有阻塞风险。
+
+### 7.3 采取的修正
+
+**SPEC.md（3 处小修正）：**
+
+- §3.10 补上 `kl config key show` 命令。
+- §7.1 增加 `.env` 可选来源并说明明文风险。
+- §3.9 明确 MCP 第一版实现 stdio 与 streamable-http 传输。
+
+**PLAN.md（新增 13 个任务，全部按原 TDD 格式：失败测试 → 红 → 实现 → 绿 → commit）：**
+
+| 任务 | 内容 | 对应缺口 |
+|---|---|---|
+| 1.10 | 凭据后端（keyring / 加密文件 / .env） | 缺口 1 |
+| 1.11 | 补齐内置工具（shell/git/patch/validation/task_manage/delete_file） | 缺口 2 |
+| 1.12 | ToolExecutor 超时与输出截断 | 次要 |
+| 1.13 | 反馈回灌进 AgentLoop | 缺口 3 |
+| 2.8 | Guardrail 集成进 ToolExecutor | 缺口 3 |
+| 2.9 | 审计日志实时写入 AgentLoop | 缺口 3 |
+| 2.10 | 非 Git 工作区更严格审批 | 次要 |
+| 3.7 | daemon token 认证 | 缺口 5 |
+| 3.8 | CLI 顶层命令（init/run/server） | 次要 |
+| 3.9 | 审批 + 暂停/继续/中止端到端 | 缺口 4 |
+| 4.8 | HTTP hook | 缺口 6 |
+| 4.9 | MCP client 传输 | 次要 |
+| 4.10 | ContextAssembler 接入 AgentLoop | 缺口 3 |
+
+另修正：Task 1.7 sessions 表补 provider/model/status 字段；Task 5.1 `feedback_demo` 升级为闭环演示；目录结构、任务依赖、跟踪表同步更新。
+
+### 7.4 关键取舍
+
+1. **apply_patch 用纯 Python 最小 diff 应用器**，不用 `patch` 二进制 → Windows 下可测可用。
+2. **审批链路用 `on_approval` 回调**驱动 AgentLoop 挂起/恢复，单测不依赖真实 WebSocket → 保持确定性可测；WS 只做广播与回传的接线。
+3. **MCP 用官方 `mcp` SDK**，stdio 为单测覆盖路径，streamable-http 记为手动集成项。
+4. **`Guardrail.check` 保持返回单字符串**，`action_id` 由 ToolExecutor 注册进 HITL → 不破坏既有 Task 2.5 测试。
+5. **`AgentLoop` 新参数全部带默认值**（logger/context/on_approval）→ 向后兼容，既有 Task 1.9 测试不动。
+
+### 7.5 反思
+
+这次复查印证了 SPEC_PROCESS §5 中"第一版范围偏大"的判断：范围大导致 task 拆分时**漏掉了把零件装起来的集成任务**——SPEC 对机制的描述是完整的，但 PLAN 的任务列表里"模块各自存在"和"模块互相连通"是两回事，后者被忽略了。教训：writing-plans 阶段应额外做一遍"SPEC 承诺 → 实现任务"的双向矩阵核对，而不是只看模块内部设计。
+
+---
+
+## 8. [codex] 二次复查与补全记录
+
+> 时间：2026-08-03
+> 内容：在 Claude Code 补全后，对 `SPEC.md` 和 `PLAN.md` 再做一轮完整性复查。
+
+### 8.1 发现的问题
+
+1. **OpenAI 兼容 provider 缺失**：SPEC §3.4 要求第一版实现 OpenAI 兼容接口，但 PLAN 只有 `MockProvider` 和 provider 抽象，真实 LLM 路径无法运行。
+2. **服务端 REST 路由缺失**：Task 3.8 的 CLI 依赖 `/api/v1/config/check`、`/api/v1/tasks` 等路由，但 Task 3.1 只实现 `/health`。
+3. **`apply_patch` 可越界写文件**：工具从 patch 头解析目标路径，但治理只检查 `args["path"]`，导致补丁可写入工作区外。
+4. **没有应用装配任务**：各模块分别可测，但没有任务把 config、provider、tool registry、guardrail、executor、logger、memory、context、API 组合成可运行服务。
+5. **扩展模块没有接入主循环**：skill、hook、MCP、用户插件各自存在，但没有接线到 `AgentLoop` 或 `ToolRegistry`。
+6. **插件工具接口与 `ToolRegistry` 不一致**：Task 4.7 只加载 `execute` 函数，而工具注册表要求 `Tool` 对象。
+
+### 8.2 采取的修正
+
+- 新增 Task 1.14：OpenAI-compatible provider、`load_app_config`、`build_provider_registry`。
+- 新增 Task 3.10：session/task/provider/model/key 的 REST 路由。
+- 新增 Task 4.11：hook、skill、MCP、用户插件接入 harness。
+- 新增 Task 5.6：应用 bootstrap 和组件装配。
+- 修正 Task 1.11：`apply_patch` 自行校验目标路径必须在工作区内。
+- 修正 Task 4.7：插件必须导出 `TOOL` 对象，而不是裸 `execute` 函数。
+- 统一 `create_app` 签名，保留 daemon token 认证参数。
+- 更新任务依赖、仓库布局和任务跟踪表。
+
+### 8.3 当前结论
+
+复查后未再发现会阻止实现开始的结构性缺口。剩余风险主要是实现时的接口细节，例如 SQLite 同步调用、真实 keyring 可用性和 MCP streamable-http 的集成测试，这些应在对应 task 的验证阶段暴露并修正。
+
+### 8.4 后续扩展性预留
+
+用户要求 subagent 和 WebUI 在后续版本中具备扩展性。当前处理方式：
+
+- 在 SPEC §12.3 增加“仅声明接口，不实现”的扩展性预留。
+- subagent 预留为 `ToolRegistry` 中的受治理工具，并预留 `Task.parent_task_id`。
+- WebUI 复用 `/api/v1` REST + WebSocket，TUI 不持有领域状态。
+- 这些预留不改变开工门禁，未获用户允许前不进入 PLAN 实现任务。
