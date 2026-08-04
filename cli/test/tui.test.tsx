@@ -91,3 +91,13 @@ test('config wizard accepts fields and saves hidden key', async () => {
   });
   unmount();
 });
+
+test('app opens config wizard from /config', async () => {
+  const { stdin, lastFrame, unmount } = render(<App />);
+  stdin.write('/config');
+  stdin.write('\r');
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(lastFrame()).toContain('config wizard');
+  expect(lastFrame()).toContain('api key');
+  unmount();
+});
