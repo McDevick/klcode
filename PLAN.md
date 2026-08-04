@@ -239,7 +239,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 3.8 | CLI top-level commands (init/run/server) | Done (`aded815`) |
 | 3.9 | Approval and pause/resume/abort end-to-end | Done (`83e33ae`) |
 | 3.10 | REST routes for sessions/tasks/providers/models/keys | Done (`25d90fd`) |
-| 4.1 | MemoryStore | Pending |
+| 4.1 | MemoryStore | Done (`96e34db`, `985d313`) |
 | 4.2 | ContextAssembler token budget | Pending |
 | 4.3 | LLM summarizer | Pending |
 | 4.4 | SkillLoader | Pending |
@@ -3544,7 +3544,7 @@ SPEC §4.2 threat model promises "daemon 使用随机本地 token，默认仅本
 - Modify: `server/kl_server/main.py`
 - Test: `server/tests/test_auth.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from fastapi.testclient import TestClient
@@ -3568,7 +3568,7 @@ def test_no_token_means_no_auth():
     assert client.get("/health").status_code == 200
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_auth.py -v`
 Expected: FAIL (unauthenticated request currently returns 200).
@@ -4104,7 +4104,7 @@ def test_memory_stores_and_finds_by_tag(tmp_path):
 Run: `python -m pytest server/tests/test_memory.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement MemoryStore**
+- [x] **Step 3: Implement MemoryStore**
 
 ```python
 import sqlite3
@@ -4126,12 +4126,12 @@ class MemoryStore:
         return [content for content, stored_tags in rows if any(tag in stored_tags.split(",") for tag in tags)]
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_memory.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/memory server/tests/test_memory.py
