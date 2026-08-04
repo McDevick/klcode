@@ -67,9 +67,10 @@ class DeleteFileTool(Tool):
     schema = {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}
 
     async def execute(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-        root = Path(ctx.workspace).resolve()
-        target = (root / args["path"]).resolve()
-        if not target.is_relative_to(root):
+        workspace = Path(ctx.workspace)
+        root = workspace.resolve()
+        target = (workspace / args["path"]).absolute()
+        if not target.resolve().is_relative_to(root):
             return ToolResult(ok=False, output="", error="path outside workspace")
         try:
             target.unlink(missing_ok=True)

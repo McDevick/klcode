@@ -1,3 +1,4 @@
+import asyncio
 import json
 import subprocess
 from typing import Any
@@ -13,7 +14,8 @@ class RunCommandTool(Tool):
 
     async def execute(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         try:
-            proc = subprocess.run(
+            proc = await asyncio.to_thread(
+                subprocess.run,
                 args["command"],
                 shell=True,
                 cwd=ctx.workspace,
@@ -30,5 +32,6 @@ class RunCommandTool(Tool):
             "exit_code": proc.returncode,
             "stdout": proc.stdout[-8000:],
             "stderr": proc.stderr[-8000:],
+            "truncated": len(proc.stdout) > 8000 or len(proc.stderr) > 8000,
         }
         return ToolResult(ok=True, output=json.dumps(payload, ensure_ascii=False))
