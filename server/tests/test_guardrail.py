@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 
+import pytest
+
 from kl_server.core.guardrail import ScopeFence
 
 
@@ -124,3 +126,32 @@ def test_hitl_approve_and_reject():
     assert req.state == "pending"
     assert manager.approve("a1") == "approved"
     assert manager.reject("a2") == "rejected"
+
+
+def test_hitl_prevents_resolved_request_reopen():
+    manager = HITLManager()
+    manager.request("a1", "run_command", "rm -rf /")
+    manager.reject("a1")
+    with pytest.raises(ValueError):
+        manager.request("a1", "run_command", "rm -rf /")
+
+
+def test_hitl_approve_unknown_raises():
+    manager = HITLManager()
+    with pytest.raises(ValueError):
+        manager.approve("missing")
+
+
+def test_hitl_transitions_are_idempotent_and_locked():
+    manager = HITLManager()
+    manager.request("a1", "run_command", "pytest")
+    assert manager.approve("a1") == "approved"
+    assert manager.approve("a1") == "approved"
+    with pytest.raises(ValueError):
+        manager.reject("a1")
+
+    manager.request("a2", "run_command", "pytest")
+    assert manager.reject("a2") == "rejected"
+    assert manager.reject("a2") == "rejected"
+    with pytest.raises(ValueError):
+        manager.approve("a2")

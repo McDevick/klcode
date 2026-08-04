@@ -99,16 +99,26 @@ class HITLManager:
         self.requests: dict[str, ApprovalRequest] = {}
 
     def request(self, action_id: str, tool: str, command: str) -> ApprovalRequest:
+        if action_id in self.requests and self.requests[action_id].state != "pending":
+            raise ValueError(f"approval request already resolved: {action_id}")
         req = ApprovalRequest(action_id=action_id, tool=tool, command=command)
         self.requests[action_id] = req
         return req
 
     def approve(self, action_id: str) -> str:
-        self.requests[action_id].state = "approved"
-        return self.requests[action_id].state
+        req = self.requests.get(action_id)
+        if req is None:
+            raise ValueError(f"unknown approval request: {action_id}")
+        if req.state == "rejected":
+            raise ValueError(f"cannot approve rejected request: {action_id}")
+        req.state = "approved"
+        return req.state
 
     def reject(self, action_id: str) -> str:
         if action_id not in self.requests:
             self.requests[action_id] = ApprovalRequest(action_id=action_id, tool="", command="")
-        self.requests[action_id].state = "rejected"
-        return self.requests[action_id].state
+        req = self.requests[action_id]
+        if req.state == "approved":
+            raise ValueError(f"cannot reject approved request: {action_id}")
+        req.state = "rejected"
+        return req.state
