@@ -93,6 +93,12 @@
 - 上下文：本任务先建立 MCP server 配置目录与 stub 调用入口；Task 4.9 再接入 stdio/streamable-http transport。
 - 目标文件：`server/kl_server/mcp/`、`server/tests/test_mcp_adapter.py`。
 - 预期：`catalog()` 返回配置；`tool()` 在未接入 transport 前返回结构化 `not connected`。
+- 当前状态：已完成并验证。
+- TDD 红：`ModuleNotFoundError: No module named 'kl_server.mcp'`
+- TDD 绿：`server/tests/test_mcp_adapter.py` → `3 passed`
+- 完整 server 套件：`279 passed, 1 skipped`
+- 提交信息：`6aafbd4`（`feat: add mcp adapter registry`）
+- 评审结论：spec ✅；quality Approved（未实现 transport，未新增 `mcp` 依赖）。
 
 ## 2026-08-03 Task 0.1：Server package skeleton
 

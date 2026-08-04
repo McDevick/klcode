@@ -244,7 +244,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 4.3 | LLM summarizer | Done (`02c717d`, `841089d`) |
 | 4.4 | SkillLoader | Done (`d03cbdd`, `601557f`, `dde5bd1`) |
 | 4.5 | HookManager | Done (`269db1c`, `fd93d25`, `c0c7d5f`) |
-| 4.6 | MCP adapter | Pending |
+| 4.6 | MCP adapter | Done (`6aafbd4`) |
 | 4.7 | User tool plugin loader | Pending |
 | 4.8 | HTTP hook support | Pending |
 | 4.9 | MCP client transport (stdio / streamable-http) | Pending |
@@ -4404,7 +4404,7 @@ git commit -m "feat: add command hook manager"
 - Create: `server/kl_server/mcp/adapter.py`
 - Test: `server/tests/test_mcp_adapter.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from kl_server.mcp.adapter import McpAdapter
@@ -4415,12 +4415,12 @@ def test_mcp_adapter_registers_tool_descriptions():
     assert adapter.catalog() == [{"server": "my-server", "url": "http://localhost:9999"}]
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_mcp_adapter.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement adapter**
+- [x] **Step 3: Implement adapter**
 
 ```python
 class McpAdapter:
@@ -4433,12 +4433,12 @@ class McpAdapter:
 
 Extend `McpAdapter` with `tool(name, args)` that returns `ToolResult(ok=False, output="", error="not connected")` until the real MCP client transport is added.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_mcp_adapter.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/mcp server/tests/test_mcp_adapter.py
