@@ -31,7 +31,7 @@ def build_router() -> APIRouter:
     sessions: dict[str, dict] = {}
     tasks: dict[str, dict] = {}
     providers: list[dict] = []
-    keys: dict[str, str] = {}
+    keys: set[str] = set()
     next_session_id = 1
     next_task_id = 1
 
@@ -127,11 +127,11 @@ def build_router() -> APIRouter:
 
     @router.get("/keys")
     def list_keys():
-        return {"configured": list(keys)}
+        return {"configured": sorted(keys)}
 
     @router.post("/keys/{ref}")
     def set_key(ref: str, payload: KeyPayload):
-        keys[ref] = payload.secret
+        keys.add(ref)
         return {"configured": True}
 
     @router.get("/keys/{ref}")
@@ -140,7 +140,7 @@ def build_router() -> APIRouter:
 
     @router.delete("/keys/{ref}")
     def clear_key(ref: str):
-        keys.pop(ref, None)
+        keys.discard(ref)
         return {"configured": False}
 
     return router
