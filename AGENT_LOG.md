@@ -78,6 +78,15 @@
 - 完整 server 套件：`269 passed, 1 skipped`
 - 提交信息：`fix: honor hook exit codes and harden command hooks`
 
+### 2026-08-04 Task 4.5 复评审修复（已完成）
+
+- 评审要求：子进程 UTF-8 输出；顶层 hook 配置防御；拒绝空白字符串命令。
+- 修复内容：subprocess 环境注入 `PYTHONUTF8=1` 与 `PYTHONIOENCODING=utf-8`；`hooks` 非 dict 在 `__init__` 抛 `TypeError`；event 值非 list 时按 `ignore`/`abort` 策略处理；空白/纯空白命令按 hook 失败处理。
+- TDD 红：`7 failed`（非 ASCII 输出乱码、顶层配置未防御、空白命令被当作成功）
+- TDD 绿：`server/tests/test_hooks.py` → `22 passed`
+- 完整 server 套件：`276 passed, 1 skipped`
+- 提交信息：`fix: harden hook encoding and top-level config`
+
 ## 2026-08-03 Task 0.1：Server package skeleton
 
 **状态：已完成并验证**

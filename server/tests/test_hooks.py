@@ -66,6 +66,15 @@ def test_command_hook_accepts_argv_list_with_spaces(tmp_path):
     assert manager.run("event", {}) == ["argv-ok"]
 
 
+def test_command_hook_preserves_non_ascii_output(tmp_path):
+    command = make_command(tmp_path, "print('中文')")
+    manager = HookManager(
+        {"event": [{"type": "command", "command": command}]}
+    )
+
+    assert manager.run("event", {}) == ["中文"]
+
+
 def test_unknown_event_returns_empty_outputs():
     assert HookManager({}).run("missing", {}) == []
 
@@ -182,6 +191,51 @@ def test_nonzero_exit_stderr_is_truncated(tmp_path):
 def test_invalid_on_error_raises_value_error():
     with pytest.raises(ValueError, match="on_error"):
         HookManager({}, on_error="log")
+
+
+@pytest.mark.parametrize("on_error", ["ignore", "abort"])
+def test_hook_manager_rejects_non_dict_hooks(on_error):
+    with pytest.raises(TypeError, match="hooks must be a dict"):
+        HookManager(None, on_error=on_error)
+
+
+def test_event_with_non_list_hooks_is_ignored_with_error():
+    manager = HookManager({"event": None})
+
+    output = manager.run("event", {})
+
+    assert len(output) == 1
+    assert output[0].startswith("hook error:")
+    assert "must be a list" in output[0]
+
+
+def test_event_with_non_list_hooks_aborts():
+    manager = HookManager({"event": None}, on_error="abort")
+
+    with pytest.raises(TypeError, match="must be a list"):
+        manager.run("event", {})
+
+
+def test_blank_command_is_ignored_with_error():
+    manager = HookManager(
+        {"event": [{"type": "command", "command": "   "}]}
+    )
+
+    output = manager.run("event", {})
+
+    assert len(output) == 1
+    assert output[0].startswith("hook error:")
+    assert "blank" in output[0]
+
+
+def test_blank_command_aborts():
+    manager = HookManager(
+        {"event": [{"type": "command", "command": "   "}]},
+        on_error="abort",
+    )
+
+    with pytest.raises(ValueError, match="blank"):
+        manager.run("event", {})
 
 
 def test_missing_hook_type_is_ignored_with_error():

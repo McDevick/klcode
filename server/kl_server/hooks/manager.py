@@ -10,6 +10,7 @@ shell, so they should not be built from untrusted input.
 
 import json
 import logging
+import os
 import subprocess
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,10 @@ class HookManager:
         on_error: str = "ignore",
         timeout: float = 30.0,
     ):
+        if not isinstance(hooks, dict):
+            raise TypeError(
+                f"hooks must be a dict, got {type(hooks).__name__}"
+            )
         if on_error not in ("ignore", "abort"):
             raise ValueError("on_error must be 'ignore' or 'abort'")
         self.hooks = hooks
@@ -52,7 +57,18 @@ class HookManager:
 
     def run(self, event: str, payload: dict) -> list[str]:
         outputs = []
-        for hook in self.hooks.get(event, []):
+        event_hooks = self.hooks.get(event, [])
+        if not isinstance(event_hooks, list):
+            exc = TypeError(
+                f"hooks for event {event!r} must be a list, "
+                f"got {type(event_hooks).__name__}"
+            )
+            if self.on_error == "abort":
+                raise exc
+            logger.warning("Hook error for event %s: %s", event, exc)
+            return [f"hook error: {exc}"]
+
+        for hook in event_hooks:
             try:
                 if not isinstance(hook, dict):
                     raise ValueError(
@@ -74,6 +90,8 @@ class HookManager:
 
     def _run_command(self, command: object, payload: dict) -> str:
         if isinstance(command, str):
+            if not command.strip():
+                raise ValueError("command must not be blank")
             args = command
             shell = True
         elif (
@@ -91,6 +109,7 @@ class HookManager:
         proc = subprocess.run(
             args,
             shell=shell,
+            env=self._command_env(),
             input=json.dumps(payload),
             text=True,
             encoding="utf-8",
@@ -101,3 +120,9 @@ class HookManager:
         if proc.returncode != 0:
             raise HookCommandError(proc.returncode, proc.stderr)
         return proc.stdout.strip()
+
+    def _command_env(self) -> dict[str, str]:
+        env = os.environ.copy()
+        env["PYTHONUTF8"] = "1"
+        env["PYTHONIOENCODING"] = "utf-8"
+        return env
