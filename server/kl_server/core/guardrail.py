@@ -37,13 +37,45 @@ class DangerClassifier:
         "remove-item -recurse -force",
     ]
 
+    @staticmethod
+    def _is_root_target(token: str) -> bool:
+        lowered = token.lower()
+        return token in {"/", "\\"} or bool(re.match(r"^[a-z]:[\\/]*$", lowered)) or lowered == "c:\\"
+
+    @staticmethod
+    def _has_rm_force(tokens: list[str]) -> bool:
+        combined = [token.lower() for token in tokens[1:]]
+        if any(re.fullmatch(r"-[a-z]*r[a-z]*f[a-z]*", token) for token in combined):
+            return True
+        if any(re.fullmatch(r"-[a-z]*f[a-z]*r[a-z]*", token) for token in combined):
+            return True
+        has_recursive = any(token in {"-r", "--recursive"} for token in combined)
+        has_force = any(token in {"-f", "--force"} for token in combined)
+        return has_recursive and has_force
+
+    def _is_critical_command(self, tokens: list[str], command: str) -> bool:
+        lowered_tokens = [token.lower() for token in tokens]
+        if lowered_tokens and lowered_tokens[0] == "rm":
+            if self._has_rm_force(lowered_tokens) and any(self._is_root_target(token) for token in lowered_tokens[1:]):
+                return True
+        if len(lowered_tokens) >= 2 and lowered_tokens[:2] == ["git", "push"]:
+            if any(token in {"-f", "--force"} for token in lowered_tokens[2:]):
+                return True
+        if lowered_tokens and lowered_tokens[0] == "remove-item":
+            has_recurse = any(token in {"-r", "-recurse"} for token in lowered_tokens[1:])
+            has_force = any(token in {"-f", "-force"} for token in lowered_tokens[1:])
+            if has_recurse and has_force and any(self._is_root_target(token) for token in lowered_tokens[1:]):
+                return True
+        return any(pattern in command for pattern in self.CRITICAL_PATTERNS)
+
     def classify(self, action: Action) -> str:
         if action.tool == "delete_file":
             return "dangerous"
         if action.tool not in self.COMMAND_TOOLS:
             return "normal"
-        raw_command = action.args.get("command") or ""
+        raw_command = action.raw_command or action.args.get("command") or ""
         command = re.sub(r"\s+", " ", str(raw_command)).strip().lower()
-        if any(pattern in command for pattern in self.CRITICAL_PATTERNS):
+        tokens = command.split()
+        if self._is_critical_command(tokens, command):
             return "critical"
         return "normal"

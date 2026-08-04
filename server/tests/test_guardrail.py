@@ -83,3 +83,21 @@ def test_non_command_tools_are_not_misclassified():
     patch = Action(tool="apply_patch", args={"patch": "drop database"}, task_id="t1")
     assert classifier.classify(write) == "normal"
     assert classifier.classify(patch) == "normal"
+
+
+def test_additional_dangerous_variants_are_critical():
+    classifier = DangerClassifier()
+    for command in [
+        "rm -rf -- /",
+        "rm --recursive --force /",
+        "Remove-Item -Force -Recurse C:\\",
+        "git push --force origin main",
+    ]:
+        action = Action(tool="run_command", args={"command": command}, task_id="t1")
+        assert classifier.classify(action) == "critical"
+
+
+def test_classifier_uses_raw_command():
+    classifier = DangerClassifier()
+    action = Action(tool="run_command", args={}, raw_command="rm -rf /", task_id="t1")
+    assert classifier.classify(action) == "critical"
