@@ -1,4 +1,6 @@
+import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from kl_server.api.app import create_app
 
@@ -17,3 +19,16 @@ def test_health_allows_with_token():
 def test_no_token_means_no_auth():
     client = TestClient(create_app())
     assert client.get("/health").status_code == 200
+
+
+def test_health_rejects_wrong_token():
+    client = TestClient(create_app(auth_token="s3cret"))
+    response = client.get("/health", headers={"Authorization": "Bearer wrong"})
+    assert response.status_code == 401
+
+
+def test_websocket_rejects_without_token():
+    client = TestClient(create_app(auth_token="s3cret"))
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/ws/tasks/t1") as websocket:
+            websocket.send_json({"event": "tool_result"})

@@ -7,6 +7,12 @@ router = APIRouter()
 
 _connections: dict[str, set[WebSocket]] = {}
 _lock = asyncio.Lock()
+_auth_token: str | None = None
+
+
+def configure_auth(token: str | None) -> None:
+    global _auth_token
+    _auth_token = token
 
 
 async def broadcast(task_id: str, payload: dict) -> None:
@@ -27,6 +33,12 @@ async def broadcast(task_id: str, payload: dict) -> None:
 
 @router.websocket("/ws/tasks/{task_id}")
 async def task_events(websocket: WebSocket, task_id: str) -> None:
+    if _auth_token is not None:
+        auth = websocket.headers.get("Authorization")
+        expected = f"Bearer {_auth_token}"
+        if auth is None or auth != expected:
+            await websocket.close(code=1008)
+            return
     await websocket.accept()
     async with _lock:
         _connections.setdefault(task_id, set()).add(websocket)
