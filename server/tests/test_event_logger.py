@@ -41,3 +41,21 @@ def test_event_logger_rejects_non_dict_payload(tmp_path):
     logger = EventLogger(tmp_path / "audit.jsonl")
     with pytest.raises(TypeError):
         logger.write("action", "not-a-dict")
+
+
+def test_event_logger_redacts_token_password_authorization_in_strings(tmp_path):
+    logger = EventLogger(tmp_path / "audit.jsonl")
+    logger.write(
+        "task",
+        {
+            "task": 'run curl -H "Authorization: Bearer abc" with token=xyz and password=secret',
+        },
+    )
+    payload = json.loads((tmp_path / "audit.jsonl").read_text(encoding="utf-8").strip().splitlines()[0])["payload"]
+    assert payload["task"] == "[REDACTED]"
+
+
+def test_event_logger_wraps_write_failures(tmp_path):
+    logger = EventLogger(tmp_path)
+    with pytest.raises(RuntimeError):
+        logger.write("action", {"a": 1})

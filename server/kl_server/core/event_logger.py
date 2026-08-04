@@ -4,6 +4,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+_SENSITIVE_VALUE_RE = re.compile(
+    r"(sk-[a-z0-9_-]+|api[_-]?key\s*[=:]|secret\s*[=:]|token\s*[=:]|password\s*[=:]|authorization\s*:\s*bearer)",
+    re.I,
+)
+
+
 class EventLogger:
     def __init__(self, path: Path):
         self.path = path
@@ -13,18 +19,22 @@ class EventLogger:
         if not isinstance(payload, dict):
             raise TypeError("payload must be a dict")
         redacted = self._redact(payload)
-        with self.path.open("a", encoding="utf-8") as f:
-            f.write(
-                json.dumps(
-                    {
-                        "event": event,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "payload": redacted,
-                    },
-                    ensure_ascii=False,
+        try:
+            with self.path.open("a", encoding="utf-8") as f:
+                f.write(
+                    json.dumps(
+                        {
+                            "event": event,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "payload": redacted,
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
                 )
-                + "\n"
-            )
+                f.flush()
+        except OSError as exc:
+            raise RuntimeError(f"failed to write audit log: {self.path}: {exc}") from exc
 
     def _redact(self, payload: dict) -> dict:
         return {
@@ -41,6 +51,6 @@ class EventLogger:
             return self._redact(value)
         if isinstance(value, list):
             return [self._redact_value(key, item) for item in value]
-        if isinstance(value, str) and re.search(r"(sk-[a-z0-9_-]+|api[_-]?key\s*[=:]|secret\s*[=:])", value, re.I):
+        if isinstance(value, str) and _SENSITIVE_VALUE_RE.search(value):
             return "[REDACTED]"
         return value
