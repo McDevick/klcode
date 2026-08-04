@@ -128,6 +128,19 @@
 - TDD 绿：`server/tests/test_hooks.py` → `27 passed`
 - 完整 server 套件：`296 passed, 1 skipped`
 
+## 2026-08-04 Task 4.9：MCP client transport（进行中）
+
+- 触发的技能：`test-driven-development`、`subagent-driven-development`、`requesting-code-review`
+- 上下文：Task 4.6 的 `McpAdapter` 目前是 `not connected` stub；本任务用官方 `mcp` SDK 接入 stdio 与 streamable-http transport。
+- 目标文件：`server/kl_server/mcp/transport.py`、`server/kl_server/mcp/adapter.py`、`server/pyproject.toml`、`server/tests/test_mcp_adapter.py`。
+- 环境：已安装 `mcp 2.0.0`，采用 v2 `ClientSession`/`stdio_client`/`streamable_http_client` API。
+- 当前状态：已完成并验证。
+- TDD 红：真实 stdio MCP 测试失败（`McpAdapter` 无 `close`/未接入 transport）。
+- TDD 绿：`server/tests/test_mcp_adapter.py` → `5 passed`
+- 完整 server 套件：`298 passed, 1 skipped`
+- 实现说明：`McpTransport` 按 `url` 或 `command` 分别使用 streamable-http/stdio；必须保存 async context manager 本体，避免流被 GC 提前关闭；失败 server 映射为 `not connected`；adapter 新增 `close()` 统一释放连接。
+- 依赖：`server/pyproject.toml` 新增 `mcp>=2.0.0`。
+
 ## 2026-08-03 Task 0.1：Server package skeleton
 
 **状态：已完成并验证**

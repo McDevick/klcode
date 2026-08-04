@@ -247,7 +247,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 4.6 | MCP adapter | Done (`6aafbd4`) |
 | 4.7 | User tool plugin loader | Done (`66fe49f`, `81519d0`) |
 | 4.8 | HTTP hook support | Done (`49caa70`) |
-| 4.9 | MCP client transport (stdio / streamable-http) | Pending |
+| 4.9 | MCP client transport (stdio / streamable-http) | Done |
 | 4.10 | ContextAssembler integrated into AgentLoop | Pending |
 | 4.11 | Wire hooks/skills/MCP/plugins into harness | Pending |
 | 5.1 | Mock-LLM demos | Pending |
@@ -4630,7 +4630,7 @@ SPEC §3.9 requires MCP tools to enter `ToolRegistry` through the adapter. Task 
 - Modify: `server/pyproject.toml` (add `mcp`)
 - Test: `server/tests/test_mcp_adapter.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import pytest
@@ -4651,12 +4651,12 @@ def test_catalog_includes_command_servers():
     assert adapter.catalog() == [{"server": "my-server", "command": "python", "args": ["server.py"]}]
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_mcp_adapter.py -v`
 Expected: FAIL (`tool` is a stub; `catalog` shape differs).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # server/kl_server/mcp/transport.py
@@ -4726,12 +4726,12 @@ class McpAdapter:
 
 Add `mcp` (the official Python SDK) to `server/pyproject.toml` dependencies. streamable-http transport is added the same way via `mcp.client.streamable_http` when a `url` config is present; keep stdio as the covered path in unit tests, and treat live-server calls as manual integration checks.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_mcp_adapter.py -v`
 Expected: PASS (failing server reports `not connected`).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/mcp server/pyproject.toml server/tests/test_mcp_adapter.py
