@@ -1,6 +1,7 @@
 import json
 from dataclasses import dataclass
 
+from kl_server.core.feedback import classify_tool_result
 from kl_server.core.tool_executor import ToolExecutor
 from kl_server.models.action import Action
 from kl_server.models.task import Session
@@ -41,9 +42,10 @@ class AgentLoop:
                 workspace=session.workspace,
             )
             result = await self.tools.execute(action.tool, action.args, ToolContext(workspace=session.workspace))
+            feedback = classify_tool_result(result)
             history.append({"role": "assistant", "content": text})
-            result_text = result.output or result.error or ""
-            history.append({"role": "system", "content": f"tool_result: {result_text}"})
+            history.append({"role": "tool", "content": result.output})
+            history.append({"role": "feedback", "content": f"{feedback.category.value}: {feedback.summary[:500]}"})
         return "MAX_ITERATIONS"
 
     @staticmethod
