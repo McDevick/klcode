@@ -25,6 +25,13 @@
 - F-6 ADVISORY：`McpTool` 对 `server`/`tool` 必填参数和 `args` 类型做结构化校验，不再直接 `KeyError`。
 - 验证：server `307 passed, 1 skipped`；CLI `45 passed`；`git diff --check` 干净。
 
+## 2026-08-04 F-7 回归修复（已完成）
+
+- 问题：F-2 修复后，预算内历史不再调用 summarizer，但 sections 只保留 `history[-1]`，导致预算内旧轮次既无原文也无摘要，直接失忆。
+- 修复：`ContextAssembler` 现在优先在预算内保留全部 raw history；只有无法全部容纳时才对被丢弃的旧 history 生成摘要，并用 `(task_id, history[:-1])` 指纹缓存，相同旧 history 不重复调用 provider。
+- 回归测试：预算内 5 轮短历史全部保留且 summarizer 不调用；超预算时旧 history 生成摘要且 latest 保留；相同 history 重复 build 只调用一次 summarizer。
+- 验证：server `309 passed, 1 skipped`；CLI `45 passed`。
+
 ## 2026-08-04 Phase 4 启动：Task 4.1 MemoryStore（进行中）
 
 - 触发的技能：`using-git-worktrees`、`test-driven-development`、`subagent-driven-development`、`requesting-code-review`

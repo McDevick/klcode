@@ -53,6 +53,7 @@ class ContextAssembler:
         self.max_tokens = max_tokens
         self.token_estimator = token_estimator or self._default_token_estimate
         self.summarizer = None
+        self._summary_cache: dict[tuple[str, tuple[str, ...]], str] = {}
 
     @staticmethod
     def _default_token_estimate(text: str) -> int:
@@ -78,32 +79,37 @@ class ContextAssembler:
         task_id: str = "t1",
         skills: str = "",
     ) -> AssembledContext:
-        summary = ""
         tool_catalog_text = self._format_tool_catalog(tool_catalog)
-        sections = [rules]
+        base_sections = [rules]
         if tool_catalog_text:
-            sections.append(tool_catalog_text)
+            base_sections.append(tool_catalog_text)
         if skills:
-            sections.append(skills)
+            base_sections.append(skills)
         if memory:
-            sections.append(memory[-1])
+            base_sections.append(memory[-1])
+
+        budget = max(0, self.max_tokens)
         if history:
-            sections.append(history[-1])
-        if self.summarizer and len(history) > 2:
-            raw_sections = [rules]
-            if tool_catalog_text:
-                raw_sections.append(tool_catalog_text)
-            if skills:
-                raw_sections.append(skills)
-            if memory:
-                raw_sections.append(memory[-1])
-            raw_sections.extend(history)
-            raw_text = "\n\n".join(raw_sections)
-            if self._estimate(raw_text) > max(0, self.max_tokens):
+            all_sections = base_sections + list(history)
+            if self._estimate("\n\n".join(all_sections)) <= budget:
+                text, used_tokens = self._fit_to_budget(all_sections)
+                return AssembledContext(text=text, used_tokens=used_tokens)
+
+        summary = ""
+        if self.summarizer and len(history) > 1:
+            cache_key = (task_id, tuple(history[:-1]))
+            if cache_key in self._summary_cache:
+                summary = self._summary_cache[cache_key]
+            else:
                 try:
                     summary = await self.summarizer.summarize(history[:-1], task_id)
+                    self._summary_cache[cache_key] = summary
                 except Exception:
                     summary = ""
+
+        sections = list(base_sections)
+        if history:
+            sections.append(history[-1])
         if summary:
             sections.append(summary)
 

@@ -49,7 +49,7 @@ async def test_assembler_uses_provider_summary_without_repeating_latest():
 
 
 @pytest.mark.asyncio
-async def test_assembler_skips_summary_when_history_fits_budget():
+async def test_assembler_keeps_raw_history_within_budget():
     class CountingSummarizer:
         calls = 0
 
@@ -57,18 +57,68 @@ async def test_assembler_skips_summary_when_history_fits_budget():
             self.calls += 1
             return "summary"
 
-    assembler = ContextAssembler(max_tokens=100)
+    assembler = ContextAssembler(max_tokens=1000)
     summarizer = CountingSummarizer()
     assembler.summarizer = summarizer
     result = await assembler.build(
         tool_catalog=[],
         rules="rules",
         memory=[],
-        history=["old1", "old2", "latest"],
+        history=["round1", "round2", "round3", "round4", "round5: final check"],
     )
 
-    assert result.contains_priority("latest")
+    assert result.contains_priority("round1")
+    assert result.contains_priority("round5: final check")
     assert summarizer.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_assembler_summarizes_dropped_history_when_over_budget():
+    class CountingSummarizer:
+        calls = 0
+
+        async def summarize(self, segments, task_id):
+            self.calls += 1
+            return "summary"
+
+    assembler = ContextAssembler(max_tokens=30, token_estimator=len)
+    summarizer = CountingSummarizer()
+    assembler.summarizer = summarizer
+    result = await assembler.build(
+        tool_catalog=[],
+        rules="rules",
+        memory=[],
+        history=["x" * 100, "y" * 100, "latest"],
+    )
+
+    assert summarizer.calls == 1
+    assert result.contains_priority("summary")
+    assert result.contains_priority("latest")
+
+
+@pytest.mark.asyncio
+async def test_assembler_caches_summary_for_unchanged_history():
+    class CountingSummarizer:
+        calls = 0
+
+        async def summarize(self, segments, task_id):
+            self.calls += 1
+            return "summary"
+
+    assembler = ContextAssembler(max_tokens=30, token_estimator=len)
+    summarizer = CountingSummarizer()
+    assembler.summarizer = summarizer
+    history = ["x" * 100, "y" * 100, "latest"]
+
+    for _ in range(3):
+        await assembler.build(
+            tool_catalog=[],
+            rules="rules",
+            memory=[],
+            history=history,
+        )
+
+    assert summarizer.calls == 1
 
 
 @pytest.mark.asyncio
