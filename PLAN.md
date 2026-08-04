@@ -245,11 +245,11 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 4.4 | SkillLoader | Done (`d03cbdd`, `601557f`, `dde5bd1`) |
 | 4.5 | HookManager | Done (`269db1c`, `fd93d25`, `c0c7d5f`) |
 | 4.6 | MCP adapter | Done (`6aafbd4`) |
-| 4.7 | User tool plugin loader | Done (`66fe49f`, `81519d0`) |
+| 4.7 | User tool plugin loader | Done (`66fe49f`, `81519d0`, `c94f2c7`) |
 | 4.8 | HTTP hook support | Done (`49caa70`) |
-| 4.9 | MCP client transport (stdio / streamable-http) | Done |
-| 4.10 | ContextAssembler integrated into AgentLoop | Done |
-| 4.11 | Wire hooks/skills/MCP/plugins into harness | Done |
+| 4.9 | MCP client transport (stdio / streamable-http) | Done (`c8abbcf`) |
+| 4.10 | ContextAssembler integrated into AgentLoop | Done (`188b382`) |
+| 4.11 | Wire hooks/skills/MCP/plugins into harness | Done (`13daf79`) |
 | 5.1 | Mock-LLM demos | Pending |
 | 5.2 | README and install docs | Pending |
 | 5.3 | Distribution polish | Pending |

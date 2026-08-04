@@ -3,6 +3,18 @@
 > 本文件按任务执行全程实时记录关键节点，不在任务完成后统一补写。
 > 每条记录包含：时间戳、task 编号、触发的 Superpowers 技能、关键 prompt/context、subagent 输出或 commit hash、人工干预、教训。
 
+## 2026-08-04 Phase 4 全量验证（已完成）
+
+- 范围：Task 4.1-4.11 全部完成，分支 `worktree-phase-4`。
+- Server 测试：`pytest server/tests -q` → `302 passed, 1 skipped`
+- CLI 测试：`npm test -- --run` → `9 files, 45 passed`
+- `git diff --check`：干净
+- 关键教训：
+  - MemoryStore/AgentLoop 等异步链路必须使用 `aiosqlite`/`await`，评审在接线前提前纠正同步阻塞风险。
+  - MCP SDK 的 stdio/streamable-http async context manager 必须保存本体，不能只保存 yield 出的流，否则连接会被 GC 提前关闭。
+  - `.kl/tools/<name>/` 目录契约在插件 loader 首版被实现成扁平文件，spec review 前即被 quality review 发现并修正。
+  - Windows 下 subprocess/HTTP 测试需要显式 UTF-8 与更宽松的 HTTP 错误断言，避免 locale/连接重置抖动。
+
 ## 2026-08-04 Phase 4 启动：Task 4.1 MemoryStore（进行中）
 
 - 触发的技能：`using-git-worktrees`、`test-driven-development`、`subagent-driven-development`、`requesting-code-review`
