@@ -58,11 +58,59 @@
 - 完成时补充 commit hash、验证输出、评审结论和人工干预。
 - 若发现范围越界或未授权功能，必须立即记录并停止。
 
+## 2026-08-04 Task 3.7：Daemon token authentication（进行中）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`server/kl_server/core/auth.py`、`api/app.py`、`main.py`、`server/tests/test_auth.py`。
+- 计划：从 Task 3.6 分支创建 stacked worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后并入待推送链。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-3.7-auth`
+- 分支：`worktree-task-3.7-auth`
+- Implementer：subagent `019fcbb2-5ef4-7842-8193-064335d070fb`
+- Commit：`682a754`、`7307a7f`、`cf2746b`、`7ea82c3`（质量评审修复）
+- TDD 红：2 failed（auth_token 参数缺失）
+- TDD 绿：`16 passed, 1 skipped`；完整 server 套件 `198 passed, 1 skipped`
+- 评审：spec 合规通过；质量评审通过（HTTP/WS Bearer 校验、常量时间比较、空 token 拒绝、token 文件权限策略、WS 跨 app 隔离）
+
+## 2026-08-04 Task 3.10：REST routes（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`server/kl_server/api/routes.py`、`server/kl_server/api/app.py`、`server/tests`。
+- 计划：从 Task 3.7 分支创建 stacked worktree，派 fresh implementer 按 TDD 红-绿实现 REST surface，先于 3.8/3.9 完成。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-3.10-routes`
+- 分支：`worktree-task-3.10-routes`
+- Implementer：subagent `019fcbca-177d-7303-8cfa-b366644b2b47`（Fermat the 2nd）
+- Commit：`b7d9952`、`25d90fd`（评审修复）
+- TDD 红：`10 failed, 9 passed`（新路由 404）
+- TDD 绿：`19 passed`；完整 server 套件 `210 passed, 1 skipped`
+- 评审：spec 合规通过；质量评审通过（build_router 闭包隔离、session/task/provider/model/key 契约、auth 中间件、secret 不驻留/不回传）
+
+## 2026-08-04 Task 3.8：CLI top-level commands（进行中）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`cli/src/commands/init.ts`、`run.ts`、`server.ts`、`cli/src/api/client.ts`、`cli/src/main.ts`、`cli/test`。
+- 计划：从 Task 3.10 分支创建独立 worktree，派 fresh implementer 并行实现；依赖 Task 3.7 token 与 Task 3.10 REST。
+- 当前状态：implementer 已开工，等待测试与提交。
+- Worktree：`.claude/worktrees/task-3.8-cli`
+- 分支：`worktree-task-3.8-cli`
+- Implementer：subagent `019fcbda-fc55-7bc1-bc2a-f198eb22fe2c`（McClintock the 2nd）
+
+## 2026-08-04 Task 3.9：Approval and pause/resume/abort（进行中）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`server/kl_server/core/agent_loop.py`、`tool_executor.py`、`guardrail.py`、`task_manager.py`、`api/ws.py`、`api/app.py`、`cli/src/tui/screens/approval.tsx`、对应测试。
+- 计划：从 Task 3.10 分支创建独立 worktree，派 fresh implementer 并行实现；依赖 Task 2.8 guardrail、Task 3.1 WS、Task 3.4 TUI。
+- 当前状态：implementer 已开工，等待测试与提交。
+- Worktree：`.claude/worktrees/task-3.9-approval`
+- 分支：`worktree-task-3.9-approval`
+- Implementer：subagent `019fcbda-fcf5-7fe2-a0df-8f96aa46267b`（Bohr the 2nd）
+
 ## 上下文检查点（2026-08-04，Task 3.6 后）
 
 - 已完成并合入 dev：Phase 0（0.3/0.4）、Task 1.1-1.13、Task 2.1-2.10 的远端 PR 已由用户合并；本地 dev 尚未 fetch 到这些合并结果（网络不稳定）。
 - 本地已完成但未推送/合入的 Phase 3：Task 3.1-3.6，分支从 `worktree-task-3.1-api` 到 `worktree-task-3.6-session` 依次 stacked。
-- 下一步：Task 3.7 Daemon token authentication；之后按 PLAN 3.8 -> 3.10 -> 3.4/3.9 等顺序推进。
+- 下一步：Task 3.10 REST routes 已完成并提交后，按依赖顺序继续 3.9 与 3.8。
 - 已知待接线：session 服务端路由 Task 3.10；`/session close` 当前会话语义 Task 3.9/3.10；ConfigCommand 注册与 onSave Task 3.8/3.10。
 - 环境：Python venv `E:\projects\SimpleCodingAgent\.superpowers\sdd\PLAN\venv`；Node 22/npm 10；网络当前不稳定，GitHub 推送可能需重试。
 - 测试基线：server 189 passed（Task 3.1）；CLI 25 passed（Task 3.6）。
