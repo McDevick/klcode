@@ -141,6 +141,19 @@ class HITLManager:
         req.state = "rejected"
         return req.state
 
+    def abort(self, action_id: str) -> str:
+        req = self.requests.get(action_id)
+        if req is None:
+            raise ValueError(f"unknown approval request: {action_id}")
+        if req.state == "approved":
+            raise ValueError(f"cannot abort approved request: {action_id}")
+        req.state = "aborted"
+        return req.state
+
+    def is_approved(self, action_id: str) -> bool:
+        request = self.requests.get(action_id)
+        return request is not None and request.state == "approved"
+
 
 class Guardrail:
     def __init__(self, scope, sandbox, danger, hitl, workspace_mode: str = "managed"):
@@ -171,8 +184,7 @@ class Guardrail:
         level = self.danger.classify(action, workspace_mode)
         if level in {"critical", "dangerous"}:
             approval_command = " | ".join(str(source) for source in command_sources if source)
-            args_key = json.dumps(action.args, sort_keys=True)
-            approval_id = f"{action.task_id}:{action.tool}:{action.seq}:{approval_command}:{args_key}"
+            approval_id = self.approval_id(action, command_sources)
             try:
                 self.hitl.request(approval_id, action.tool, approval_command)
                 return "requires_approval"
@@ -180,7 +192,14 @@ class Guardrail:
                 existing = self.hitl.requests.get(approval_id)
                 if existing is not None and existing.state == "approved":
                     return "allowed"
-                if existing is not None and existing.state == "rejected":
+                if existing is not None and existing.state in {"rejected", "aborted"}:
                     return "rejected"
                 raise
         return "allowed"
+
+    def approval_id(self, action: Action, command_sources: list | None = None) -> str:
+        if command_sources is None:
+            command_sources = [action.raw_command, action.args.get("command")]
+        approval_command = " | ".join(str(source) for source in command_sources if source)
+        args_key = json.dumps(action.args, sort_keys=True)
+        return f"{action.task_id}:{action.tool}:{action.seq}:{approval_command}:{args_key}"

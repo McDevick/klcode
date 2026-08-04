@@ -157,6 +157,21 @@ def test_hitl_transitions_are_idempotent_and_locked():
         manager.approve("a2")
 
 
+def test_hitl_is_approved_only_after_approval():
+    manager = HITLManager()
+    manager.request("a1", "run_command", "pytest")
+    manager.request("a2", "run_command", "pytest")
+
+    assert manager.is_approved("a1") is False
+    assert manager.is_approved("missing") is False
+
+    manager.reject("a1")
+    manager.approve("a2")
+
+    assert manager.is_approved("a1") is False
+    assert manager.is_approved("a2") is True
+
+
 from kl_server.core.guardrail import DangerClassifier, Guardrail, HITLManager, ScopeFence
 from kl_server.core.sandbox import SandboxPolicy
 from kl_server.models.action import Action

@@ -260,3 +260,73 @@ async def test_executor_uses_workspace_mode_from_context(tmp_path):
     result = await executor.execute("write_file", {"path": "a.py", "content": "x"}, ctx)
     assert result.ok is False
     assert result.error == "requires_approval"
+
+
+class TrackingWriteTool(Tool):
+    name = "write_file"
+    description = "tracks approval-gated writes"
+    schema = {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}}
+
+    def __init__(self):
+        self.calls = 0
+
+    async def execute(self, args, ctx: ToolContext) -> ToolResult:
+        self.calls += 1
+        return ToolResult(ok=True, output="wrote")
+
+
+@pytest.mark.asyncio
+async def test_executor_requires_approval_meta_is_deterministic(tmp_path):
+    hitl = HITLManager()
+    guardrail = Guardrail(
+        scope=ScopeFence(str(tmp_path)),
+        sandbox=SandboxPolicy(allow=[], deny=["rm"]),
+        danger=DangerClassifier(),
+        hitl=hitl,
+    )
+    executor = ToolExecutor(ToolRegistry(), guardrail=guardrail)
+    ctx = ToolContext(workspace=str(tmp_path), task_id="t1")
+
+    first = await executor.execute("run_command", {"command": "git push --force"}, ctx)
+    second = await executor.execute("run_command", {"command": "git push --force"}, ctx)
+
+    assert first.error == "requires_approval"
+    assert first.meta["action_id"] == second.meta["action_id"]
+    assert first.meta["tool"] == "run_command"
+    assert first.meta["args"] == {"command": "git push --force"}
+    assert first.meta["level"] == "critical"
+    assert first.meta["action_id"] in hitl.requests
+    assert len(hitl.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_execute_approved_only_runs_after_hitl_approval(tmp_path):
+    tool = TrackingWriteTool()
+    registry = ToolRegistry()
+    registry.register(tool)
+    hitl = HITLManager()
+    guardrail = Guardrail(
+        scope=ScopeFence(str(tmp_path)),
+        sandbox=SandboxPolicy(allow=[], deny=["rm"]),
+        danger=DangerClassifier(),
+        hitl=hitl,
+    )
+    executor = ToolExecutor(registry, guardrail=guardrail)
+    ctx = ToolContext(workspace=str(tmp_path), task_id="t1", workspace_mode="unmanaged")
+    args = {"path": "a.py", "content": "x"}
+
+    requested = await executor.execute("write_file", args, ctx)
+    assert requested.error == "requires_approval"
+
+    denied = await executor.execute_approved("write_file", args, ctx, "missing")
+    assert denied.error == "not_approved"
+
+    pending = await executor.execute_approved("write_file", args, ctx, requested.meta["action_id"])
+    assert pending.error == "not_approved"
+    assert tool.calls == 0
+
+    hitl.approve(requested.meta["action_id"])
+    approved = await executor.execute_approved("write_file", args, ctx, requested.meta["action_id"])
+
+    assert approved.ok is True
+    assert tool.calls == 1

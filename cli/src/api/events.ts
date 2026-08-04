@@ -1,4 +1,5 @@
 import { DEFAULT_BASE_URL } from './client';
+import { readDaemonToken } from './daemon-token';
 
 export interface TaskEvent {
   task_id: string;
@@ -8,6 +9,7 @@ export interface TaskEvent {
 
 export interface ConnectTaskEventsOptions {
   baseUrl?: string;
+  tokenPath?: string;
 }
 
 export function connectTaskEvents(
@@ -16,7 +18,9 @@ export function connectTaskEvents(
   options: ConnectTaskEventsOptions = {},
 ): WebSocket {
   const base = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
-  const socket = new WebSocket(`${base}/ws/tasks/${encodeURIComponent(taskId)}`);
+  const token = readDaemonToken(options.tokenPath);
+  const query = token ? `?token=${encodeURIComponent(token)}` : '';
+  const socket = new WebSocket(`${base}/ws/tasks/${encodeURIComponent(taskId)}${query}`);
   socket.onmessage = (message) => {
     try {
       const data = JSON.parse(String(message.data)) as unknown;
