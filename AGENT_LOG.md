@@ -30,6 +30,13 @@
 - 质量评审修复：tool_catalog 作为 rules 后的优先片段；summary 优先级低于 latest history；支持注入 `token_estimator`；summarizer fallback 不再重复 latest history。
 - 复审验证：`server/tests/test_context.py` → `10 passed`；完整 server 套件 → `241 passed, 1 skipped`
 
+## 2026-08-04 Task 4.3：LLM summarizer（进行中）
+
+- 触发的技能：`test-driven-development`、`subagent-driven-development`、`requesting-code-review`
+- 上下文：Task 4.2 的 `ContextAssembler` 已提供 `summarizer` hook；本任务实现 `LLMSummarizer` 并用 `MockProvider` 验证 provider 摘要路径。
+- 目标文件：`server/kl_server/core/context.py`、`server/tests/test_context.py`。
+- 预期：摘要失败时由 `ContextAssembler` fallback，不崩溃、不重复注入 latest history。
+
 ## 2026-08-03 Task 0.1：Server package skeleton
 
 **状态：已完成并验证**

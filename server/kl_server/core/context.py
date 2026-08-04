@@ -3,6 +3,18 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from kl_server.providers.base import ProviderRequest
+
+
+class LLMSummarizer:
+    def __init__(self, provider):
+        self.provider = provider
+
+    async def summarize(self, segments: list[str], task_id: str) -> str:
+        prompt = "Summarize these segments with goals, results, failures, and open items:\n" + "\n".join(segments)
+        response = await self.provider.complete(ProviderRequest(messages=[{"role": "user", "content": prompt}], model="mock-model"))
+        return response.text
+
 
 @dataclass
 class AssembledContext:

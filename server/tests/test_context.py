@@ -1,6 +1,52 @@
 import pytest
 
-from kl_server.core.context import ContextAssembler
+from kl_server.core.context import ContextAssembler, LLMSummarizer
+from kl_server.providers.mock import MockProvider
+
+
+@pytest.mark.asyncio
+async def test_summarizer_uses_provider_and_keeps_raw():
+    provider = MockProvider(responses=["summary"])
+    summarizer = LLMSummarizer(provider)
+    result = await summarizer.summarize(["old action", "old result"], "t1")
+    assert result == "summary"
+
+
+@pytest.mark.asyncio
+async def test_assembler_uses_provider_summary_without_repeating_latest():
+    provider = MockProvider(responses=["summary"])
+    assembler = ContextAssembler(max_tokens=100)
+    assembler.summarizer = LLMSummarizer(provider)
+
+    result = await assembler.build(
+        tool_catalog=[],
+        rules="rules",
+        memory=[],
+        history=["old1", "old2", "latest"],
+    )
+
+    assert result.contains_priority("summary")
+    assert result.text.count("latest") == 1
+    assert "old1" not in result.text
+
+
+@pytest.mark.asyncio
+async def test_assembler_falls_back_when_provider_fails():
+    class FailingProvider:
+        async def complete(self, request):
+            raise RuntimeError("provider failed")
+
+    assembler = ContextAssembler(max_tokens=100)
+    assembler.summarizer = LLMSummarizer(FailingProvider())
+    result = await assembler.build(
+        tool_catalog=[],
+        rules="rules",
+        memory=[],
+        history=["old1", "old2", "latest"],
+    )
+
+    assert result.contains_priority("latest")
+    assert result.text.count("latest") == 1
 
 
 @pytest.mark.asyncio
