@@ -122,3 +122,27 @@ class HITLManager:
             raise ValueError(f"cannot reject approved request: {action_id}")
         req.state = "rejected"
         return req.state
+
+
+from kl_server.models.action import Action
+
+
+class Guardrail:
+    def __init__(self, scope, sandbox, danger, hitl):
+        self.scope = scope
+        self.sandbox = sandbox
+        self.danger = danger
+        self.hitl = hitl
+
+    def check(self, action: Action) -> str:
+        path = action.args.get("path")
+        if path and not self.scope.allow(path):
+            return "rejected"
+        command = action.args.get("command", "")
+        if command and not self.sandbox.allow_command(command):
+            return "rejected"
+        level = self.danger.classify(action)
+        if level == "critical":
+            self.hitl.request(action.task_id, action.tool, command)
+            return "requires_approval"
+        return "allowed"

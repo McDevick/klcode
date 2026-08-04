@@ -155,3 +155,20 @@ def test_hitl_transitions_are_idempotent_and_locked():
     assert manager.reject("a2") == "rejected"
     with pytest.raises(ValueError):
         manager.approve("a2")
+
+
+from kl_server.core.guardrail import DangerClassifier, Guardrail, HITLManager, ScopeFence
+from kl_server.core.sandbox import SandboxPolicy
+from kl_server.models.action import Action
+
+
+def test_guardrail_blocks_outside_scope(tmp_path):
+    guardrail = Guardrail(
+        scope=ScopeFence(str(tmp_path)),
+        sandbox=SandboxPolicy(allow=["pytest"], deny=["rm"]),
+        danger=DangerClassifier(),
+        hitl=HITLManager(),
+    )
+    action = Action(tool="read_file", args={"path": "../outside.py"}, task_id="t1")
+    decision = guardrail.check(action)
+    assert decision == "rejected"
