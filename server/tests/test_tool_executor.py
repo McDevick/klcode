@@ -249,3 +249,14 @@ async def test_executor_isolates_guardrail_errors(tmp_path):
     result = await executor.execute("write_file", {"path": "a.txt", "content": "hi"}, ToolContext(workspace=str(tmp_path)))
     assert result.ok is False
     assert "guardrail_error" in result.error
+
+
+@pytest.mark.asyncio
+async def test_executor_uses_workspace_mode_from_context(tmp_path):
+    registry = ToolRegistry()
+    registry.register(WriteTool())
+    executor = ToolExecutor(registry, guardrail=make_guardrail(tmp_path))
+    ctx = ToolContext(workspace=str(tmp_path), workspace_mode="unmanaged")
+    result = await executor.execute("write_file", {"path": "a.py", "content": "x"}, ctx)
+    assert result.ok is False
+    assert result.error == "requires_approval"

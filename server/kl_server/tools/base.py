@@ -8,6 +8,7 @@ from kl_server.models.action import ToolResult
 class ToolContext:
     workspace: str
     task_id: str = ""
+    workspace_mode: str = "managed"
     task_state: dict = field(default_factory=dict)
 
 

@@ -21,7 +21,7 @@ class AgentLoop:
         self.settings = settings
         self.logger = logger
 
-    async def run(self, session: Session, task: str, task_id: str = "") -> str:
+    async def run(self, session: Session, task: str, task_id: str = "", workspace_mode: str = "managed") -> str:
         task_id = task_id or session.id
         history = [{"role": "user", "content": task}]
         if self.logger:
@@ -76,7 +76,7 @@ class AgentLoop:
             result = await self.tools.execute(
                 action.tool,
                 action.args,
-                ToolContext(workspace=session.workspace, task_id=session.id),
+                ToolContext(workspace=session.workspace, task_id=session.id, workspace_mode=workspace_mode),
             )
             if self.logger:
                 self.logger.write(

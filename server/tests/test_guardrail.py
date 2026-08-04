@@ -302,3 +302,40 @@ def test_delete_file_always_requires_approval(tmp_path):
     )
     action = Action(tool="delete_file", args={"path": "a.txt"}, task_id="t1")
     assert guardrail.check(action) == "requires_approval"
+
+
+def test_unmanaged_escalates_command_and_patch(tmp_path):
+    guardrail = Guardrail(
+        scope=ScopeFence(str(tmp_path)),
+        sandbox=SandboxPolicy(allow=[], deny=["rm"]),
+        danger=DangerClassifier(),
+        hitl=HITLManager(),
+        workspace_mode="unmanaged",
+    )
+    run = Action(tool="run_command", args={"command": "pytest -q"}, task_id="t1")
+    patch = Action(tool="apply_patch", args={"patch": "--- a.txt\n+++ b.txt\n@@ -1 +1 @@\n-x\n+y\n"}, task_id="t2")
+    assert guardrail.check(run) == "requires_approval"
+    assert guardrail.check(patch) == "requires_approval"
+
+
+def test_git_commit_requires_approval_in_managed_mode(tmp_path):
+    guardrail = Guardrail(
+        scope=ScopeFence(str(tmp_path)),
+        sandbox=SandboxPolicy(allow=[], deny=["rm"]),
+        danger=DangerClassifier(),
+        hitl=HITLManager(),
+        workspace_mode="managed",
+    )
+    action = Action(tool="git_commit", args={"paths": ["a.txt"]}, task_id="t1")
+    assert guardrail.check(action) == "requires_approval"
+
+
+def test_unknown_workspace_mode_is_rejected(tmp_path):
+    with pytest.raises(ValueError):
+        Guardrail(
+            scope=ScopeFence(str(tmp_path)),
+            sandbox=SandboxPolicy(allow=[], deny=[]),
+            danger=DangerClassifier(),
+            hitl=HITLManager(),
+            workspace_mode="unknown",
+        )

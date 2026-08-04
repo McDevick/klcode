@@ -35,7 +35,7 @@ class ToolExecutor:
         if self.guardrail is not None:
             action = Action(tool=name, args=args, task_id=ctx.task_id, workspace=ctx.workspace)
             try:
-                decision = self.guardrail.check(action)
+                decision = self.guardrail.check(action, workspace_mode=ctx.workspace_mode)
             except Exception as exc:
                 message = self._truncate(str(exc) or type(exc).__name__)
                 return ToolResult(ok=False, output="", error=f"guardrail_error: {message}")

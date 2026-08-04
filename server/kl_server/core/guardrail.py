@@ -5,6 +5,14 @@ from pathlib import Path
 from kl_server.models.action import Action
 
 
+def normalize_workspace_mode(mode: str) -> str:
+    if mode in {"managed", "git"}:
+        return "managed"
+    if mode in {"unmanaged", "snapshot", "manual"}:
+        return "unmanaged"
+    raise ValueError(f"unknown workspace mode: {mode}")
+
+
 class ScopeFence:
     def __init__(self, workspace: str):
         self.root = Path(workspace).resolve()
@@ -72,6 +80,7 @@ class DangerClassifier:
         return any(pattern in command for pattern in self.CRITICAL_PATTERNS)
 
     def classify(self, action: Action, workspace_mode: str = "managed") -> str:
+        workspace_mode = normalize_workspace_mode(workspace_mode)
         if action.tool in self.DANGEROUS_TOOLS:
             return "dangerous"
         if action.tool not in self.COMMAND_TOOLS:
@@ -139,9 +148,10 @@ class Guardrail:
         self.sandbox = sandbox
         self.danger = danger
         self.hitl = hitl
-        self.workspace_mode = workspace_mode
+        self.workspace_mode = normalize_workspace_mode(workspace_mode)
 
-    def check(self, action: Action) -> str:
+    def check(self, action: Action, workspace_mode: str | None = None) -> str:
+        workspace_mode = normalize_workspace_mode(workspace_mode or self.workspace_mode)
         try:
             paths = [action.args.get("path")]
             if isinstance(action.args.get("paths"), list):
@@ -158,7 +168,7 @@ class Guardrail:
         for source in command_sources:
             if source and not self.sandbox.allow_command(source):
                 return "rejected"
-        level = self.danger.classify(action, self.workspace_mode)
+        level = self.danger.classify(action, workspace_mode)
         if level in {"critical", "dangerous"}:
             approval_command = " | ".join(str(source) for source in command_sources if source)
             args_key = json.dumps(action.args, sort_keys=True)
