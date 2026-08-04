@@ -3,6 +3,14 @@
 > 本文件按任务执行全程实时记录关键节点，不在任务完成后统一补写。
 > 每条记录包含：时间戳、task 编号、触发的 Superpowers 技能、关键 prompt/context、subagent 输出或 commit hash、人工干预、教训。
 
+## 2026-08-04 Phase 4 启动：Task 4.1 MemoryStore（进行中）
+
+- 触发的技能：`using-git-worktrees`、`test-driven-development`、`subagent-driven-development`、`requesting-code-review`
+- 上下文：Phase 1-3 已合并到本地 `dev`（HEAD `5107ec8`）；基线 server `224 passed, 1 skipped`，CLI `45 passed`。
+- Worktree：`.claude/worktrees/phase-4`
+- 分支：`worktree-phase-4`
+- 当前任务：按 PLAN 完成 Phase 4 的 4.1-4.11，并同步更新 `PLAN.md`、`AGENT_LOG.md`、Superpowers progress。
+
 ## 2026-08-03 Task 0.1：Server package skeleton
 
 **状态：已完成并验证**
