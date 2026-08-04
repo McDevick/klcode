@@ -11,6 +11,13 @@
 - 分支：`worktree-phase-4`
 - 当前任务：按 PLAN 完成 Phase 4 的 4.1-4.11，并同步更新 `PLAN.md`、`AGENT_LOG.md`、Superpowers progress。
 
+### 2026-08-04 Task 4.1 质量评审修复（已完成）
+
+- 评审要求：MemoryStore 改为仓库现有的 `aiosqlite` 异步存储模式；补充分支测试；tags 用 JSON 序列化消除逗号歧义。
+- 修复内容：新增 async `connect()`/`add()`/`find()`/`close()` 与 async context manager；`close()` 幂等；tags 以 JSON 数组持久化。
+- 验证：`pytest server/tests/test_memory.py -v` → `7 passed`；完整 server 套件 → `231 passed, 1 skipped`。
+- 提交信息：`fix: harden async memory store and tag handling`
+
 ## 2026-08-03 Task 0.1：Server package skeleton
 
 **状态：已完成并验证**
