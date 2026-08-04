@@ -88,6 +88,8 @@ class AgentLoop:
             if result.error == "requires_approval":
                 action_id = result.meta.get("action_id") or f"{task_id}:{action.tool}"
                 if self.on_approval is None:
+                    if self.logger:
+                        self.logger.write("loop_end", {"reason": "needs_approval"}, task_id)
                     return "NEEDS_APPROVAL"
                 decision = await self.on_approval(
                     task_id or session.id,
@@ -103,6 +105,8 @@ class AgentLoop:
                     history.append({"role": "feedback", "content": "action rejected by user"})
                     continue
                 if decision == "abort":
+                    if self.logger:
+                        self.logger.write("loop_end", {"reason": "aborted"}, task_id)
                     return "ABORTED"
                 if decision != "approve":
                     history.append({"role": "assistant", "content": text})
