@@ -58,6 +58,132 @@
 - 完成时补充 commit hash、验证输出、评审结论和人工干预。
 - 若发现范围越界或未授权功能，必须立即记录并停止。
 
+## 2026-08-04 Task 2.10：Non-Git workspace stricter approval（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`DangerClassifier`/`Guardrail` workspace_mode 与 `server/tests/test_guardrail.py`。
+- 计划：从 Task 2.9 分支创建 stacked worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后并入待推送链。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-2.10-unmanaged`
+- 分支：`worktree-task-2.10-unmanaged`
+- Implementer：subagent `019fcaf2-a1a2-7051-bfff-1d37fc7df595`
+- Commit：`82c365e`、`ba90ec1`（评审修复）
+- TDD 红：3 failed（workspace_mode 缺失）
+- TDD 绿：`47 passed`；完整 server 套件 `182 passed`
+- 评审：spec 合规通过；质量评审通过（执行链路接线、模式归一化、unmanaged 提升）
+
+## 2026-08-04 Task 2.9：Audit logging integrated into AgentLoop（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`EventLogger.task_id`、`AgentLoop.logger` 实时事件、`server/tests/test_agent_loop.py`。
+- 计划：从 Task 2.8 分支创建 stacked worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后并入待推送链。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-2.9-audit-loop`
+- 分支：`worktree-task-2.9-audit-loop`
+- Implementer：subagent `019fcae3-c046-78f1-a0ea-d58d095fbdd1`
+- Commit：`7d0337c`、`fdac0f5`、`9309fe2`（多轮评审修复）
+- TDD 红：`AgentLoop.__init__() got an unexpected keyword argument 'logger'`
+- TDD 绿：`16 passed`；完整 server 套件 `175 passed`
+- 评审：spec 合规通过；质量评审通过（llm_result/invalid_action/provider_error、task_id、脱敏）
+
+## 2026-08-04 Task 2.8：Guardrail integrated into ToolExecutor（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`ToolResult.meta`、`ToolExecutor` guardrail 前置检查、`server/tests/test_tool_executor.py`。
+- 计划：从 Task 2.7 分支创建 stacked worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后并入待推送链。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-2.8-executor-guardrail`
+- 分支：`worktree-task-2.8-executor-guardrail`
+- Implementer：subagent `019fcad6-9614-7503-97b4-c130d964ba85`
+- Commit：`fc6b60a`、`2f8f344`（评审修复）
+- TDD 红：2 failed（guardrail 未接入）
+- TDD 绿：`19 passed`；完整 server 套件 `171 passed`
+- 评审：spec 合规通过；质量评审通过（task_id 保留、guardrail 异常隔离、meta 浅拷贝）
+
+## 2026-08-04 Task 2.7：Audit logger（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`server/kl_server/core/event_logger.py` 与 `server/tests/test_event_logger.py`。
+- 计划：从 Task 2.6 分支创建 stacked worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后并入待推送链。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-2.7-audit`
+- 分支：`worktree-task-2.7-audit`
+- Implementer：subagent `019fcac0-a3a7-7f42-8882-74be9754bdd3`
+- Commit：`ac58180`、`83f1ca8`、`013c68d`（多轮评审修复）
+- TDD 红：`ModuleNotFoundError: No module named 'kl_server.core.event_logger'`
+- TDD 绿：`6 passed`；完整 server 套件 `167 passed`
+- 评审：spec 合规通过；质量评审通过（递归脱敏、字符串凭据、写失败包装）
+
+## 2026-08-04 Task 2.6：Non-Git snapshot/rollback（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`server/kl_server/core/snapshot.py` 与 `server/tests/test_snapshot.py`。
+- 计划：从 Task 2.5 分支创建 stacked worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后并入待推送链。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-2.6-snapshot`
+- 分支：`worktree-task-2.6-snapshot`
+- Implementer：subagent `019fcaad-da8e-77d3-85b0-dda7ebcfd68d`
+- Commit：`f3016a7`、`15caa63`、`fa48652`、`8a4bc53`、`cc0c55e`、`7da61db`（多轮评审修复）
+- TDD 红：`ModuleNotFoundError: No module named 'kl_server.core.snapshot'`
+- TDD 绿：`7 passed`；完整 server 套件 `161 passed`
+- 评审：spec 合规通过；质量评审通过（唯一快照、sidecar、目录 swap、失败保留备份）
+
+## 2026-08-04 Task 2.5：Guardrail pipeline（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`server/kl_server/core/guardrail.py` 的 `Guardrail` 与 `server/tests/test_guardrail.py`。
+- 计划：从 Task 2.4 分支创建 stacked worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后并入待推送链。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-2.5-guardrail`
+- 分支：`worktree-task-2.5-guardrail`
+- Implementer：subagent `019fca9d-8279-7012-947e-6d79c6eee617`
+- Commit：`535b9d7`、`15a4555`、`13fc7f9`（多轮评审修复）
+- TDD 红：`ImportError: cannot import name 'Guardrail'`
+- TDD 绿：`27 passed`；完整 server 套件 `154 passed`
+- 评审：spec 合规通过；质量评审通过（路径/命令多来源、dangerous 审批、唯一 approval key）
+
+## 2026-08-04 Task 2.4：HITL state machine（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`server/kl_server/core/guardrail.py` 的 `ApprovalRequest`/`HITLManager` 与 `server/tests/test_guardrail.py`。
+- 计划：从 Task 2.3 分支创建 stacked worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后并入待推送链。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-2.4-hitl`
+- 分支：`worktree-task-2.4-hitl`
+- Implementer：subagent `019fca92-cb03-7100-a9b0-228851dd3391`
+- Commit：`be8c7c5`、`5519db8`（评审修复）
+- TDD 红：ImportError for ApprovalRequest/HITLManager
+- TDD 绿：`19 passed`；完整 server 套件 `146 passed`
+- 评审：spec 合规通过；质量评审通过（状态转移、幂等、resolved 不可重开）
+
+## 2026-08-04 Task 2.3：DangerClassifier（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`server/kl_server/core/guardrail.py` 的 `DangerClassifier` 与 `server/tests/test_guardrail.py`。
+- 计划：从 Task 2.2 分支创建 stacked worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后并入待推送链。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-2.3-danger`
+- 分支：`worktree-task-2.3-danger`
+- Implementer：subagent `019fca84-f9e4-76c3-97ec-85265208efac`
+- Commit：`60f9fff`、`d9e1211`、`41cd779`、`c9c6ba7`（多轮评审修复）
+- TDD 红：`ImportError: cannot import name 'DangerClassifier'`
+- TDD 绿：`15 passed`；完整 server 套件 `142 passed`
+- 评审：spec 合规通过；质量评审通过（token 级命令判断、双来源、delete_file 危险）
+
+## 2026-08-04 Task 2.2：SandboxPolicy（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`server/kl_server/core/sandbox.py` 与 `server/tests/test_sandbox.py`。
+- 计划：从 Task 2.1 分支创建 stacked worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后并入待推送链。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-2.2-sandbox`
+- 分支：`worktree-task-2.2-sandbox`
+- Implementer：subagent `019fca70-0952-7490-9bee-6f061250a81b`
+- Commit：`982d16a`、`71087e3`、`ac24ec5`、`f8daa32`、`0530bea`（多轮评审修复）
+- TDD 红：`ModuleNotFoundError: No module named 'kl_server.core.sandbox'`
+- TDD 绿：`10 passed`；完整 server 套件 `133 passed`
+- 评审：spec 合规通过；质量评审通过（fail closed、shell/wrapper 绕过、路径归一化）
+
 ## 2026-08-04 Task 2.1：ScopeFence（已完成并验证）
 
 - 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
