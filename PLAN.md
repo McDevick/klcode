@@ -239,17 +239,17 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 3.8 | CLI top-level commands (init/run/server) | Done (`aded815`) |
 | 3.9 | Approval and pause/resume/abort end-to-end | Done (`83e33ae`) |
 | 3.10 | REST routes for sessions/tasks/providers/models/keys | Done (`25d90fd`) |
-| 4.1 | MemoryStore | Pending |
-| 4.2 | ContextAssembler token budget | Pending |
-| 4.3 | LLM summarizer | Pending |
-| 4.4 | SkillLoader | Pending |
-| 4.5 | HookManager | Pending |
-| 4.6 | MCP adapter | Pending |
-| 4.7 | User tool plugin loader | Pending |
-| 4.8 | HTTP hook support | Pending |
-| 4.9 | MCP client transport (stdio / streamable-http) | Pending |
-| 4.10 | ContextAssembler integrated into AgentLoop | Pending |
-| 4.11 | Wire hooks/skills/MCP/plugins into harness | Pending |
+| 4.1 | MemoryStore | Done (`96e34db`, `985d313`) |
+| 4.2 | ContextAssembler token budget | Done (`d49fc12`, `d443d31`) |
+| 4.3 | LLM summarizer | Done (`02c717d`, `841089d`) |
+| 4.4 | SkillLoader | Done (`d03cbdd`, `601557f`, `dde5bd1`) |
+| 4.5 | HookManager | Done (`269db1c`, `fd93d25`, `c0c7d5f`) |
+| 4.6 | MCP adapter | Done (`6aafbd4`) |
+| 4.7 | User tool plugin loader | Done (`66fe49f`, `81519d0`, `c94f2c7`) |
+| 4.8 | HTTP hook support | Done (`49caa70`) |
+| 4.9 | MCP client transport (stdio / streamable-http) | Done (`c8abbcf`) |
+| 4.10 | ContextAssembler integrated into AgentLoop | Done (`188b382`) |
+| 4.11 | Wire hooks/skills/MCP/plugins into harness | Done (`13daf79`) |
 | 5.1 | Mock-LLM demos | Pending |
 | 5.2 | README and install docs | Pending |
 | 5.3 | Distribution polish | Pending |
@@ -3544,7 +3544,7 @@ SPEC §4.2 threat model promises "daemon 使用随机本地 token，默认仅本
 - Modify: `server/kl_server/main.py`
 - Test: `server/tests/test_auth.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from fastapi.testclient import TestClient
@@ -3568,7 +3568,7 @@ def test_no_token_means_no_auth():
     assert client.get("/health").status_code == 200
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_auth.py -v`
 Expected: FAIL (unauthenticated request currently returns 200).
@@ -4104,7 +4104,7 @@ def test_memory_stores_and_finds_by_tag(tmp_path):
 Run: `python -m pytest server/tests/test_memory.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement MemoryStore**
+- [x] **Step 3: Implement MemoryStore**
 
 ```python
 import sqlite3
@@ -4126,12 +4126,12 @@ class MemoryStore:
         return [content for content, stored_tags in rows if any(tag in stored_tags.split(",") for tag in tags)]
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_memory.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/memory server/tests/test_memory.py
@@ -4165,7 +4165,7 @@ async def test_context_keeps_priority_sections():
 Run: `python -m pytest server/tests/test_context.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement context assembler**
+- [x] **Step 3: Implement context assembler**
 
 ```python
 from dataclasses import dataclass
@@ -4205,12 +4205,12 @@ class ContextAssembler:
         return AssembledContext(text=text, used_tokens=max(1, len(text) // 4))
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_context.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/core/context.py server/tests/test_context.py
@@ -4224,7 +4224,7 @@ git commit -m "feat: add token-budgeted context assembler"
 - Modify: `server/kl_server/core/context.py`
 - Test: update `server/tests/test_context.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import pytest
@@ -4240,35 +4240,37 @@ async def test_summarizer_uses_provider_and_keeps_raw():
     assert result == "summary"
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_context.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement summarizer**
+- [x] **Step 3: Implement summarizer**
 
 ```python
 from kl_server.providers.base import ProviderRequest
 
 
 class LLMSummarizer:
-    def __init__(self, provider):
+    def __init__(self, provider, model: str):
         self.provider = provider
+        self.model = model
 
     async def summarize(self, segments: list[str], task_id: str) -> str:
-        prompt = "Summarize these segments with goals, results, failures, and open items:\n" + "\n".join(segments)
-        response = await self.provider.complete(ProviderRequest(messages=[{"role": "user", "content": prompt}], model="mock-model"))
+        numbered = "\n".join(f"{index}. {segment}" for index, segment in enumerate(segments, start=1))
+        prompt = f"Task {task_id}. Summarize these segments with goals, results, failures, and open items:\n{numbered}"
+        response = await self.provider.complete(ProviderRequest(messages=[{"role": "user", "content": prompt}], model=self.model))
         return response.text
 ```
 
-Then assign `assembler.summarizer = LLMSummarizer(provider)`. `ContextAssembler.build` already catches summarizer failures and falls back to `history[-1]`.
+Then assign `assembler.summarizer = LLMSummarizer(provider, model="mock-model")` in tests, or the configured model in production. `ContextAssembler.build` already catches summarizer failures and falls back to `history[-1]`.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_context.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/core/context.py server/tests/test_context.py
@@ -4283,7 +4285,7 @@ git commit -m "feat: add provider-backed context summarizer"
 - Create: `server/kl_server/skills/loader.py`
 - Test: `server/tests/test_skills.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from kl_server.skills.loader import SkillLoader
@@ -4297,12 +4299,12 @@ def test_skill_loader_finds_by_keyword(tmp_path):
     assert "pytest" in loader.load(["python"])
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_skills.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement SkillLoader**
+- [x] **Step 3: Implement SkillLoader**
 
 ```python
 from pathlib import Path
@@ -4323,12 +4325,12 @@ class SkillLoader:
         return "\n\n".join(docs)
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_skills.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/skills server/tests/test_skills.py
@@ -4343,7 +4345,7 @@ git commit -m "feat: add skill loader"
 - Create: `server/kl_server/hooks/manager.py`
 - Test: `server/tests/test_hooks.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from kl_server.hooks.manager import HookManager
@@ -4357,12 +4359,12 @@ def test_command_hook_receives_event(tmp_path):
     assert output[0] == "task_start"
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_hooks.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement HookManager**
+- [x] **Step 3: Implement HookManager**
 
 ```python
 import json
@@ -4382,12 +4384,12 @@ class HookManager:
         return outputs
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_hooks.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/hooks server/tests/test_hooks.py
@@ -4402,7 +4404,7 @@ git commit -m "feat: add command hook manager"
 - Create: `server/kl_server/mcp/adapter.py`
 - Test: `server/tests/test_mcp_adapter.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from kl_server.mcp.adapter import McpAdapter
@@ -4413,12 +4415,12 @@ def test_mcp_adapter_registers_tool_descriptions():
     assert adapter.catalog() == [{"server": "my-server", "url": "http://localhost:9999"}]
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_mcp_adapter.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement adapter**
+- [x] **Step 3: Implement adapter**
 
 ```python
 class McpAdapter:
@@ -4431,12 +4433,12 @@ class McpAdapter:
 
 Extend `McpAdapter` with `tool(name, args)` that returns `ToolResult(ok=False, output="", error="not connected")` until the real MCP client transport is added.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_mcp_adapter.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/mcp server/tests/test_mcp_adapter.py
@@ -4451,14 +4453,16 @@ git commit -m "feat: add mcp adapter registry"
 - Create: `server/kl_server/plugins/loader.py`
 - Test: `server/tests/test_plugin_loader.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from kl_server.plugins.loader import PluginLoader
 
 
 def test_plugin_loader_imports_tool_module(tmp_path):
-    (tmp_path / "hello_tool.py").write_text(
+    plugin_dir = tmp_path / "hello_tool"
+    plugin_dir.mkdir()
+    (plugin_dir / "tool.py").write_text(
         "from kl_server.models.action import ToolResult\n"
         "from kl_server.tools.base import Tool, ToolContext\n"
         "class HelloTool(Tool):\n"
@@ -4474,12 +4478,12 @@ def test_plugin_loader_imports_tool_module(tmp_path):
     assert loader.load_tools()["hello_tool"].name == "hello_tool"
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_plugin_loader.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement plugin loader**
+- [x] **Step 3: Implement plugin loader**
 
 ```python
 import importlib.util
@@ -4491,21 +4495,23 @@ class PluginLoader:
         self.root = Path(root)
 
     def load_tools(self) -> dict[str, object]:
-        modules = {}
-        for path in self.root.glob("*.py"):
-            spec = importlib.util.spec_from_file_location(path.stem, path)
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            modules[path.stem] = module.TOOL
-        return modules
+        tools = {}
+        for plugin_dir in sorted(self.root.iterdir()):
+            path = plugin_dir / "tool.py"
+            if path.is_file():
+                spec = importlib.util.spec_from_file_location(plugin_dir.name, path)
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                tools[module.TOOL.name] = module.TOOL
+        return tools
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_plugin_loader.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/plugins server/tests/test_plugin_loader.py
@@ -4522,7 +4528,7 @@ SPEC §3.9 promises hooks of type `command` and `http`. Task 4.5 only implemente
 - Modify: `server/pyproject.toml` (add `httpx` to dependencies)
 - Test: `server/tests/test_hooks.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import json
@@ -4557,12 +4563,12 @@ def test_http_hook_posts_payload():
         thread.join()
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_hooks.py -v`
 Expected: FAIL (http hooks are skipped).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Modify `server/kl_server/hooks/manager.py`:
 
@@ -4601,12 +4607,12 @@ class HookManager:
 
 Add `httpx` to `server/pyproject.toml` dependencies (it is already a dev dependency). The existing Task 4.5 `command` hook test keeps passing because command hooks are unchanged.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_hooks.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/hooks/manager.py server/pyproject.toml server/tests/test_hooks.py
@@ -4624,7 +4630,7 @@ SPEC §3.9 requires MCP tools to enter `ToolRegistry` through the adapter. Task 
 - Modify: `server/pyproject.toml` (add `mcp`)
 - Test: `server/tests/test_mcp_adapter.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import pytest
@@ -4645,12 +4651,12 @@ def test_catalog_includes_command_servers():
     assert adapter.catalog() == [{"server": "my-server", "command": "python", "args": ["server.py"]}]
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_mcp_adapter.py -v`
 Expected: FAIL (`tool` is a stub; `catalog` shape differs).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # server/kl_server/mcp/transport.py
@@ -4720,12 +4726,12 @@ class McpAdapter:
 
 Add `mcp` (the official Python SDK) to `server/pyproject.toml` dependencies. streamable-http transport is added the same way via `mcp.client.streamable_http` when a `url` config is present; keep stdio as the covered path in unit tests, and treat live-server calls as manual integration checks.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_mcp_adapter.py -v`
 Expected: PASS (failing server reports `not connected`).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/mcp server/pyproject.toml server/tests/test_mcp_adapter.py
@@ -4739,9 +4745,10 @@ SPEC §3.3 says "每轮组织上下文". Tasks 4.2-4.3 built `ContextAssembler` 
 **Files:**
 
 - Modify: `server/kl_server/core/agent_loop.py`
+- Modify: `server/kl_server/core/tool_executor.py`
 - Test: `server/tests/test_agent_loop.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import pytest
@@ -4798,12 +4805,12 @@ async def test_loop_uses_context_assembler():
     assert spy.last_kwargs["memory"] == ["remembered decision"]
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_agent_loop.py -v`
 Expected: FAIL (assembler never invoked).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Modify `AgentLoop.run` to build context through the assembler when one is set (backward compatible: without a context, the raw-history path from Task 1.9 is kept):
 
@@ -4823,14 +4830,14 @@ else:
 response = await self.provider.complete(ProviderRequest(messages=request_messages, model=session.model))
 ```
 
-Wire `context=ContextAssembler(max_tokens=...)` and `context.summarizer = LLMSummarizer(provider)` in the app startup wiring so production always uses the budgeted path. `Task 4.2`'s own tests remain valid.
+Wire `context=ContextAssembler(max_tokens=...)` and `context.summarizer = LLMSummarizer(provider, model=session.model)` in the app startup wiring so production always uses the budgeted path. `Task 4.2`'s own tests remain valid.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_agent_loop.py server/tests/test_context.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/core/agent_loop.py server/tests/test_agent_loop.py
@@ -4850,7 +4857,7 @@ The extension modules exist after Tasks 4.4-4.10, but `AgentLoop` still only use
 - Modify: `server/kl_server/core/context.py`
 - Test: `server/tests/test_extensions.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import pytest
@@ -4925,12 +4932,12 @@ async def test_loop_injects_skills_and_fires_hooks():
     assert "task_end" in hooks.events
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_extensions.py -v`
 Expected: FAIL (`skills` and hook events missing).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Modify `AgentLoop.run`:
 
@@ -4991,12 +4998,12 @@ def register_user_tools(registry, plugin_loader: PluginLoader) -> None:
         registry.register(tool)
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_extensions.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/extensions.py server/kl_server/core/agent_loop.py server/kl_server/core/context.py server/tests/test_extensions.py

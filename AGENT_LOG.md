@@ -3,6 +3,248 @@
 > 本文件按任务执行全程实时记录关键节点，不在任务完成后统一补写。
 > 每条记录包含：时间戳、task 编号、触发的 Superpowers 技能、关键 prompt/context、subagent 输出或 commit hash、人工干预、教训。
 
+## 2026-08-04 Phase 4 全量验证（已完成）
+
+- 范围：Task 4.1-4.11 全部完成，分支 `worktree-phase-4`。
+- Server 测试：`pytest server/tests -q` → `302 passed, 1 skipped`
+- CLI 测试：`npm test -- --run` → `9 files, 45 passed`
+- `git diff --check`：干净
+- 关键教训：
+  - MemoryStore/AgentLoop 等异步链路必须使用 `aiosqlite`/`await`，评审在接线前提前纠正同步阻塞风险。
+  - MCP SDK 的 stdio/streamable-http async context manager 必须保存本体，不能只保存 yield 出的流，否则连接会被 GC 提前关闭。
+  - `.kl/tools/<name>/` 目录契约在插件 loader 首版被实现成扁平文件，spec review 前即被 quality review 发现并修正。
+  - Windows 下 subprocess/HTTP 测试需要显式 UTF-8 与更宽松的 HTTP 错误断言，避免 locale/连接重置抖动。
+
+## 2026-08-04 Phase 4 复查：按 spec 与 plan 标准审查 + worktree 越界现象（评审会话）
+
+> 本节三条"评审会话"记录由独立复查会话编写，非 phase-4 实现会话；记录审查结论与修复验证，供合并与后续排查参考。
+
+### P-1【流程/HIGH】worktree-per-task 约定被违反
+
+- SPEC_PROCESS §9.1 明确约定"每个独立模块一个 worktree 对应一个 PR"；Phase 0-3 每个 task 均有独立 `worktree-task-*` 分支、推送 origin 并 PR 合回 `dev`。
+- Phase 4 把 11 个 task（4.1-4.11，共 28 commit）全部放在单一 `worktree-phase-4` 分支，且未推送 origin。
+- 根因（按用户转述）：切换会话尝试使 agent 丢失"每 task 独立 worktree"的规则上下文，启动条目把任务写成"按 PLAN 完成 Phase 4 的 4.1-4.11"。
+- 教训：会话切换不能作为丢弃项目流程规则的借口；开工会话必须重新核对 SPEC_PROCESS 与已有 worktree 命名约定。
+- 裁决：用户决定不拆分，Phase 4 直接整体合并。
+
+### 首轮代码发现 F-1..F-6
+
+- F-1【HIGH】skills 运行时永远加载不到：AgentLoop 把整个任务文本当单个 keyword 传给 `SkillLoader.load`，而匹配方向是 `keyword in skill_dir.name`（keyword 须为短目录名子串），长任务文本永不命中。已用真实 `SkillLoader` 复现返回 `''`。
+- F-2【MEDIUM】LLM summarizer 每轮都跑（`len(history) > 2` 即摘要），未按 SPEC §3.8"超预算时"触发。
+- F-3【LOW/质量】`test_agent_loop.py` 出现文件中部重复导入块。
+- F-4【ADVISORY】hook 事件只覆盖 SPEC §3.9 子集（缺动作前/审批/错误/中止等）。
+- F-5【ADVISORY】streamable-http 传输无测试；`mcp>=2.0.0` 未锁上界。
+- F-6【ADVISORY】`McpTool.execute` 不校验 schema，畸形参数直接 `KeyError`。
+
+### 首次复查验证证据
+
+- Server `302 passed, 1 skipped`；CLI `45 passed`；`git diff 5107ec8..ef0753e --check` 干净；未触及 subagent/webui/remote/docker 未授权功能。
+
+## 2026-08-04 代码发现修复（已完成）
+
+- F-1 HIGH：`SkillLoader` 改为用 skill 目录名匹配任务文本，AgentLoop 接真实 `SkillLoader` 回归测试，不再把整个任务文本当 keyword 去子串匹配目录名。
+- F-2 MEDIUM：`ContextAssembler` 只有原始 history 超预算时才调用 summarizer；新增“预算内不摘要”回归测试。
+- F-3 LOW：清理 `test_agent_loop.py` 重复导入与重复 `FinalTool` 定义。
+- F-4 ADVISORY：AgentLoop 补齐 `action_before`、`approval_request`、`approval_complete`、`feedback_generation`、`error`、`abort` hook 事件。
+- F-5 ADVISORY：`mcp` 依赖锁定 `>=2.0.0,<3.0.0`，新增 streamable-http 不可用时的 `not connected` 回归测试。
+- F-6 ADVISORY：`McpTool` 对 `server`/`tool` 必填参数和 `args` 类型做结构化校验，不再直接 `KeyError`。
+- 验证：server `307 passed, 1 skipped`；CLI `45 passed`；`git diff --check` 干净。
+
+## 2026-08-04 Phase 4 修复后复核：commit 33a5485（评审会话）
+
+- F-1~F-6 全部修复并有回归测试，实测通过：F-1 真实 SkillLoader 集成（task "fix python code" → 注入 python skill）；F-2 超预算门控；F-3 导入清理；F-4 补齐 hook 事件；F-5 `mcp>=2.0.0,<3.0.0` + streamable-http not connected 测试；F-6 McpTool 结构化校验。
+- **新回归 F-7【MEDIUM-HIGH】**：F-2 修复把摘要门控改成"超预算才摘要"，但 sections 只保留 `history[-1]`，导致预算内旧轮次既无原文也无摘要 → 重蹈 SPEC_PROCESS §2.7 用户明确拒绝的"直接裁剪失忆"。
+- 复现（本会话实测）：5 轮短历史 + max_tokens=1000 → `summarizer.calls == 0`，上下文只剩 `round5`，round1-4 全部丢失。
+- 验证：Server `307 passed, 1 skipped`。
+
+## 2026-08-04 F-7 回归修复（已完成）
+
+- 问题：F-2 修复后，预算内历史不再调用 summarizer，但 sections 只保留 `history[-1]`，导致预算内旧轮次既无原文也无摘要，直接失忆。
+- 修复：`ContextAssembler` 现在优先在预算内保留全部 raw history；只有无法全部容纳时才对被丢弃的旧 history 生成摘要，并用 `(task_id, history[:-1])` 指纹缓存，相同旧 history 不重复调用 provider。
+- 回归测试：预算内 5 轮短历史全部保留且 summarizer 不调用；超预算时旧 history 生成摘要且 latest 保留；相同 history 重复 build 只调用一次 summarizer。
+- 验证：server `309 passed, 1 skipped`；CLI `45 passed`。
+
+## 2026-08-04 F-7 修复后复核：commit 85da874（评审会话）
+
+- F-7 已修复：预算内保留全部 raw history（不再失忆）；超预算对 `history[:-1]` 摘要并保留 latest；`(task_id, history[:-1])` 指纹缓存。
+- 三场景实测通过：预算内 5 轮全保留且不摘要；超预算 calls=1、summary+latest 均在；相同 history 3 次 build 只摘要一次。新行为比此前更贴合 SPEC §3.8"超预算时选择可摘要片段，预算内保留原文"。
+- 残余观察（后续处理见下条）：
+  - L-1【LOW】`test_summarizer_failure_keeps_latest_history_once` 变空洞：history 在预算内，build 提前短路，`FailingSummarizer` 从未被调用（实测 `invoked=False`）。
+  - A-1【ADVISORY】摘要缓存键按完整旧 history 指纹，AgentLoop 每轮 history 变长 → 缓存不命中，超预算任务每轮全量重摘要（整循环 O(n²)）。
+  - A-2【ADVISORY】缓存无淘汰。
+  - A-3【ADVISORY】预算内整段 history 被拍平为单条 user message，丢失 assistant/tool/feedback 角色区分。
+- 验证：Server `309 passed, 1 skipped`。
+
+## 2026-08-04 残余项处理（A1/A2/A3 已完成）
+
+- L-1【LOW】已修复：`test_summarizer_failure_keeps_latest_history_once` 原先 history 在预算内导致 FailingSummarizer 未被调用；已改为超预算历史，并断言 `invoked=True`、latest 只出现一次、旧原始轮次不泄漏。
+- A-1【ADVISORY】已实现：摘要状态改为按 task 保存 `(last_count, summary)`；旧 history 只增不减时，仅对新增 segment 做增量摘要，不再每轮全量重摘要。
+- A-2【ADVISORY】已实现：摘要状态使用有界 `OrderedDict`，默认 `summary_limit=16`，超限淘汰最旧 task；新增淘汰回归测试。
+- A-3【ADVISORY】已实现：AgentLoop 传给 ContextAssembler 的 history 带 `user:`/`assistant:`/`tool:`/`feedback:` 角色前缀，预算内 raw history 不再丢失角色区分。
+- 验证：server `312 passed, 1 skipped`；CLI 45 passed。
+
+## 2026-08-04 Phase 4 启动：Task 4.1 MemoryStore（进行中）
+
+- 触发的技能：`using-git-worktrees`、`test-driven-development`、`subagent-driven-development`、`requesting-code-review`
+- 上下文：Phase 1-3 已合并到本地 `dev`（HEAD `5107ec8`）；基线 server `224 passed, 1 skipped`，CLI `45 passed`。
+- Worktree：`.claude/worktrees/phase-4`
+- 分支：`worktree-phase-4`
+- 当前任务：按 PLAN 完成 Phase 4 的 4.1-4.11，并同步更新 `PLAN.md`、`AGENT_LOG.md`、Superpowers progress。
+
+### 2026-08-04 Task 4.1 质量评审修复（已完成）
+
+- 评审要求：MemoryStore 改为仓库现有的 `aiosqlite` 异步存储模式；补充分支测试；tags 用 JSON 序列化消除逗号歧义。
+- 修复内容：新增 async `connect()`/`add()`/`find()`/`close()` 与 async context manager；`close()` 幂等；tags 以 JSON 数组持久化。
+- 验证：`pytest server/tests/test_memory.py -v` → `7 passed`；完整 server 套件 → `231 passed, 1 skipped`。
+- 提交信息：`fix: harden async memory store and tag handling`
+
+## 2026-08-04 Task 4.2：ContextAssembler token budget（已完成并验证）
+
+- 触发的技能：`test-driven-development`、`subagent-driven-development`、`requesting-code-review`
+- 上下文：Task 4.1 MemoryStore 已完成并通过评审；本任务新增 `ContextAssembler` 与 token 预算装配。
+- 目标文件：`server/kl_server/core/context.py`、`server/tests/test_context.py`。
+- 预期：优先保留 rules/current/skills 等关键片段，`used_tokens` 不超预算，并保持可测试。
+- TDD 红：`ModuleNotFoundError: No module named 'kl_server.core.context'`
+- TDD 绿：`server/tests/test_context.py` → `3 passed`
+- 完整 server 套件：`234 passed, 1 skipped`
+- 质量评审修复：tool_catalog 作为 rules 后的优先片段；summary 优先级低于 latest history；支持注入 `token_estimator`；summarizer fallback 不再重复 latest history。
+- 复审验证：`server/tests/test_context.py` → `10 passed`；完整 server 套件 → `241 passed, 1 skipped`
+
+## 2026-08-04 Task 4.3：LLM summarizer（已完成并验证）
+
+- 触发的技能：`test-driven-development`、`subagent-driven-development`、`requesting-code-review`
+- 上下文：Task 4.2 的 `ContextAssembler` 已提供 `summarizer` hook；本任务实现 `LLMSummarizer` 并用 `MockProvider` 验证 provider 摘要路径。
+- 目标文件：`server/kl_server/core/context.py`、`server/tests/test_context.py`。
+- 预期：摘要失败时由 `ContextAssembler` fallback，不崩溃、不重复注入 latest history。
+- 初版提交：`02c717d`
+- 评审修复：`LLMSummarizer` 改为显式传入 `model`；summary prompt 包含 `task_id` 和编号 segments，避免多行历史粘连；provider 失败时输出 warning 日志并保留 assembler fallback。
+- 修复 TDD 红：`LLMSummarizer.__init__() got an unexpected keyword argument 'model'`，`4 failed`
+- 修复 TDD 绿：`server/tests/test_context.py` → `14 passed`
+- 完整 server 套件：`245 passed, 1 skipped`
+
+## 2026-08-04 Task 4.4：SkillLoader（已完成并验证）
+
+- 触发的技能：`test-driven-development`、`subagent-driven-development`、`requesting-code-review`
+- 上下文：Phase 4 进入扩展模块；`SkillLoader` 将按任务关键词加载 `.kl/skills/` 中的 skill 文档，供后续 ContextAssembler/AgentLoop 注入。
+- 目标文件：`server/kl_server/skills/`、`server/tests/test_skills.py`。
+- 预期：按目录名/关键词匹配 `SKILL.md`，缺失目录返回空文档，加载失败不阻塞 harness。
+- 当前状态：已完成并验证。
+- TDD 红：`ModuleNotFoundError: No module named 'kl_server.skills'`
+- TDD 绿：`server/tests/test_skills.py` → `6 passed`
+- 完整 server 套件：`251 passed, 1 skipped`
+- 测试修正：原 setup 将 `SKILL.md` 误建为目录导致 Windows PermissionError，已改为先建技能目录再写文档。
+- Spec review 修复：读取异常改为捕获 `(OSError, UnicodeDecodeError)`，新增 invalid UTF-8 回归测试。
+- 修复 TDD 红：`UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte`，`1 failed, 6 passed`
+- 修复 TDD 绿：`server/tests/test_skills.py` → `7 passed`
+- 修复后完整 server 套件：`252 passed, 1 skipped`
+- Code quality review 修复：root 使用 `is_dir()` 校验并将目录迭代包在 `OSError` 异常处理中，失败记录 warning 并返回空；过滤空/空白关键词，无有效关键词时返回空。
+- 修复 TDD 红：普通文件 root 触发 `NotADirectoryError`，空字符串关键词会加载全部技能，`2 failed, 7 passed`
+- 修复 TDD 绿：`server/tests/test_skills.py` → `9 passed`
+- 修复后完整 server 套件：`254 passed, 1 skipped`
+
+## 2026-08-04 Task 4.5：HookManager（进行中）
+
+- 触发的技能：`test-driven-development`、`subagent-driven-development`、`requesting-code-review`
+- 上下文：`HookManager` 负责 command hook 事件分派；Task 4.8 将扩展 HTTP hook 与失败策略。
+- 目标文件：`server/kl_server/hooks/`、`server/tests/test_hooks.py`。
+- 预期：`command` hook 收到 JSON payload 到 stdin，输出按顺序返回；超时/错误不阻塞默认流程。
+
+### 2026-08-04 Task 4.5 质量评审修复（已完成）
+
+- 评审要求：非零退出码视为 hook 失败；Windows 命令执行改为 argv list 或平台 shell；校验 `on_error`；畸形 hook 防御；显式 UTF-8 解码。
+- 修复内容：新增 `HookCommandError`，非零退出码按 `ignore`/`abort` 策略处理并截断 stderr；字符串命令使用 `shell=True`，同时支持 argv list；非法 `on_error` 抛 `ValueError`；非 dict/缺 type/缺 command 的 hook 按策略处理；subprocess 使用 `encoding="utf-8", errors="replace"`。
+- TDD 红：`ImportError: cannot import name 'HookCommandError'`，首轮 `1 error`
+- TDD 绿：`server/tests/test_hooks.py` → `15 passed`
+- 完整 server 套件：`269 passed, 1 skipped`
+- 提交信息：`fix: honor hook exit codes and harden command hooks`
+
+### 2026-08-04 Task 4.5 复评审修复（已完成）
+
+- 评审要求：子进程 UTF-8 输出；顶层 hook 配置防御；拒绝空白字符串命令。
+- 修复内容：subprocess 环境注入 `PYTHONUTF8=1` 与 `PYTHONIOENCODING=utf-8`；`hooks` 非 dict 在 `__init__` 抛 `TypeError`；event 值非 list 时按 `ignore`/`abort` 策略处理；空白/纯空白命令按 hook 失败处理。
+- TDD 红：`7 failed`（非 ASCII 输出乱码、顶层配置未防御、空白命令被当作成功）
+- TDD 绿：`server/tests/test_hooks.py` → `22 passed`
+- 完整 server 套件：`276 passed, 1 skipped`
+- 提交信息：`fix: harden hook encoding and top-level config`
+
+## 2026-08-04 Task 4.6：MCP adapter（进行中）
+
+- 触发的技能：`test-driven-development`、`subagent-driven-development`、`requesting-code-review`
+- 上下文：本任务先建立 MCP server 配置目录与 stub 调用入口；Task 4.9 再接入 stdio/streamable-http transport。
+- 目标文件：`server/kl_server/mcp/`、`server/tests/test_mcp_adapter.py`。
+- 预期：`catalog()` 返回配置；`tool()` 在未接入 transport 前返回结构化 `not connected`。
+- 当前状态：已完成并验证。
+- TDD 红：`ModuleNotFoundError: No module named 'kl_server.mcp'`
+- TDD 绿：`server/tests/test_mcp_adapter.py` → `3 passed`
+- 完整 server 套件：`279 passed, 1 skipped`
+- 提交信息：`6aafbd4`（`feat: add mcp adapter registry`）
+- 评审结论：spec ✅；quality Approved（未实现 transport，未新增 `mcp` 依赖）。
+
+## 2026-08-04 Task 4.7：User tool plugin loader（已完成并验证）
+
+- 触发的技能：`test-driven-development`、`subagent-driven-development`、`requesting-code-review`
+- 上下文：用户工具放在 `.kl/tools/<name>/`，必须导出 `TOOL` 对象并受同样 ToolRegistry 治理。
+- 目标文件：`server/kl_server/plugins/`、`server/tests/test_plugin_loader.py`。
+- 预期：按 `<name>/tool.py` 导入 `TOOL`，缺失/损坏插件不阻塞其余工具加载。
+- TDD 红：`ModuleNotFoundError: No module named 'kl_server.plugins'`
+- TDD 绿：`server/tests/test_plugin_loader.py` → `5 passed`
+- 完整 server 套件：`284 passed, 1 skipped`
+- Code quality review 修复：插件发现改为 `.kl/tools/<name>/tool.py` 目录布局；每个插件的加载/TOOL 获取/name 校验/注册全部纳入错误边界；校验非空字符串工具名；重复名记录 warning 并跳过；缺失/非目录 root 返回空并记录 warning；唯一 module name 注册 `sys.modules` 并临时加入插件目录到 `sys.path`，支持同目录 helper import。
+- 修复 TDD 绿：`server/tests/test_plugin_loader.py` → `11 passed`
+- 修复后完整 server 套件：`290 passed, 1 skipped`
+- 修复提交信息：`fix: load plugins from tool directories and isolate failures`
+- 进一步加固：插件模块执行后清理本次新加入 `sys.modules` 的模块，避免同名 helper 跨插件串用；插件根目录迭代 `OSError` 时记录 warning 并返回空。
+- 加固后 TDD 绿：`server/tests/test_plugin_loader.py` → `12 passed`
+- 加固后完整 server 套件：`291 passed, 1 skipped`
+
+## 2026-08-04 Task 4.8：HTTP hook support（进行中）
+
+- 触发的技能：`test-driven-development`、`subagent-driven-development`、`requesting-code-review`
+- 上下文：Task 4.5 的 `HookManager` 已支持 command hook；本任务补齐 SPEC §3.9 的 `http` hook 与 `ignore`/`abort` 失败策略。
+- 目标文件：`server/kl_server/hooks/manager.py`、`server/tests/test_hooks.py`；`httpx` 已在依赖中。
+- 预期：`http` hook 向配置 URL POST JSON payload，响应文本作为输出；连接/HTTP 错误按失败策略处理。
+- 当前状态：已完成并验证。
+- TDD 红：`server/tests/test_hooks.py` → `5 failed, 22 passed`（HTTP hook 未实现）
+- TDD 绿：`server/tests/test_hooks.py` → `27 passed`
+- 完整 server 套件：`296 passed, 1 skipped`
+
+## 2026-08-04 Task 4.9：MCP client transport（进行中）
+
+- 触发的技能：`test-driven-development`、`subagent-driven-development`、`requesting-code-review`
+- 上下文：Task 4.6 的 `McpAdapter` 目前是 `not connected` stub；本任务用官方 `mcp` SDK 接入 stdio 与 streamable-http transport。
+- 目标文件：`server/kl_server/mcp/transport.py`、`server/kl_server/mcp/adapter.py`、`server/pyproject.toml`、`server/tests/test_mcp_adapter.py`。
+- 环境：已安装 `mcp 2.0.0`，采用 v2 `ClientSession`/`stdio_client`/`streamable_http_client` API。
+- 当前状态：已完成并验证。
+- TDD 红：真实 stdio MCP 测试失败（`McpAdapter` 无 `close`/未接入 transport）。
+- TDD 绿：`server/tests/test_mcp_adapter.py` → `5 passed`
+- 完整 server 套件：`298 passed, 1 skipped`
+- 实现说明：`McpTransport` 按 `url` 或 `command` 分别使用 streamable-http/stdio；必须保存 async context manager 本体，避免流被 GC 提前关闭；失败 server 映射为 `not connected`；adapter 新增 `close()` 统一释放连接。
+- 依赖：`server/pyproject.toml` 新增 `mcp>=2.0.0`。
+
+## 2026-08-04 Task 4.10：ContextAssembler 接入 AgentLoop（进行中）
+
+- 触发的技能：`test-driven-development`、`subagent-driven-development`、`requesting-code-review`
+- 上下文：AgentLoop 仍直接发送原始 history；本任务接入 `ContextAssembler` 与 MemoryStore，使每轮上下文受 token 预算控制。
+- 目标文件：`server/kl_server/core/agent_loop.py`、`server/kl_server/core/tool_executor.py`、`server/tests/test_agent_loop.py`。
+- 当前状态：已完成并验证。
+- TDD 红：`AgentLoop.__init__() got an unexpected keyword argument 'context'`
+- TDD 绿：`server/tests/test_agent_loop.py server/tests/test_context.py` → `28 passed`
+- 完整 server 套件：`299 passed, 1 skipped`
+- 实现说明：`AgentLoop` 新增 `context`/`memory` 参数；有 assembler 时按轮构建带 tool catalog/rules/memory/history/task_id 的上下文；`ToolExecutor` 转发 `ToolRegistry.catalog()` 供工具目录注入。
+- 另修复 Task 4.8 测试抖动：HTTP 失败 abort 断言放宽到 `httpx.HTTPError`，避免 Windows 下 500 连接表现为 ReadError。
+
+## 2026-08-04 Task 4.11：Wire hooks/skills/MCP/plugins into harness（进行中）
+
+- 触发的技能：`test-driven-development`、`subagent-driven-development`、`requesting-code-review`
+- 上下文：4.4-4.10 的扩展模块已存在；本任务把 skill 注入 ContextAssembler、hook 事件接入 AgentLoop，并新增 MCP Tool 与用户插件注册入口。
+- 目标文件：`server/kl_server/extensions.py`、`server/kl_server/core/agent_loop.py`、`server/tests/test_extensions.py`。
+- 预期：AgentLoop 触发 `task_start`/`tool_after`/`task_end`；skills 进入每轮上下文；MCP/用户插件可注册为普通 Tool。
+- 当前状态：已完成并验证。
+- TDD 红：`ModuleNotFoundError: No module named 'kl_server.extensions'`
+- TDD 绿：`server/tests/test_extensions.py` → `3 passed`
+- 完整 server 套件：`302 passed, 1 skipped`
+- 实现说明：`extensions.py` 新增 `McpTool` 和 `register_user_tools`；AgentLoop 新增 `hooks`/`skills` 参数，按事件触发 hook 并在 context build 时注入 skills。
+
 ## 2026-08-03 Task 0.1：Server package skeleton
 
 **状态：已完成并验证**
@@ -67,6 +309,7 @@
   - 解决 PR #38 合并冲突：3.8 与 3.9 并行分支均在 `cli/package.json` devDependencies 同一位置添加 `@types/node`（`^22.15.3` vs `^22.20.1`）。将 `origin/dev` 合并进 3.9 分支（`fc6ced6`），统一保留 `^22.15.3`（caret 范围覆盖 22.20.x），依赖文件相对 dev 无净改动。
 - 当前状态：PR #29–#37 已由用户合并；PR #38 冲突已解决、CI 通过（server 224 passed、cli 45 passed、`npx tsc --noEmit` 通过），待用户合并。
 - 本会话将 phase 3 各 task 记录（此前仅存在于本地 dev，未随 PR 进入远端）合并补入远端 `AGENT_LOG.md`。
+
 ## 2026-08-04 Task 3.7：Daemon token authentication（已完成并验证）
 
 - 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
