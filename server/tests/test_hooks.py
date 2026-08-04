@@ -1,6 +1,10 @@
+import json
 import subprocess
 import sys
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
+import httpx
 import pytest
 
 from kl_server.hooks.manager import HookCommandError, HookManager
@@ -73,6 +77,132 @@ def test_command_hook_preserves_non_ascii_output(tmp_path):
     )
 
     assert manager.run("event", {}) == ["中文"]
+
+
+class CaptureHook(BaseHTTPRequestHandler):
+    received: list[dict] = []
+
+    def do_POST(self):
+        length = int(self.headers["Content-Length"])
+        CaptureHook.received.append(json.loads(self.rfile.read(length)))
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"ok")
+
+    def log_message(self, format, *args):
+        pass
+
+
+class FailHook(BaseHTTPRequestHandler):
+    def do_POST(self):
+        self.send_response(500)
+        self.end_headers()
+        self.wfile.write(b"server error")
+
+    def log_message(self, format, *args):
+        pass
+
+
+def run_http_server(handler):
+    server = HTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, thread
+
+
+def test_http_hook_posts_payload():
+    CaptureHook.received.clear()
+    server, thread = run_http_server(CaptureHook)
+    try:
+        manager = HookManager(
+            {
+                "approval_request": [
+                    {
+                        "type": "http",
+                        "url": f"http://127.0.0.1:{server.server_address[1]}/hook",
+                    }
+                ]
+            }
+        )
+
+        output = manager.run("approval_request", {"task_id": "t1"})
+
+        assert CaptureHook.received and CaptureHook.received[-1]["task_id"] == "t1"
+        assert output == ["ok"]
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()
+
+
+def test_http_hook_non_ok_response_is_ignored_with_error():
+    server, thread = run_http_server(FailHook)
+    try:
+        manager = HookManager(
+            {
+                "event": [
+                    {
+                        "type": "http",
+                        "url": f"http://127.0.0.1:{server.server_address[1]}/hook",
+                    }
+                ]
+            }
+        )
+
+        output = manager.run("event", {})
+
+        assert len(output) == 1
+        assert output[0].startswith("hook error:")
+        assert "500" in output[0]
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()
+
+
+def test_http_hook_non_ok_response_aborts():
+    server, thread = run_http_server(FailHook)
+    try:
+        manager = HookManager(
+            {
+                "event": [
+                    {
+                        "type": "http",
+                        "url": f"http://127.0.0.1:{server.server_address[1]}/hook",
+                    }
+                ]
+            },
+            on_error="abort",
+        )
+
+        with pytest.raises(httpx.HTTPStatusError):
+            manager.run("event", {})
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()
+
+
+def test_http_hook_missing_url_is_ignored_with_error():
+    manager = HookManager(
+        {"event": [{"type": "http"}]}
+    )
+
+    output = manager.run("event", {})
+
+    assert len(output) == 1
+    assert output[0].startswith("hook error:")
+    assert "url" in output[0]
+
+
+def test_http_hook_missing_url_aborts():
+    manager = HookManager(
+        {"event": [{"type": "http"}]},
+        on_error="abort",
+    )
+
+    with pytest.raises(ValueError, match="url"):
+        manager.run("event", {})
 
 
 def test_unknown_event_returns_empty_outputs():

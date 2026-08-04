@@ -4,6 +4,8 @@ Command hooks support two command forms:
 - a list of argv strings, passed directly to subprocess without a shell;
 - a string command, executed through the platform shell with ``shell=True``.
 
+HTTP hooks POST the JSON payload to the configured URL.
+
 String commands are trusted configuration and are interpreted by the platform
 shell, so they should not be built from untrusted input.
 """
@@ -12,6 +14,8 @@ import json
 import logging
 import os
 import subprocess
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -76,11 +80,17 @@ class HookManager:
                     )
                 if "type" not in hook:
                     raise ValueError("hook missing 'type'")
-                if hook["type"] != "command":
+                hook_type = hook["type"]
+                if hook_type not in ("command", "http"):
                     continue
-                if "command" not in hook:
-                    raise ValueError("command hook missing 'command'")
-                outputs.append(self._run_command(hook["command"], payload))
+                if hook_type == "command":
+                    if "command" not in hook:
+                        raise ValueError("command hook missing 'command'")
+                    outputs.append(self._run_command(hook["command"], payload))
+                else:
+                    if "url" not in hook:
+                        raise ValueError("http hook missing 'url'")
+                    outputs.append(self._run_http(hook["url"], payload))
             except Exception as exc:
                 if self.on_error == "abort":
                     raise
@@ -120,6 +130,13 @@ class HookManager:
         if proc.returncode != 0:
             raise HookCommandError(proc.returncode, proc.stderr)
         return proc.stdout.strip()
+
+    def _run_http(self, url: object, payload: dict) -> str:
+        if not isinstance(url, str) or not url.strip():
+            raise ValueError("http hook 'url' must be a non-empty string")
+        response = httpx.post(url, json=payload, timeout=self.timeout)
+        response.raise_for_status()
+        return _truncate(response.text)
 
     def _command_env(self) -> dict[str, str]:
         env = os.environ.copy()

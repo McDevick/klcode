@@ -117,6 +117,17 @@
 - 加固后 TDD 绿：`server/tests/test_plugin_loader.py` → `12 passed`
 - 加固后完整 server 套件：`291 passed, 1 skipped`
 
+## 2026-08-04 Task 4.8：HTTP hook support（进行中）
+
+- 触发的技能：`test-driven-development`、`subagent-driven-development`、`requesting-code-review`
+- 上下文：Task 4.5 的 `HookManager` 已支持 command hook；本任务补齐 SPEC §3.9 的 `http` hook 与 `ignore`/`abort` 失败策略。
+- 目标文件：`server/kl_server/hooks/manager.py`、`server/tests/test_hooks.py`；`httpx` 已在依赖中。
+- 预期：`http` hook 向配置 URL POST JSON payload，响应文本作为输出；连接/HTTP 错误按失败策略处理。
+- 当前状态：已完成并验证。
+- TDD 红：`server/tests/test_hooks.py` → `5 failed, 22 passed`（HTTP hook 未实现）
+- TDD 绿：`server/tests/test_hooks.py` → `27 passed`
+- 完整 server 套件：`296 passed, 1 skipped`
+
 ## 2026-08-03 Task 0.1：Server package skeleton
 
 **状态：已完成并验证**

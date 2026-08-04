@@ -246,7 +246,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 4.5 | HookManager | Done (`269db1c`, `fd93d25`, `c0c7d5f`) |
 | 4.6 | MCP adapter | Done (`6aafbd4`) |
 | 4.7 | User tool plugin loader | Done (`66fe49f`, `81519d0`) |
-| 4.8 | HTTP hook support | Pending |
+| 4.8 | HTTP hook support | Done |
 | 4.9 | MCP client transport (stdio / streamable-http) | Pending |
 | 4.10 | ContextAssembler integrated into AgentLoop | Pending |
 | 4.11 | Wire hooks/skills/MCP/plugins into harness | Pending |
@@ -4528,7 +4528,7 @@ SPEC §3.9 promises hooks of type `command` and `http`. Task 4.5 only implemente
 - Modify: `server/pyproject.toml` (add `httpx` to dependencies)
 - Test: `server/tests/test_hooks.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import json
@@ -4563,12 +4563,12 @@ def test_http_hook_posts_payload():
         thread.join()
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_hooks.py -v`
 Expected: FAIL (http hooks are skipped).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Modify `server/kl_server/hooks/manager.py`:
 
@@ -4607,12 +4607,12 @@ class HookManager:
 
 Add `httpx` to `server/pyproject.toml` dependencies (it is already a dev dependency). The existing Task 4.5 `command` hook test keeps passing because command hooks are unchanged.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_hooks.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/hooks/manager.py server/pyproject.toml server/tests/test_hooks.py
