@@ -13,7 +13,7 @@ export function App() {
     <Box flexDirection="column">
       <Text>KL Code</Text>
       <TaskInput
-        active={approval === null}
+        active={approval === null && !showConfig}
         onSubmit={(value) => {
           if (value === '/config' || value === '/cfg') {
             setShowConfig(true);
