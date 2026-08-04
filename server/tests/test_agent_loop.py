@@ -115,3 +115,42 @@ async def test_loop_reinjects_feedback_into_history():
     await loop.run(Session(id="s1", workspace="."), "fix")
     feedback_msgs = [m for m in provider.calls[1].messages if m.get("role") == "feedback"]
     assert feedback_msgs and "test_failure" in feedback_msgs[0]["content"]
+
+
+import pytest
+
+from kl_server.core.agent_loop import AgentLoop, LoopSettings
+from kl_server.core.event_logger import EventLogger
+from kl_server.core.tool_executor import ToolExecutor
+from kl_server.models.action import ToolResult
+from kl_server.models.task import Session
+from kl_server.providers.mock import MockProvider
+from kl_server.tools.base import Tool, ToolContext
+from kl_server.tools.registry import ToolRegistry
+
+
+class FinalTool(Tool):
+    name = "final"
+    description = "returns final marker"
+    schema = {"type": "object", "properties": {}}
+
+    async def execute(self, args, ctx: ToolContext) -> ToolResult:
+        return ToolResult(ok=True, output="done")
+
+
+@pytest.mark.asyncio
+async def test_loop_writes_events_in_realtime(tmp_path):
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+    provider = MockProvider(responses=['{"tool":"final","args":{}}', "DONE"])
+    logger = EventLogger(tmp_path / "audit.jsonl")
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=3),
+        logger=logger,
+    )
+    await loop.run(Session(id="s1", workspace="."), "task", task_id="s1")
+    lines = (tmp_path / "audit.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    events = [line.split('"event": "')[1].split('"')[0] for line in lines]
+    assert "loop_start" in events and "llm_call" in events and "tool_result" in events and "loop_end" in events

@@ -15,7 +15,7 @@ class EventLogger:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
-    def write(self, event: str, payload: dict) -> None:
+    def write(self, event: str, payload: dict, task_id: str = "") -> None:
         if not isinstance(payload, dict):
             raise TypeError("payload must be a dict")
         redacted = self._redact(payload)
@@ -26,6 +26,7 @@ class EventLogger:
                         {
                             "event": event,
                             "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "task_id": task_id,
                             "payload": redacted,
                         },
                         ensure_ascii=False,
