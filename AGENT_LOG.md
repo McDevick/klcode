@@ -27,6 +27,8 @@
 - TDD 红：`ModuleNotFoundError: No module named 'kl_server.core.context'`
 - TDD 绿：`server/tests/test_context.py` → `3 passed`
 - 完整 server 套件：`234 passed, 1 skipped`
+- 质量评审修复：tool_catalog 作为 rules 后的优先片段；summary 优先级低于 latest history；支持注入 `token_estimator`；summarizer fallback 不再重复 latest history。
+- 复审验证：`server/tests/test_context.py` → `10 passed`；完整 server 套件 → `241 passed, 1 skipped`
 
 ## 2026-08-03 Task 0.1：Server package skeleton
 
