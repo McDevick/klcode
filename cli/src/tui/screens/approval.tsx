@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, useInput } from 'ink';
 
 export function ApprovalPanel({
   tool,
@@ -7,22 +7,30 @@ export function ApprovalPanel({
   onApprove,
   onReject,
   onModify,
+  active = false,
 }: {
   tool: string;
   command: string;
   onApprove?: () => void;
   onReject?: () => void;
   onModify?: () => void;
+  active?: boolean;
 }) {
+  useInput(
+    (input) => {
+      if (input === 'a') onApprove?.();
+      else if (input === 'r') onReject?.();
+      else if (input === 'm') onModify?.();
+    },
+    { isActive: active },
+  );
+
   return (
     <Box flexDirection="column">
       <Text>
         requires approval: {tool} {command}
       </Text>
       <Text>[a]pprove [r]eject [m]odify</Text>
-      {onApprove ? <Text>approve handler ready</Text> : null}
-      {onReject ? <Text>reject handler ready</Text> : null}
-      {onModify ? <Text>modify handler ready</Text> : null}
     </Box>
   );
 }
