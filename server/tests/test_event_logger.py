@@ -59,3 +59,15 @@ def test_event_logger_wraps_write_failures(tmp_path):
     logger = EventLogger(tmp_path)
     with pytest.raises(RuntimeError):
         logger.write("action", {"a": 1})
+
+
+def test_event_logger_redacts_common_secret_formats(tmp_path):
+    logger = EventLogger(tmp_path / "audit.jsonl")
+    logger.write(
+        "task",
+        {
+            "task": "ghp_abc123 AKIA1234567890ABCDEF BEGIN PRIVATE KEY",
+        },
+    )
+    payload = json.loads((tmp_path / "audit.jsonl").read_text(encoding="utf-8").strip().splitlines()[0])["payload"]
+    assert payload["task"] == "[REDACTED]"

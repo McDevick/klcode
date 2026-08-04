@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 _SENSITIVE_VALUE_RE = re.compile(
-    r"(sk-[a-z0-9_-]+|api[_-]?key\s*[=:]|secret\s*[=:]|token\s*[=:]|password\s*[=:]|authorization\s*:\s*bearer)",
+    r"(sk-[a-z0-9_-]+|ghp_[a-z0-9]+|AKIA[0-9a-z]{16}|api[_-]?key\s*[=:]|secret\s*[=:]|token\s*[=:]|password\s*[=:]|authorization\s*:\s*bearer|-----begin[ a-z0-9]*private key-----)",
     re.I,
 )
 

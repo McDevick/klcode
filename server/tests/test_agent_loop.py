@@ -176,3 +176,18 @@ async def test_loop_logs_ordered_events_with_task_id(tmp_path):
     assert "llm_result" in event_names
     assert "tool_result" in event_names
     assert event_names[-1] == "loop_end"
+
+
+@pytest.mark.asyncio
+async def test_loop_logs_invalid_action(tmp_path):
+    provider = MockProvider(responses=["not json", "DONE"])
+    logger = EventLogger(tmp_path / "audit.jsonl")
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(ToolRegistry()),
+        settings=LoopSettings(max_iterations=3),
+        logger=logger,
+    )
+    await loop.run(Session(id="s1", workspace="."), "task")
+    records = [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text(encoding="utf-8").strip().splitlines()]
+    assert any(record["event"] == "invalid_action" for record in records)
