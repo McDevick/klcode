@@ -20,7 +20,12 @@ export function connectTaskEvents(
   socket.onmessage = (message) => {
     try {
       const data = JSON.parse(String(message.data)) as unknown;
-      if (data && typeof data === 'object' && 'task_id' in data) {
+      if (
+        data &&
+        typeof data === 'object' &&
+        'task_id' in data &&
+        typeof (data as TaskEvent).event === 'string'
+      ) {
         onEvent(data as TaskEvent);
       }
     } catch {
