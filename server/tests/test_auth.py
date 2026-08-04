@@ -69,6 +69,7 @@ def test_daemon_token_is_created_and_reused(tmp_path):
 def test_daemon_token_rejects_empty_file(tmp_path):
     token_path = tmp_path / "daemon.token"
     token_path.write_text("", encoding="utf-8")
+    os.chmod(token_path, 0o600)
 
     with pytest.raises(RuntimeError, match="empty"):
         load_or_create_daemon_token(token_path)
