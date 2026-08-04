@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import replace
 from typing import Any
 
 from kl_server.models.action import ToolResult
@@ -18,6 +19,16 @@ class ToolExecutor:
         self.timeout = timeout
         self.max_output_chars = max_output_chars
         self.guardrail = guardrail
+        if self.max_output_chars <= 0:
+            raise ValueError("max_output_chars must be positive")
+
+    def _truncate(self, text: str) -> str:
+        if len(text) <= self.max_output_chars:
+            return text
+        marker = "\n...[truncated]"
+        if self.max_output_chars <= len(marker):
+            return marker[: self.max_output_chars]
+        return text[: self.max_output_chars - len(marker)] + marker
 
     async def execute(self, name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         try:
@@ -27,10 +38,8 @@ class ToolExecutor:
         except Exception as exc:
             message = str(exc) or type(exc).__name__
             return ToolResult(ok=False, output="", error=message)
-        if len(result.output) > self.max_output_chars:
-            marker = "\n...[truncated]"
-            if self.max_output_chars <= len(marker):
-                result.output = marker[: self.max_output_chars]
-            else:
-                result.output = result.output[: self.max_output_chars - len(marker)] + marker
-        return result
+        return replace(
+            result,
+            output=self._truncate(result.output),
+            error=self._truncate(result.error or ""),
+        )

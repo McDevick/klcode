@@ -52,6 +52,15 @@ class BigTool(Tool):
         return ToolResult(ok=True, output="x" * 100_000)
 
 
+class BigErrorTool(Tool):
+    name = "big_error"
+    description = "returns huge error"
+    schema = {"type": "object", "properties": {}}
+
+    async def execute(self, args, ctx: ToolContext) -> ToolResult:
+        return ToolResult(ok=False, output="", error="e" * 100_000)
+
+
 class SlowTool(Tool):
     name = "slow"
     description = "sleeps too long"
@@ -126,6 +135,21 @@ async def test_executor_truncates_large_output():
     executor = ToolExecutor(registry, max_output_chars=10_000)
     result = await executor.execute("big", {}, ToolContext(workspace="."))
     assert len(result.output) == 10_000
+    assert result.output.endswith("\n...[truncated]")
+    assert result.output.startswith("x")
+    assert result.ok is True
+
+
+@pytest.mark.asyncio
+async def test_executor_truncates_large_error():
+    registry = ToolRegistry()
+    registry.register(BigErrorTool())
+    executor = ToolExecutor(registry, max_output_chars=100)
+    result = await executor.execute("big_error", {}, ToolContext(workspace="."))
+    assert len(result.error) == 100
+    assert result.error.endswith("\n...[truncated]")
+    assert result.error.startswith("e")
+    assert result.ok is False
 
 
 @pytest.mark.asyncio
