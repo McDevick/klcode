@@ -1,4 +1,7 @@
+import json
+
 import pytest
+
 from kl_server.core.agent_loop import AgentLoop, LoopSettings
 from kl_server.core.tool_executor import ToolExecutor
 from kl_server.models.action import ToolResult
@@ -74,7 +77,7 @@ async def test_unknown_tool_is_reported_back():
 
     assert result == "DONE"
     second_messages = provider.calls[1].messages
-    assert any("missing" in message["content"] for message in second_messages if message["role"] == "system")
+    assert any("missing" in message["content"] for message in second_messages if message["role"] == "feedback")
 
 
 @pytest.mark.asyncio
@@ -87,4 +90,28 @@ async def test_tool_crash_is_reported_back():
 
     assert result == "DONE"
     second_messages = provider.calls[1].messages
-    assert any("boom" in message["content"] for message in second_messages if message["role"] == "system")
+    assert any("boom" in message["content"] for message in second_messages if message["role"] == "feedback")
+
+
+class FailingCommandTool(Tool):
+    name = "run_command"
+    description = "runs a command that fails"
+    schema = {"type": "object", "properties": {}}
+
+    async def execute(self, args, ctx: ToolContext) -> ToolResult:
+        return ToolResult(ok=True, output='{"exit_code": 1, "stdout": "1 failed", "stderr": ""}')
+
+
+@pytest.mark.asyncio
+async def test_loop_reinjects_feedback_into_history():
+    registry = ToolRegistry()
+    registry.register(FailingCommandTool())
+    provider = MockProvider(responses=['{"tool":"run_command","args":{}}', "DONE"])
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=3),
+    )
+    await loop.run(Session(id="s1", workspace="."), "fix")
+    feedback_msgs = [m for m in provider.calls[1].messages if m.get("role") == "feedback"]
+    assert feedback_msgs and "test_failure" in feedback_msgs[0]["content"]
