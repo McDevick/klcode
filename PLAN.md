@@ -218,17 +218,17 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 1.11 | Complete built-in tool set (shell/git/patch/validation/task/delete) | Done (`b0dc443`) |
 | 1.12 | ToolExecutor timeout and output truncation | Done (`597a94a`) |
 | 1.13 | Feedback re-injection into AgentLoop | Done (`b96b037`) |
-| 1.14 | OpenAI-compatible provider and config loader | Pending |
-| 2.1 | ScopeFence | Pending |
-| 2.2 | SandboxPolicy | Pending |
-| 2.3 | DangerClassifier | Pending |
-| 2.4 | HITL state machine | Pending |
-| 2.5 | Guardrail pipeline | Pending |
-| 2.6 | Non-Git snapshot/rollback | Pending |
-| 2.7 | Audit logger | Pending |
-| 2.8 | Guardrail integrated into ToolExecutor | Pending |
-| 2.9 | Audit logging integrated into AgentLoop | Pending |
-| 2.10 | Non-Git workspace stricter approval | Pending |
+| 1.14 | OpenAI-compatible provider and config loader | Done (`c0226c2`) |
+| 2.1 | ScopeFence | Done (`22650d0`) |
+| 2.2 | SandboxPolicy | Done (`0530bea`) |
+| 2.3 | DangerClassifier | Done (`c9c6ba7`) |
+| 2.4 | HITL state machine | Done (`5519db8`) |
+| 2.5 | Guardrail pipeline | Done (`13fc7f9`) |
+| 2.6 | Non-Git snapshot/rollback | Done (`7da61db`) |
+| 2.7 | Audit logger | Done (`013c68d`) |
+| 2.8 | Guardrail integrated into ToolExecutor | Done (`2f8f344`) |
+| 2.9 | Audit logging integrated into AgentLoop | Done (`9309fe2`) |
+| 2.10 | Non-Git workspace stricter approval | Done (`ba90ec1`) |
 | 3.1 | FastAPI routes and WebSocket | Pending |
 | 3.2 | CLI API client | Pending |
 | 3.3 | Slash command registry | Pending |
@@ -2171,7 +2171,7 @@ SPEC §3.4 and §8 require an OpenAI-compatible provider as the first real LLM b
 - Modify: `server/pyproject.toml` (add `PyYAML` and `httpx`)
 - Test: `server/tests/test_openai_provider.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import httpx
@@ -2234,12 +2234,12 @@ def test_provider_factory_builds_mock_and_openai(tmp_path):
     assert registry.get("mock") is not None
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_openai_provider.py -v`
 Expected: FAIL with missing `loader`, `openai_compatible`, or `factory` modules.
 
-- [ ] **Step 3: Implement provider, loader, and factory**
+- [x] **Step 3: Implement provider, loader, and factory**
 
 Modify `server/kl_server/config/config.py`:
 
@@ -2336,12 +2336,12 @@ def build_provider_registry(config: AppConfig, credential_store) -> ProviderRegi
 
 Add `PyYAML` and `httpx` to `server/pyproject.toml` runtime dependencies.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_openai_provider.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/config server/kl_server/providers server/pyproject.toml server/tests/test_openai_provider.py
@@ -2359,7 +2359,7 @@ git commit -m "feat: add openai-compatible provider and config loader"
 - Create: `server/kl_server/core/guardrail.py`
 - Test: `server/tests/test_guardrail.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from pathlib import Path
@@ -2374,12 +2374,12 @@ def test_scope_fence_allows_inside_and_blocks_outside(tmp_path):
     assert fence.allow(outside) is False
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_guardrail.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement ScopeFence**
+- [x] **Step 3: Implement ScopeFence**
 
 ```python
 from pathlib import Path
@@ -2394,12 +2394,12 @@ class ScopeFence:
         return candidate == self.root or self.root in candidate.parents
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_guardrail.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/core/guardrail.py server/tests/test_guardrail.py
@@ -2414,7 +2414,7 @@ git commit -m "feat: add workspace scope fence"
 - Create: `server/kl_server/core/sandbox.py`
 - Test: `server/tests/test_sandbox.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from kl_server.core.sandbox import SandboxPolicy
@@ -2426,12 +2426,12 @@ def test_sandbox_denies_blacklisted_command():
     assert policy.allow_command("rm -rf .") is False
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_sandbox.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement SandboxPolicy**
+- [x] **Step 3: Implement SandboxPolicy**
 
 ```python
 class SandboxPolicy:
@@ -2446,12 +2446,12 @@ class SandboxPolicy:
         return not self.allow or binary in self.allow
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_sandbox.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/core/sandbox.py server/tests/test_sandbox.py
@@ -2465,7 +2465,7 @@ git commit -m "feat: add sandbox command policy"
 - Modify: `server/kl_server/core/guardrail.py`
 - Test: update `server/tests/test_guardrail.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from kl_server.core.guardrail import DangerClassifier
@@ -2484,12 +2484,12 @@ def test_safe_command_is_normal():
     assert classifier.classify(action) == "normal"
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_guardrail.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement classifier**
+- [x] **Step 3: Implement classifier**
 
 ```python
 from kl_server.models.action import Action
@@ -2507,12 +2507,12 @@ class DangerClassifier:
         return "normal"
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_guardrail.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/core/guardrail.py server/tests/test_guardrail.py
@@ -2526,7 +2526,7 @@ git commit -m "feat: add danger classifier"
 - Modify: `server/kl_server/core/guardrail.py`
 - Test: update `server/tests/test_guardrail.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from kl_server.core.guardrail import ApprovalRequest, HITLManager
@@ -2540,12 +2540,12 @@ def test_hitl_approve_and_reject():
     assert manager.reject("a2") == "rejected"
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_guardrail.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement HITL state machine**
+- [x] **Step 3: Implement HITL state machine**
 
 ```python
 from dataclasses import dataclass, field
@@ -2579,12 +2579,12 @@ class HITLManager:
         return self.requests[action_id].state
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_guardrail.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/core/guardrail.py server/tests/test_guardrail.py
@@ -2598,7 +2598,7 @@ git commit -m "feat: add hitl approval state machine"
 - Modify: `server/kl_server/core/guardrail.py`
 - Test: update `server/tests/test_guardrail.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from kl_server.core.guardrail import DangerClassifier, Guardrail, HITLManager, ScopeFence
@@ -2618,12 +2618,12 @@ def test_guardrail_blocks_outside_scope(tmp_path):
     assert decision == "rejected"
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_guardrail.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement pipeline**
+- [x] **Step 3: Implement pipeline**
 
 ```python
 from kl_server.models.action import Action
@@ -2650,12 +2650,12 @@ class Guardrail:
         return "allowed"
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_guardrail.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/core/guardrail.py server/tests/test_guardrail.py
@@ -2669,7 +2669,7 @@ git commit -m "feat: add guardrail pipeline"
 - Create: `server/kl_server/core/snapshot.py`
 - Test: `server/tests/test_snapshot.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from pathlib import Path
@@ -2687,12 +2687,12 @@ def test_snapshot_and_rollback(tmp_path):
     assert (target / "a.txt").read_text(encoding="utf-8") == "before"
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_snapshot.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement snapshot manager**
+- [x] **Step 3: Implement snapshot manager**
 
 ```python
 import shutil
@@ -2720,12 +2720,12 @@ class SnapshotManager:
             shutil.move(str(child), self.workspace / child.name)
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_snapshot.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/core/snapshot.py server/tests/test_snapshot.py
@@ -2739,7 +2739,7 @@ git commit -m "feat: add non-git snapshot and rollback"
 - Create: `server/kl_server/core/event_logger.py`
 - Test: `server/tests/test_event_logger.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import json
@@ -2754,12 +2754,12 @@ def test_event_logger_appends_and_redacts(tmp_path):
     assert payload["key"] == "[REDACTED]"
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_event_logger.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement audit logger**
+- [x] **Step 3: Implement audit logger**
 
 ```python
 import json
@@ -2781,12 +2781,12 @@ class EventLogger:
         return {key: ("[REDACTED]" if re.search(r"key|secret|token", key, re.I) else value) for key, value in payload.items()}
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_event_logger.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/core/event_logger.py server/tests/test_event_logger.py
@@ -2803,7 +2803,7 @@ Governance is the deep dimension, but it only matters if every tool call actuall
 - Modify: `server/kl_server/core/tool_executor.py`
 - Test: `server/tests/test_tool_executor.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import pytest
@@ -2854,12 +2854,12 @@ async def test_executor_returns_requires_approval(tmp_path):
     assert result.error == "requires_approval"
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_tool_executor.py -v`
 Expected: FAIL (guardrail not consulted; `git push --force` raises `KeyError` for the unregistered tool).
 
-- [ ] **Step 3: Implement the integration**
+- [x] **Step 3: Implement the integration**
 
 Add `meta` to `ToolResult` in `server/kl_server/models/action.py`:
 
@@ -2913,12 +2913,12 @@ class ToolExecutor:
 
 Note: the guardrail check runs before dispatch, so the second test passes even though `run_command` is not registered. The AgentLoop must call `ToolExecutor` (not the raw registry) from this point on; Task 3.9 adds the approval resolution path (`execute_approved`).
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_tool_executor.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/models/action.py server/kl_server/core/tool_executor.py server/tests/test_tool_executor.py
@@ -2935,7 +2935,7 @@ SPEC §3.11 says `AGENT_LOG` is written in real time during execution, and the E
 - Modify: `server/kl_server/core/agent_loop.py`
 - Test: `server/tests/test_agent_loop.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import pytest
@@ -2971,12 +2971,12 @@ async def test_loop_writes_events_in_realtime(tmp_path):
     assert "loop_start" in events and "llm_call" in events and "tool_result" in events and "loop_end" in events
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_agent_loop.py -v`
 Expected: FAIL (no log file written).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Modify `server/kl_server/core/event_logger.py` to add timestamp and task id:
 
@@ -3055,12 +3055,12 @@ class AgentLoop:
 
 Note: the Task 2.7 `test_event_logger_appends_and_redacts` test still passes because the new top-level fields do not affect `payload`.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_agent_loop.py server/tests/test_event_logger.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/core/event_logger.py server/kl_server/core/agent_loop.py server/tests/test_agent_loop.py
@@ -3076,7 +3076,7 @@ SPEC §3.2 / §3.6 require unmanaged (non-Git) workspaces to be stricter because
 - Modify: `server/kl_server/core/guardrail.py`
 - Test: `server/tests/test_guardrail.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from kl_server.core.guardrail import DangerClassifier, Guardrail, HITLManager, ScopeFence
@@ -3120,12 +3120,12 @@ def test_delete_file_always_requires_approval(tmp_path):
     assert guardrail.check(action) == "requires_approval"
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_guardrail.py -v`
 Expected: FAIL (write_file currently returns `allowed`; delete_file is not escalated).
 
-- [ ] **Step 3: Implement workspace mode**
+- [x] **Step 3: Implement workspace mode**
 
 Modify `server/kl_server/core/guardrail.py`:
 
@@ -3169,12 +3169,12 @@ class Guardrail:
 
 `workspace_mode` defaults to `"managed"`, so the existing Task 2.3 / 2.5 tests keep passing. `delete_file` now requires approval in both modes, matching SPEC §11.3 ("删除...默认危险").
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_guardrail.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/core/guardrail.py server/tests/test_guardrail.py
