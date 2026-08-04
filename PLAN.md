@@ -217,7 +217,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 1.10 | Credential backends (keyring / encrypted file / .env) | Done (`889db38`) |
 | 1.11 | Complete built-in tool set (shell/git/patch/validation/task/delete) | Done (`b0dc443`) |
 | 1.12 | ToolExecutor timeout and output truncation | Done (`597a94a`) |
-| 1.13 | Feedback re-injection into AgentLoop | Pending |
+| 1.13 | Feedback re-injection into AgentLoop | Done (`b96b037`) |
 | 1.14 | OpenAI-compatible provider and config loader | Pending |
 | 2.1 | ScopeFence | Pending |
 | 2.2 | SandboxPolicy | Pending |
@@ -2070,7 +2070,7 @@ This is the core of the harness loop (SPEC §3.3, §3.7): after each tool run, p
 - Modify: `server/kl_server/core/agent_loop.py`
 - Test: `server/tests/test_agent_loop.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import json
@@ -2105,12 +2105,12 @@ async def test_loop_reinjects_feedback_into_history():
     assert feedback_msgs and "test_failure" in feedback_msgs[0]["content"]
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_agent_loop.py -v`
 Expected: FAIL (no feedback role appended).
 
-- [ ] **Step 3: Implement feedback re-injection**
+- [x] **Step 3: Implement feedback re-injection**
 
 Add to `server/kl_server/core/feedback.py`:
 
@@ -2144,12 +2144,12 @@ history.append({"role": "tool", "content": result.output})
 history.append({"role": "feedback", "content": f"{feedback.category.value}: {feedback.summary[:500]}"})
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_agent_loop.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/core/feedback.py server/kl_server/core/agent_loop.py server/tests/test_agent_loop.py

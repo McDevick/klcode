@@ -58,6 +58,20 @@
 - 完成时补充 commit hash、验证输出、评审结论和人工干预。
 - 若发现范围越界或未授权功能，必须立即记录并停止。
 
+## 2026-08-04 Task 1.13：Feedback re-injection into AgentLoop（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`server/kl_server/core/feedback.py` 新增 `classify_tool_result`、`server/kl_server/core/agent_loop.py`、`server/tests/test_agent_loop.py`。
+- 计划：从 Task 1.12 分支创建 stacked worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后并入待推送链。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-1.13-feedback`
+- 分支：`worktree-task-1.13-feedback`
+- Implementer：subagent `019fca37-c40d-72d3-9023-de85618ae6c3`
+- Commit：`4ae3664`、`05f8c78`、`b96b037`（评审修复）
+- TDD 红：feedback_msgs 为空
+- TDD 绿：`18 passed`；完整 server 套件 `108 passed`
+- 评审：spec 合规通过；质量评审通过（命令工具结构化解析、invalid action feedback、普通工具 SUCCESS）
+
 ## 2026-08-04 Task 1.12：ToolExecutor timeout and output truncation（已完成并验证）
 
 - 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
