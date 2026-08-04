@@ -215,7 +215,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 1.8 | Config and credentials | Done (`4f92975`) |
 | 1.9 | Basic AgentLoop | Done (`df5993d`) |
 | 1.10 | Credential backends (keyring / encrypted file / .env) | Done (`889db38`) |
-| 1.11 | Complete built-in tool set (shell/git/patch/validation/task/delete) | Pending |
+| 1.11 | Complete built-in tool set (shell/git/patch/validation/task/delete) | Done (`b0dc443`) |
 | 1.12 | ToolExecutor timeout and output truncation | Pending |
 | 1.13 | Feedback re-injection into AgentLoop | Pending |
 | 1.14 | OpenAI-compatible provider and config loader | Pending |
@@ -1627,7 +1627,7 @@ SPEC §3.5 lists 17 built-in tools; Task 1.4 only implemented file/search tools.
 - Create: `server/kl_server/tools/builtin/task.py`
 - Test: `server/tests/test_builtin_tools.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import json
@@ -1697,12 +1697,12 @@ async def test_task_manage_crud(tmp_path):
     assert created.ok and '"fix bug"' in listed.output
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_builtin_tools.py -v`
 Expected: FAIL with missing modules.
 
-- [ ] **Step 3: Implement the tools**
+- [x] **Step 3: Implement the tools**
 
 Update `ToolContext` in `server/kl_server/tools/base.py`:
 
@@ -1942,12 +1942,12 @@ class TaskManageTool(Tool):
         return ToolResult(ok=False, output="", error=f"unknown action: {action}")
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_builtin_tools.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/tools server/tests/test_builtin_tools.py

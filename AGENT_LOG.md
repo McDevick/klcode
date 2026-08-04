@@ -58,6 +58,20 @@
 - 完成时补充 commit hash、验证输出、评审结论和人工干预。
 - 若发现范围越界或未授权功能，必须立即记录并停止。
 
+## 2026-08-03/04 Task 1.11：Complete the built-in tool set（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`ToolContext.task_state`、`DeleteFileTool`、`shell.py`、`patch.py`、`git.py`、`validation.py`、`task.py` 与 `server/tests/test_builtin_tools.py`。
+- 计划：从最新 `dev` 创建独立 worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后合入 `dev`。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-1.11-tools`
+- 分支：`worktree-task-1.11-tools`
+- Implementer：subagent `019fca01-c3ef-7a62-9c5c-7590be9a3cfb`
+- Commit：`5b72a66`、`9230c8b`、`356bd15`、`3a92a4a`、`0e79234`、`b0dc443`（多轮评审修复）
+- TDD 红：`ImportError: cannot import name 'DeleteFileTool'`
+- TDD 绿：`29 passed`；完整 server 套件 `98 passed`
+- 评审：spec 合规通过；质量评审通过（patch hunk 校验、git pathspec 安全、注册入口、task delete）
+
 ## 2026-08-03 Task 1.10：Credential backends (keyring / encrypted file / .env)（已完成并验证）
 
 - 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
