@@ -1,0 +1,115 @@
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, expect, test, vi } from 'vitest';
+import { ServerCommand } from '../src/commands/server';
+
+const tempDirs: string[] = [];
+
+function makeTempDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'kl-server-test-'));
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  while (tempDirs.length > 0) {
+    rmSync(tempDirs.pop()!, { recursive: true, force: true });
+  }
+});
+
+test('server start spawns uvicorn and writes pid file', async () => {
+  const dir = makeTempDir();
+  const pidPath = join(dir, 'daemon.pid');
+  const spawnMock = vi.fn().mockReturnValue({ pid: 4242, unref: vi.fn() });
+
+  const output = await ServerCommand.run(['start'], { pidPath, spawnImpl: spawnMock });
+
+  expect(output).toContain('started');
+  expect(spawnMock).toHaveBeenCalledWith(
+    'python',
+    ['-m', 'uvicorn', 'kl_server.main:app', '--host', '127.0.0.1', '--port', '8700'],
+    expect.objectContaining({
+      env: expect.objectContaining({
+        PYTHONPATH: expect.stringContaining('server'),
+      }),
+    }),
+  );
+  expect(readFileSync(pidPath, 'utf8')).toBe('4242');
+});
+
+test('server stop kills pid and removes pid file', async () => {
+  const dir = makeTempDir();
+  const pidPath = join(dir, 'daemon.pid');
+  writeFileSync(pidPath, '4321');
+  const killMock = vi.fn().mockReturnValue(true);
+
+  const output = await ServerCommand.run(['stop'], { pidPath, killImpl: killMock });
+
+  expect(output).toContain('stopped');
+  expect(killMock).toHaveBeenCalledWith(4321);
+  expect(existsSync(pidPath)).toBe(false);
+});
+
+test('server stop reports failure and keeps pid file when kill fails', async () => {
+  const dir = makeTempDir();
+  const pidPath = join(dir, 'daemon.pid');
+  writeFileSync(pidPath, '4321');
+  const killMock = vi.fn().mockReturnValue(false);
+
+  const output = await ServerCommand.run(['stop'], { pidPath, killImpl: killMock });
+
+  expect(output).toContain('failed');
+  expect(existsSync(pidPath)).toBe(true);
+});
+
+test('server status calls health and reports running', async () => {
+  const dir = makeTempDir();
+  const pidPath = join(dir, 'daemon.pid');
+  const tokenPath = join(dir, 'daemon.token');
+  writeFileSync(pidPath, '4242');
+  writeFileSync(tokenPath, 'daemon-token');
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ status: 'ok' }),
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    const output = await ServerCommand.run(['status'], { pidPath, tokenPath });
+
+    expect(output).toContain('running');
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:8700/health',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const headers = new Headers(init.headers);
+    expect(headers.get('authorization')).toBe('Bearer daemon-token');
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test('server status reports stale pid when health fails', async () => {
+  const dir = makeTempDir();
+  const pidPath = join(dir, 'daemon.pid');
+  writeFileSync(pidPath, '99');
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: false,
+    status: 500,
+    json: async () => ({}),
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    const output = await ServerCommand.run(['status'], { pidPath });
+
+    expect(output).toContain('not responding');
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:8700/health',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
