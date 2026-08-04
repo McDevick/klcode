@@ -1,10 +1,10 @@
+import { DEFAULT_BASE_URL } from './client';
+
 export interface TaskEvent {
   task_id: string;
   event: string;
   [key: string]: unknown;
 }
-
-const DEFAULT_BASE_URL = 'http://127.0.0.1:8700';
 
 export interface ConnectTaskEventsOptions {
   baseUrl?: string;

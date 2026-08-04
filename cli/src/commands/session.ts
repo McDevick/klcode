@@ -1,11 +1,11 @@
-import { ApiClient } from '../api/client';
+import { ApiClient, DEFAULT_BASE_URL } from '../api/client';
 
 export const SessionCommand = {
   name: 'session',
   aliases: ['/sessions'],
   run: async (args: string[]) => {
-    const client = new ApiClient({ baseUrl: 'http://127.0.0.1:8700' });
-    const [subcommand, value, second] = args;
+    const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
+    const [subcommand, value, ...rest] = args;
     switch (subcommand) {
       case 'new':
         if (!value) return 'usage: /session new <workspace>';
@@ -14,10 +14,10 @@ export const SessionCommand = {
         if (!value) return 'usage: /session open <id>';
         return JSON.stringify(await client.getSession(value));
       case 'rename':
-        if (!value || !second) return 'usage: /session rename <id> <name>';
-        return JSON.stringify(await client.renameSession(value, second));
+        if (!value || rest.length === 0) return 'usage: /session rename <id> <name>';
+        return JSON.stringify(await client.renameSession(value, rest.join(' ')));
       case 'close':
-        if (!value) return 'usage: /session close <id>';
+        if (!value) return 'current session close is not wired yet';
         return JSON.stringify(await client.closeSession(value));
       case 'delete':
         if (!value) return 'usage: /session delete <id>';

@@ -31,6 +31,8 @@ export function App() {
               const command = commands.resolve(commandName);
               void Promise.resolve(command.run(args)).then((result: string) => {
                 setEvents((current) => [...current, result]);
+              }).catch((error: unknown) => {
+                setEvents((current) => [...current, `command error: ${String(error)}`]);
               });
             } catch {
               setEvents((current) => [...current, `unknown command: ${commandName}`]);
