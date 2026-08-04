@@ -25,6 +25,15 @@ class EmptyMessageCrashTool(Tool):
         raise RuntimeError()
 
 
+class BigExceptionTool(Tool):
+    name = "big_exception"
+    description = "raises a huge error message"
+    schema = {"type": "object", "properties": {}}
+
+    async def execute(self, args, ctx: ToolContext) -> ToolResult:
+        raise RuntimeError("e" * 100_000)
+
+
 class SuccessTool(Tool):
     name = "success"
     description = "always succeeds"
@@ -106,6 +115,7 @@ async def test_success_is_returned_unchanged():
     assert result is not None
     assert result.ok is True
     assert result.output == "ok"
+    assert result.error is None
 
 
 @pytest.mark.asyncio
@@ -160,3 +170,14 @@ async def test_executor_times_out_slow_tool():
     result = await executor.execute("slow", {}, ToolContext(workspace="."))
     assert result.ok is False
     assert result.error == "timeout"
+
+
+@pytest.mark.asyncio
+async def test_executor_truncates_large_exception_message():
+    registry = ToolRegistry()
+    registry.register(BigExceptionTool())
+    executor = ToolExecutor(registry, max_output_chars=100)
+    result = await executor.execute("big_exception", {}, ToolContext(workspace="."))
+    assert len(result.error) == 100
+    assert result.error.endswith("\n...[truncated]")
+    assert result.error.startswith("e")

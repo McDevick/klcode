@@ -36,10 +36,10 @@ class ToolExecutor:
         except asyncio.TimeoutError:
             return ToolResult(ok=False, output="", error="timeout")
         except Exception as exc:
-            message = str(exc) or type(exc).__name__
+            message = self._truncate(str(exc) or type(exc).__name__)
             return ToolResult(ok=False, output="", error=message)
         return replace(
             result,
             output=self._truncate(result.output),
-            error=self._truncate(result.error or ""),
+            error=self._truncate(result.error) if result.error is not None else None,
         )
