@@ -62,6 +62,13 @@
 - 修复 TDD 绿：`server/tests/test_skills.py` → `9 passed`
 - 修复后完整 server 套件：`254 passed, 1 skipped`
 
+## 2026-08-04 Task 4.5：HookManager（进行中）
+
+- 触发的技能：`test-driven-development`、`subagent-driven-development`、`requesting-code-review`
+- 上下文：`HookManager` 负责 command hook 事件分派；Task 4.8 将扩展 HTTP hook 与失败策略。
+- 目标文件：`server/kl_server/hooks/`、`server/tests/test_hooks.py`。
+- 预期：`command` hook 收到 JSON payload 到 stdin，输出按顺序返回；超时/错误不阻塞默认流程。
+
 ## 2026-08-03 Task 0.1：Server package skeleton
 
 **状态：已完成并验证**
