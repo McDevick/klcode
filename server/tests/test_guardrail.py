@@ -46,3 +46,19 @@ def test_scope_fence_rejects_windows_drive_relative_path(tmp_path):
         return
     fence = ScopeFence(str(tmp_path))
     assert fence.allow("C:outside") is False
+
+
+from kl_server.core.guardrail import DangerClassifier
+from kl_server.models.action import Action
+
+
+def test_dangerous_rm_is_critical():
+    classifier = DangerClassifier()
+    action = Action(tool="run_command", args={"command": "rm -rf /"}, task_id="t1")
+    assert classifier.classify(action) == "critical"
+
+
+def test_safe_command_is_normal():
+    classifier = DangerClassifier()
+    action = Action(tool="run_command", args={"command": "pytest"}, task_id="t1")
+    assert classifier.classify(action) == "normal"
