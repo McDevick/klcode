@@ -1,4 +1,6 @@
 import sys
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
@@ -127,6 +129,39 @@ async def test_tool_reports_not_connected_for_failing_server(tmp_path):
     )
 
     result = await adapter.tool("demo", "echo", {})
+
+    assert result.ok is False
+    assert result.error == "not connected"
+
+
+class MissingMcpEndpoint(BaseHTTPRequestHandler):
+    def do_POST(self):
+        self.send_response(404)
+        self.end_headers()
+
+    def log_message(self, format, *args):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_streamable_http_unavailable_returns_not_connected():
+    server = HTTPServer(("127.0.0.1", 0), MissingMcpEndpoint)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        adapter = McpAdapter(
+            {
+                "demo": {
+                    "url": f"http://127.0.0.1:{server.server_address[1]}/mcp"
+                }
+            }
+        )
+
+        result = await adapter.tool("demo", "echo", {})
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()
 
     assert result.ok is False
     assert result.error == "not connected"

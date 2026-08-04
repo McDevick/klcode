@@ -21,6 +21,21 @@ class McpTool(Tool):
         self.adapter = adapter
 
     async def execute(self, args: dict, ctx: ToolContext) -> ToolResult:
+        if not isinstance(args, dict):
+            return ToolResult(ok=False, output="", error="mcp_tool args must be an object")
+        missing = [
+            key
+            for key in ("server", "tool")
+            if not isinstance(args.get(key), str) or not args.get(key).strip()
+        ]
+        if missing:
+            return ToolResult(
+                ok=False,
+                output="",
+                error="missing required argument(s): " + ", ".join(missing),
+            )
+        if "args" in args and not isinstance(args["args"], dict):
+            return ToolResult(ok=False, output="", error="mcp_tool 'args' must be an object")
         return await self.adapter.tool(
             args["server"],
             args["tool"],

@@ -30,7 +30,10 @@ class SkillLoader:
             markdown = skill_dir / "SKILL.md"
             if not skill_dir.is_dir() or not markdown.is_file():
                 continue
-            if not any(keyword in skill_dir.name for keyword in normalized_keywords):
+            if not any(
+                skill_dir.name.lower() in keyword.lower()
+                for keyword in normalized_keywords
+            ):
                 continue
             try:
                 docs.append(markdown.read_text(encoding="utf-8"))

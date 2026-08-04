@@ -7,6 +7,7 @@ from kl_server.extensions import McpTool, register_user_tools
 from kl_server.models.action import ToolResult
 from kl_server.models.task import Session
 from kl_server.providers.mock import MockProvider
+from kl_server.skills.loader import SkillLoader
 from kl_server.tools.base import Tool, ToolContext
 from kl_server.tools.registry import ToolRegistry
 
@@ -39,23 +40,24 @@ class FakeHooks:
         self.events.append(event)
 
 
-class FakeSkills:
-    def load(self, keywords):
-        return "skill-doc"
-
-
 class FakeMemory:
     async def find(self, tags):
         return []
 
 
 @pytest.mark.asyncio
-async def test_loop_injects_skills_and_fires_hooks():
+async def test_loop_injects_skills_and_fires_hooks(tmp_path):
     registry = ToolRegistry()
     registry.register(FinalTool())
     provider = MockProvider(responses=['{"tool":"final","args":{}}', "DONE"])
     assembler = SpyAssembler()
     hooks = FakeHooks()
+    skill_dir = tmp_path / "skills"
+    (skill_dir / "python").mkdir(parents=True)
+    (skill_dir / "python" / "SKILL.md").write_text(
+        "# Python\nUse pytest",
+        encoding="utf-8",
+    )
     loop = AgentLoop(
         provider=provider,
         tools=ToolExecutor(registry),
@@ -63,14 +65,16 @@ async def test_loop_injects_skills_and_fires_hooks():
         context=assembler,
         memory=FakeMemory(),
         hooks=hooks,
-        skills=FakeSkills(),
+        skills=SkillLoader(str(skill_dir)),
     )
 
-    await loop.run(Session(id="s1", workspace="."), "task")
+    await loop.run(Session(id="s1", workspace="."), "fix python code")
 
-    assert assembler.last_kwargs["skills"] == "skill-doc"
+    assert "Use pytest" in assembler.last_kwargs["skills"]
     assert "task_start" in hooks.events
+    assert "action_before" in hooks.events
     assert "tool_after" in hooks.events
+    assert "feedback_generation" in hooks.events
     assert "task_end" in hooks.events
 
 
@@ -90,6 +94,29 @@ async def test_mcp_tool_dispatches_to_adapter():
 
     assert result.ok is True
     assert result.output == "demo:echo"
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_rejects_missing_required_arguments():
+    tool = McpTool(FakeMcpAdapter())
+
+    result = await tool.execute({"server": "demo"}, ToolContext(workspace="."))
+
+    assert result.ok is False
+    assert "tool" in result.error
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_rejects_non_object_args():
+    tool = McpTool(FakeMcpAdapter())
+
+    result = await tool.execute(
+        {"server": "demo", "tool": "echo", "args": "not-an-object"},
+        ToolContext(workspace="."),
+    )
+
+    assert result.ok is False
+    assert "args" in result.error
 
 
 class PluginTool(Tool):

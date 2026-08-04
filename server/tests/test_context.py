@@ -40,12 +40,35 @@ async def test_assembler_uses_provider_summary_without_repeating_latest():
         tool_catalog=[],
         rules="rules",
         memory=[],
-        history=["old1", "old2", "latest"],
+        history=["old-" + "x" * 200, "old-" + "y" * 200, "latest"],
     )
 
     assert result.contains_priority("summary")
     assert result.text.count("latest") == 1
     assert "old1" not in result.text
+
+
+@pytest.mark.asyncio
+async def test_assembler_skips_summary_when_history_fits_budget():
+    class CountingSummarizer:
+        calls = 0
+
+        async def summarize(self, segments, task_id):
+            self.calls += 1
+            return "summary"
+
+    assembler = ContextAssembler(max_tokens=100)
+    summarizer = CountingSummarizer()
+    assembler.summarizer = summarizer
+    result = await assembler.build(
+        tool_catalog=[],
+        rules="rules",
+        memory=[],
+        history=["old1", "old2", "latest"],
+    )
+
+    assert result.contains_priority("latest")
+    assert summarizer.calls == 0
 
 
 @pytest.mark.asyncio
@@ -60,7 +83,7 @@ async def test_assembler_falls_back_when_provider_fails(caplog):
         tool_catalog=[],
         rules="rules",
         memory=[],
-        history=["old1", "old2", "latest"],
+        history=["old-" + "x" * 200, "old-" + "y" * 200, "latest"],
     )
 
     assert result.contains_priority("latest")

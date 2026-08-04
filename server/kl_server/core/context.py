@@ -79,12 +79,6 @@ class ContextAssembler:
         skills: str = "",
     ) -> AssembledContext:
         summary = ""
-        if self.summarizer and len(history) > 2:
-            try:
-                summary = await self.summarizer.summarize(history[:-1], task_id)
-            except Exception:
-                summary = ""
-
         tool_catalog_text = self._format_tool_catalog(tool_catalog)
         sections = [rules]
         if tool_catalog_text:
@@ -95,6 +89,21 @@ class ContextAssembler:
             sections.append(memory[-1])
         if history:
             sections.append(history[-1])
+        if self.summarizer and len(history) > 2:
+            raw_sections = [rules]
+            if tool_catalog_text:
+                raw_sections.append(tool_catalog_text)
+            if skills:
+                raw_sections.append(skills)
+            if memory:
+                raw_sections.append(memory[-1])
+            raw_sections.extend(history)
+            raw_text = "\n\n".join(raw_sections)
+            if self._estimate(raw_text) > max(0, self.max_tokens):
+                try:
+                    summary = await self.summarizer.summarize(history[:-1], task_id)
+                except Exception:
+                    summary = ""
         if summary:
             sections.append(summary)
 

@@ -4,6 +4,9 @@ import pytest
 
 from kl_server.core.agent_loop import AgentLoop, LoopSettings
 from kl_server.core.context import AssembledContext
+from kl_server.core.event_logger import EventLogger
+from kl_server.core.guardrail import DangerClassifier, Guardrail, HITLManager, ScopeFence
+from kl_server.core.sandbox import SandboxPolicy
 from kl_server.core.tool_executor import ToolExecutor
 from kl_server.models.action import ToolResult
 from kl_server.models.task import Session
@@ -157,27 +160,6 @@ async def test_loop_uses_context_assembler():
     assert provider.calls[0].messages == [{"role": "user", "content": "assembled"}]
 
 
-import pytest
-
-from kl_server.core.agent_loop import AgentLoop, LoopSettings
-from kl_server.core.event_logger import EventLogger
-from kl_server.core.tool_executor import ToolExecutor
-from kl_server.models.action import ToolResult
-from kl_server.models.task import Session
-from kl_server.providers.mock import MockProvider
-from kl_server.tools.base import Tool, ToolContext
-from kl_server.tools.registry import ToolRegistry
-
-
-class FinalTool(Tool):
-    name = "final"
-    description = "returns final marker"
-    schema = {"type": "object", "properties": {}}
-
-    async def execute(self, args, ctx: ToolContext) -> ToolResult:
-        return ToolResult(ok=True, output="done")
-
-
 @pytest.mark.asyncio
 async def test_loop_writes_events_in_realtime(tmp_path):
     registry = ToolRegistry()
@@ -231,10 +213,6 @@ async def test_loop_logs_invalid_action(tmp_path):
     await loop.run(Session(id="s1", workspace="."), "task")
     records = [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text(encoding="utf-8").strip().splitlines()]
     assert any(record["event"] == "invalid_action" for record in records)
-
-
-from kl_server.core.guardrail import DangerClassifier, Guardrail, HITLManager, ScopeFence
-from kl_server.core.sandbox import SandboxPolicy
 
 
 class ApprovalShellTool(Tool):

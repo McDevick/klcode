@@ -15,6 +15,16 @@
   - `.kl/tools/<name>/` 目录契约在插件 loader 首版被实现成扁平文件，spec review 前即被 quality review 发现并修正。
   - Windows 下 subprocess/HTTP 测试需要显式 UTF-8 与更宽松的 HTTP 错误断言，避免 locale/连接重置抖动。
 
+## 2026-08-04 代码发现修复（已完成）
+
+- F-1 HIGH：`SkillLoader` 改为用 skill 目录名匹配任务文本，AgentLoop 接真实 `SkillLoader` 回归测试，不再把整个任务文本当 keyword 去子串匹配目录名。
+- F-2 MEDIUM：`ContextAssembler` 只有原始 history 超预算时才调用 summarizer；新增“预算内不摘要”回归测试。
+- F-3 LOW：清理 `test_agent_loop.py` 重复导入与重复 `FinalTool` 定义。
+- F-4 ADVISORY：AgentLoop 补齐 `action_before`、`approval_request`、`approval_complete`、`feedback_generation`、`error`、`abort` hook 事件。
+- F-5 ADVISORY：`mcp` 依赖锁定 `>=2.0.0,<3.0.0`，新增 streamable-http 不可用时的 `not connected` 回归测试。
+- F-6 ADVISORY：`McpTool` 对 `server`/`tool` 必填参数和 `args` 类型做结构化校验，不再直接 `KeyError`。
+- 验证：server `307 passed, 1 skipped`；CLI `45 passed`；`git diff --check` 干净。
+
 ## 2026-08-04 Phase 4 启动：Task 4.1 MemoryStore（进行中）
 
 - 触发的技能：`using-git-worktrees`、`test-driven-development`、`subagent-driven-development`、`requesting-code-review`

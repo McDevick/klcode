@@ -80,6 +80,10 @@ class AgentLoop:
                     self.logger.write("provider_error", {"error": str(exc)[:500]}, task_id)
                     self.logger.write("loop_end", {"reason": "provider_error"}, task_id)
                 if self.hooks:
+                    self.hooks.run(
+                        "error",
+                        {"reason": "provider_error", "error": str(exc)[:500]},
+                    )
                     self.hooks.run("task_end", {"reason": "provider_error"})
                 raise
             text = response.text.strip()
@@ -121,6 +125,11 @@ class AgentLoop:
                 task_id=session.id,
                 workspace=session.workspace,
             )
+            if self.hooks:
+                self.hooks.run(
+                    "action_before",
+                    {"tool": action.tool, "args": action.args},
+                )
             result = await self.tools.execute(
                 action.tool,
                 action.args,
@@ -134,6 +143,15 @@ class AgentLoop:
                 )
             if result.error == "requires_approval":
                 action_id = result.meta.get("action_id") or f"{task_id}:{action.tool}"
+                if self.hooks:
+                    self.hooks.run(
+                        "approval_request",
+                        {
+                            "action_id": action_id,
+                            "tool": action.tool,
+                            "args": action.args,
+                        },
+                    )
                 if self.on_approval is None:
                     if self.logger:
                         self.logger.write("loop_end", {"reason": "needs_approval"}, task_id)
@@ -149,11 +167,18 @@ class AgentLoop:
                         "level": result.meta.get("level", ""),
                     },
                 )
+                if self.hooks:
+                    self.hooks.run(
+                        "approval_complete",
+                        {"action_id": action_id, "decision": decision},
+                    )
                 if decision == "reject":
                     history.append({"role": "assistant", "content": text})
                     history.append({"role": "feedback", "content": "action rejected by user"})
                     continue
                 if decision == "abort":
+                    if self.hooks:
+                        self.hooks.run("abort", {"action_id": action_id})
                     if self.logger:
                         self.logger.write("loop_end", {"reason": "aborted"}, task_id)
                     if self.hooks:
@@ -180,7 +205,20 @@ class AgentLoop:
                     "tool_after",
                     {"tool": action.tool, "ok": result.ok},
                 )
+                if result.error and result.error != "requires_approval":
+                    self.hooks.run(
+                        "error",
+                        {"tool": action.tool, "error": result.error},
+                    )
             feedback = classify_tool_result(result, action.tool)
+            if self.hooks:
+                self.hooks.run(
+                    "feedback_generation",
+                    {
+                        "tool": action.tool,
+                        "category": feedback.category.value,
+                    },
+                )
             history.append({"role": "assistant", "content": text})
             history.append({"role": "tool", "content": result.output})
             history.append({"role": "feedback", "content": f"{feedback.category.value}: {feedback.summary[-500:]}"})
