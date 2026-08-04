@@ -229,16 +229,16 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 2.8 | Guardrail integrated into ToolExecutor | Done (`2f8f344`) |
 | 2.9 | Audit logging integrated into AgentLoop | Done (`9309fe2`) |
 | 2.10 | Non-Git workspace stricter approval | Done (`ba90ec1`) |
-| 3.1 | FastAPI routes and WebSocket | Pending |
-| 3.2 | CLI API client | Pending |
-| 3.3 | Slash command registry | Pending |
-| 3.4 | TUI task/approval screens | Pending |
-| 3.5 | TUI config wizard | Pending |
-| 3.6 | TUI session commands | Pending |
-| 3.7 | Daemon token authentication | Pending |
-| 3.8 | CLI top-level commands (init/run/server) | Pending |
-| 3.9 | Approval and pause/resume/abort end-to-end | Pending |
-| 3.10 | REST routes for sessions/tasks/providers/models/keys | Pending |
+| 3.1 | FastAPI routes and WebSocket | Done (`ffcd19b`) |
+| 3.2 | CLI API client | Done (`80a3840`) |
+| 3.3 | Slash command registry | Done (`5f39bcf`) |
+| 3.4 | TUI task/approval screens | Done (`852ffc0`) |
+| 3.5 | TUI config wizard | Done (`74d643e`) |
+| 3.6 | TUI session commands | Done (`9f54d88`) |
+| 3.7 | Daemon token authentication | Done (`7ea82c3`) |
+| 3.8 | CLI top-level commands (init/run/server) | Done (`aded815`) |
+| 3.9 | Approval and pause/resume/abort end-to-end | Done (`83e33ae`) |
+| 3.10 | REST routes for sessions/tasks/providers/models/keys | Done (`25d90fd`) |
 | 4.1 | MemoryStore | Pending |
 | 4.2 | ContextAssembler token budget | Pending |
 | 4.3 | LLM summarizer | Pending |
@@ -3196,7 +3196,7 @@ git commit -m "feat: escalate approval requirements for non-git workspaces"
 - Create: `server/kl_server/api/ws.py`
 - Test: `server/tests/test_ws.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from fastapi.testclient import TestClient
@@ -3210,12 +3210,12 @@ def test_health_route():
     assert response.json() == {"status": "ok"}
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_ws.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement API app**
+- [x] **Step 3: Implement API app**
 
 ```python
 from fastapi import FastAPI
@@ -3234,12 +3234,12 @@ def create_app() -> FastAPI:
 Add `server/kl_server/main.py` that calls `create_app()` and exposes `app`.
 Add WebSocket route `/ws/tasks/{task_id}` that broadcasts task events; the WebSocket handler only sends events, it does not run the loop.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_ws.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/main.py server/kl_server/api server/tests/test_ws.py
@@ -3254,7 +3254,7 @@ git commit -m "feat: add fastapi health and task websocket"
 - Create: `cli/src/api/events.ts`
 - Test: `cli/test/client.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { expect, test } from 'vitest';
@@ -3266,12 +3266,12 @@ test('client builds task URL', () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npm test`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement client**
+- [x] **Step 3: Implement client**
 
 ```ts
 export interface ApiClientOptions {
@@ -3289,12 +3289,12 @@ export class ApiClient {
 
 Create `cli/src/api/events.ts` with a `TaskEvent` type and a `connectTaskEvents(taskId, onEvent)` WebSocket helper.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `npm test`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add cli/src/api cli/test/client.test.ts
@@ -3308,7 +3308,7 @@ git commit -m "feat: add cli api client"
 - Create: `cli/src/commands/registry.ts`
 - Test: `cli/test/registry.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { expect, test } from 'vitest';
@@ -3322,12 +3322,12 @@ test('registry resolves command and help', () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npm test`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement registry**
+- [x] **Step 3: Implement registry**
 
 ```ts
 export interface Command {
@@ -3356,12 +3356,12 @@ export class CommandRegistry {
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `npm test`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add cli/src/commands/registry.ts cli/test/registry.test.ts
@@ -3377,7 +3377,7 @@ git commit -m "feat: add extensible slash command registry"
 - Create: `cli/src/tui/screens/approval.tsx`
 - Test: `cli/test/tui.test.tsx`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```tsx
 import { expect, test } from 'vitest';
@@ -3391,12 +3391,12 @@ test('task input renders prompt', () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npm test`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement task input screen**
+- [x] **Step 3: Implement task input screen**
 
 ```tsx
 import React, { useState } from 'react';
@@ -3417,12 +3417,12 @@ Add `cli/src/tui/app.tsx` rendering task input, event log, and approval panel.
 Add `cli/src/tui/screens/approval.tsx` rendering approve/reject/modify actions.
 Add `ink-testing-library` to dev dependencies.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `npm test`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add cli/src/tui cli/test/tui.test.tsx
@@ -3437,7 +3437,7 @@ git commit -m "feat: add tui task and approval screens"
 - Create: `cli/src/tui/screens/config.tsx`
 - Test: `cli/test/commands.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { expect, test } from 'vitest';
@@ -3448,12 +3448,12 @@ test('config command exposes wizard name', () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npm test`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement command**
+- [x] **Step 3: Implement command**
 
 ```ts
 export const ConfigCommand = {
@@ -3465,12 +3465,12 @@ export const ConfigCommand = {
 
 Add `cli/src/tui/screens/config.tsx` with provider name, type, base URL, model, and hidden API key inputs.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `npm test`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add cli/src/commands/config.ts cli/src/tui/screens/config.tsx cli/test/commands.test.ts
@@ -3484,7 +3484,7 @@ git commit -m "feat: add tui config wizard"
 - Create: `cli/src/commands/session.ts`
 - Test: update `cli/test/commands.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { expect, test } from 'vitest';
@@ -3495,12 +3495,12 @@ test('session command exposes subcommands', () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npm test`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement command**
+- [x] **Step 3: Implement command**
 
 ```ts
 import { ApiClient } from '../api/client';
@@ -3521,12 +3521,12 @@ export const SessionCommand = {
 Wire `/sessions`, `/session new`, `/session open <id>`, `/session rename <id>`, `/session close`, `/session delete <id>` into the command registry.
 Extend `cli/src/api/client.ts` with `listSessions()` and `getSession(id)` that call the REST routes from Task 3.10.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `npm test`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add cli/src/commands/session.ts cli/test/commands.test.ts
@@ -3635,7 +3635,7 @@ SPEC §3.10 lists `kl init`, `kl config provider add/list/test`, `kl config key 
 - Modify: `cli/src/main.ts`
 - Test: `cli/test/commands.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { expect, test } from 'vitest';
@@ -3651,12 +3651,12 @@ test('run command carries task text', async () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npm test`
 Expected: FAIL with missing modules.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```ts
 // cli/src/commands/init.ts
@@ -3686,12 +3686,12 @@ export const RunCommand = {
 
 Extend `cli/src/api/client.ts` with `ensureConfigured()` (calls `POST /api/v1/config/check` and returns the missing-provider message), `createTask(text)` (`POST /api/v1/tasks`), and a `server start/stop/status` command that talks to the daemon. Wire everything in `cli/src/main.ts` with `commander`: `kl init`, `kl run "<task>"`, `kl server <start|stop|status>`, `kl config provider <add|list|test>`, `kl config key <set|test|clear|show>`. The API client reads `~/.kl/daemon.token` and sends the `Authorization` header (from Task 3.7).
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `npm test`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add cli/src/commands cli/src/api/client.ts cli/src/main.ts cli/test/commands.test.ts
@@ -3712,7 +3712,7 @@ SPEC §3.2 task states include `awaiting_approval`, `paused`, and `canceled`; TU
 - Modify: `cli/src/tui/screens/approval.tsx` (send approve/reject via WebSocket)
 - Test: `server/tests/test_task.py`, `server/tests/test_agent_loop.py`, `server/tests/test_ws.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import pytest
@@ -3789,12 +3789,12 @@ async def test_task_manager_pause_resume_abort(tmp_path):
     assert (await tasks.get("t1")).status == TaskStatus.CANCELED
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_task.py server/tests/test_agent_loop.py -v`
 Expected: FAIL (`requires_approval` not handled; `pause/resume/abort` missing).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add `is_approved` to `HITLManager` in `server/kl_server/core/guardrail.py`:
 
@@ -3868,12 +3868,12 @@ async def abort(self, task_id: str) -> None:
 
 Wire the WebSocket (`/ws/tasks/{task_id}`) to broadcast `approval_request` events carrying `{action_id, tool, args, level}`; the approval screen sends `approve` / `reject` / `abort`, which the server resolves against `HITLManager` and notifies the awaiting loop. Add a WebSocket broadcast test in `server/tests/test_ws.py` that connects, triggers a broadcast, and asserts the event arrives.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_task.py server/tests/test_agent_loop.py server/tests/test_ws.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/core server/kl_server/api/ws.py cli/src/tui/screens/approval.tsx server/tests
@@ -3892,7 +3892,7 @@ Task 3.1 only exposes `/health`; Task 3.8 tells the CLI to call `/api/v1/config/
 - Modify: `server/kl_server/api/app.py`
 - Test: `server/tests/test_ws.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from fastapi.testclient import TestClient
@@ -3923,12 +3923,12 @@ def test_key_route_never_returns_secret():
     assert "sk-secret" not in status.text
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_ws.py -v`
 Expected: FAIL with 404 for `/api/v1/tasks`.
 
-- [ ] **Step 3: Implement the REST routes**
+- [x] **Step 3: Implement the REST routes**
 
 Create `server/kl_server/api/routes.py`:
 
@@ -4062,12 +4062,12 @@ def create_app(deps=None, auth_token: str | None = None) -> FastAPI:
 
 Task 5.6 will replace `_state` with real `SessionManager`, `TaskManager`, config, and credential store wiring.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_ws.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/api/routes.py server/kl_server/api/app.py server/tests/test_ws.py
