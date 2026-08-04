@@ -42,6 +42,18 @@
 - 修复 TDD 绿：`server/tests/test_context.py` → `14 passed`
 - 完整 server 套件：`245 passed, 1 skipped`
 
+## 2026-08-04 Task 4.4：SkillLoader（已完成并验证）
+
+- 触发的技能：`test-driven-development`、`subagent-driven-development`、`requesting-code-review`
+- 上下文：Phase 4 进入扩展模块；`SkillLoader` 将按任务关键词加载 `.kl/skills/` 中的 skill 文档，供后续 ContextAssembler/AgentLoop 注入。
+- 目标文件：`server/kl_server/skills/`、`server/tests/test_skills.py`。
+- 预期：按目录名/关键词匹配 `SKILL.md`，缺失目录返回空文档，加载失败不阻塞 harness。
+- 当前状态：已完成并验证。
+- TDD 红：`ModuleNotFoundError: No module named 'kl_server.skills'`
+- TDD 绿：`server/tests/test_skills.py` → `6 passed`
+- 完整 server 套件：`251 passed, 1 skipped`
+- 测试修正：原 setup 将 `SKILL.md` 误建为目录导致 Windows PermissionError，已改为先建技能目录再写文档。
+
 ## 2026-08-03 Task 0.1：Server package skeleton
 
 **状态：已完成并验证**
