@@ -26,6 +26,8 @@ class ScopeFence:
 
 class DangerClassifier:
     COMMAND_TOOLS = {"run_command", "run_tests", "run_lint", "typecheck"}
+    DANGEROUS_TOOLS = {"delete_file", "git_commit"}
+    UNMANAGED_ESCALATION_TOOLS = {"write_file", "run_command", "apply_patch"}
     CRITICAL_PATTERNS = [
         "rm -rf /",
         "rm -fr /",
@@ -69,10 +71,12 @@ class DangerClassifier:
                 return True
         return any(pattern in command for pattern in self.CRITICAL_PATTERNS)
 
-    def classify(self, action: Action) -> str:
-        if action.tool == "delete_file":
+    def classify(self, action: Action, workspace_mode: str = "managed") -> str:
+        if action.tool in self.DANGEROUS_TOOLS:
             return "dangerous"
         if action.tool not in self.COMMAND_TOOLS:
+            if workspace_mode == "unmanaged" and action.tool in self.UNMANAGED_ESCALATION_TOOLS:
+                return "dangerous"
             return "normal"
         for source in (action.raw_command, action.args.get("command")):
             if not source:
@@ -81,6 +85,8 @@ class DangerClassifier:
             tokens = command.split()
             if self._is_critical_command(tokens, command):
                 return "critical"
+        if workspace_mode == "unmanaged" and action.tool in self.UNMANAGED_ESCALATION_TOOLS:
+            return "dangerous"
         return "normal"
 
 
@@ -128,11 +134,12 @@ class HITLManager:
 
 
 class Guardrail:
-    def __init__(self, scope, sandbox, danger, hitl):
+    def __init__(self, scope, sandbox, danger, hitl, workspace_mode: str = "managed"):
         self.scope = scope
         self.sandbox = sandbox
         self.danger = danger
         self.hitl = hitl
+        self.workspace_mode = workspace_mode
 
     def check(self, action: Action) -> str:
         try:
@@ -151,7 +158,7 @@ class Guardrail:
         for source in command_sources:
             if source and not self.sandbox.allow_command(source):
                 return "rejected"
-        level = self.danger.classify(action)
+        level = self.danger.classify(action, self.workspace_mode)
         if level in {"critical", "dangerous"}:
             approval_command = " | ".join(str(source) for source in command_sources if source)
             args_key = json.dumps(action.args, sort_keys=True)

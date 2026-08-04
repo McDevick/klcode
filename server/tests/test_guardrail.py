@@ -261,3 +261,44 @@ def test_guardrail_fails_closed_on_bad_patch(tmp_path):
     )
     action = Action(tool="apply_patch", args={"patch": 123}, task_id="t1")
     assert guardrail.check(action) == "rejected"
+
+
+from kl_server.core.guardrail import DangerClassifier, Guardrail, HITLManager, ScopeFence
+from kl_server.core.sandbox import SandboxPolicy
+from kl_server.models.action import Action
+
+
+def test_unmanaged_mode_escalates_write_to_approval(tmp_path):
+    guardrail = Guardrail(
+        scope=ScopeFence(str(tmp_path)),
+        sandbox=SandboxPolicy(allow=[], deny=["rm"]),
+        danger=DangerClassifier(),
+        hitl=HITLManager(),
+        workspace_mode="unmanaged",
+    )
+    action = Action(tool="write_file", args={"path": "a.py", "content": "x"}, task_id="t1")
+    assert guardrail.check(action) == "requires_approval"
+
+
+def test_managed_mode_keeps_write_normal(tmp_path):
+    guardrail = Guardrail(
+        scope=ScopeFence(str(tmp_path)),
+        sandbox=SandboxPolicy(allow=[], deny=["rm"]),
+        danger=DangerClassifier(),
+        hitl=HITLManager(),
+        workspace_mode="managed",
+    )
+    action = Action(tool="write_file", args={"path": "a.py", "content": "x"}, task_id="t1")
+    assert guardrail.check(action) == "allowed"
+
+
+def test_delete_file_always_requires_approval(tmp_path):
+    guardrail = Guardrail(
+        scope=ScopeFence(str(tmp_path)),
+        sandbox=SandboxPolicy(allow=[], deny=["rm"]),
+        danger=DangerClassifier(),
+        hitl=HITLManager(),
+        workspace_mode="managed",
+    )
+    action = Action(tool="delete_file", args={"path": "a.txt"}, task_id="t1")
+    assert guardrail.check(action) == "requires_approval"
