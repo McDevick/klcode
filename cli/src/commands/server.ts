@@ -1,0 +1,117 @@
+import { spawn } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { ApiClient, DEFAULT_BASE_URL } from '../api/client';
+
+export interface ServerProcessLike {
+  pid?: number;
+  unref?: () => void;
+}
+
+export interface ServerSpawnOptions {
+  cwd?: string;
+  stdio?: 'ignore';
+  detached?: boolean;
+}
+
+export type ServerSpawnImpl = (
+  command: string,
+  args: readonly string[],
+  options: ServerSpawnOptions,
+) => ServerProcessLike;
+
+export interface ServerCommandOptions {
+  baseUrl?: string;
+  tokenPath?: string;
+  pidPath?: string;
+  spawnImpl?: ServerSpawnImpl;
+  killImpl?: (pid: number) => boolean;
+}
+
+function defaultPidPath(): string {
+  return join(homedir(), '.kl', 'daemon.pid');
+}
+
+function readPid(pidPath: string): number | undefined {
+  if (!existsSync(pidPath)) {
+    return undefined;
+  }
+  const parsed = Number(readFileSync(pidPath, 'utf8').trim());
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function writePid(pidPath: string, pid: number): void {
+  mkdirSync(dirname(pidPath), { recursive: true });
+  writeFileSync(pidPath, String(pid));
+}
+
+function removePid(pidPath: string): void {
+  rmSync(pidPath, { force: true });
+}
+
+export const ServerCommand = {
+  name: 'server',
+  run: async (args: string[], options: ServerCommandOptions = {}): Promise<string> => {
+    const action = args[0];
+    const pidPath = options.pidPath ?? defaultPidPath();
+    const baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
+    const client = new ApiClient({ baseUrl, tokenPath: options.tokenPath });
+
+    switch (action) {
+      case 'start': {
+        const existingPid = readPid(pidPath);
+        if (existingPid !== undefined) {
+          return `server already running (pid ${existingPid})`;
+        }
+        const spawnImpl = (options.spawnImpl ?? spawn) as ServerSpawnImpl;
+        const child = spawnImpl(
+          'python',
+          ['-m', 'uvicorn', 'kl_server.main:app', '--host', '127.0.0.1', '--port', '8700'],
+          {
+            cwd: process.cwd(),
+            stdio: 'ignore',
+            detached: true,
+          },
+        );
+        child.unref?.();
+        if (child.pid !== undefined) {
+          writePid(pidPath, child.pid);
+        }
+        return `server started (pid ${child.pid ?? 'unknown'})`;
+      }
+      case 'stop': {
+        const pid = readPid(pidPath);
+        if (pid === undefined) {
+          return 'server not running';
+        }
+        const killImpl =
+          options.killImpl ??
+          ((candidatePid: number) => {
+            try {
+              process.kill(candidatePid);
+              return true;
+            } catch {
+              return false;
+            }
+          });
+        killImpl(pid);
+        removePid(pidPath);
+        return 'server stopped';
+      }
+      case 'status': {
+        const pid = readPid(pidPath);
+        try {
+          await client.health();
+          return pid === undefined ? 'server running' : `server running (pid ${pid})`;
+        } catch {
+          return pid === undefined
+            ? 'server not running'
+            : `server not responding (stale pid ${pid})`;
+        }
+      }
+      default:
+        return 'usage: kl server start|stop|status';
+    }
+  },
+};

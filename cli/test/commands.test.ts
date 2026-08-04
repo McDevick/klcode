@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest';
+import { DEFAULT_BASE_URL } from '../src/api/client';
 import { ConfigCommand } from '../src/commands/config';
 
 test('config command exposes wizard name', () => {
@@ -8,6 +9,168 @@ test('config command exposes wizard name', () => {
 test('config command exposes wizard alias and run', () => {
   expect(ConfigCommand.aliases).toContain('/cfg');
   expect(ConfigCommand.run([])).toContain('config wizard');
+});
+
+test('config provider add posts provider and returns provider', async () => {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      name: 'acme',
+      type: 'openai-compatible',
+      base_url: 'http://example.com/v1',
+      default_model: 'model-x',
+    }),
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    const result = await ConfigCommand.run([
+      'provider',
+      'add',
+      'acme',
+      'openai-compatible',
+      'http://example.com/v1',
+      'model-x',
+    ]);
+
+    expect(JSON.parse(result)).toMatchObject({ name: 'acme' });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${DEFAULT_BASE_URL}/api/v1/providers`,
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"name":"acme"'),
+      }),
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test('config provider list includes mock', async () => {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => [{ name: 'mock', type: 'mock' }],
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    const result = await ConfigCommand.run(['provider', 'list']);
+
+    expect(result).toContain('mock');
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${DEFAULT_BASE_URL}/api/v1/providers`,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test('config provider test reports provider availability', async () => {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => [{ name: 'mock', type: 'mock' }],
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    const result = await ConfigCommand.run(['provider', 'test']);
+
+    expect(result).toContain('ok');
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${DEFAULT_BASE_URL}/api/v1/providers`,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test('config key set never returns secret in output', async () => {
+  const secret = 'sk-super-secret';
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ configured: true }),
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    const result = await ConfigCommand.run(['key', 'set', 'openai', secret]);
+
+    expect(result).toContain('configured');
+    expect(result).not.toContain(secret);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${DEFAULT_BASE_URL}/api/v1/keys/openai`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ secret }),
+      }),
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test('config key show returns only configured status', async () => {
+  const secret = 'sk-super-secret';
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ configured: true }),
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    const result = await ConfigCommand.run(['key', 'show', 'openai']);
+
+    expect(result).toContain('configured');
+    expect(result).not.toContain(secret);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${DEFAULT_BASE_URL}/api/v1/keys/openai`,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test('config key clear calls delete route', async () => {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ configured: false }),
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    const result = await ConfigCommand.run(['key', 'clear', 'openai']);
+
+    expect(result).toContain('configured');
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${DEFAULT_BASE_URL}/api/v1/keys/openai`,
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test('config key test calls status route', async () => {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ configured: true }),
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    const result = await ConfigCommand.run(['key', 'test', 'openai']);
+
+    expect(result).toContain('configured');
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${DEFAULT_BASE_URL}/api/v1/keys/openai`,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 
 import { SessionCommand } from '../src/commands/session';

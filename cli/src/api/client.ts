@@ -1,11 +1,62 @@
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+
 export interface ApiClientOptions {
   baseUrl: string;
+  tokenPath?: string;
 }
 
 export const DEFAULT_BASE_URL = 'http://127.0.0.1:8700';
 
+export interface ConfigCheckResult {
+  status: string;
+  providers?: string[];
+}
+
+export interface TaskResult {
+  id: string;
+  session_id: string;
+  description: string;
+  status: string;
+}
+
+export interface ProviderResult {
+  name: string;
+  type: string;
+  base_url?: string;
+  default_model?: string;
+}
+
+export interface ProviderInput {
+  name: string;
+  type: string;
+  base_url: string;
+  default_model: string;
+}
+
+export interface KeyStatusResult {
+  configured: boolean;
+}
+
+export interface KeysResult {
+  configured: string[];
+}
+
+export interface HealthResult {
+  status: string;
+}
+
+function defaultTokenPath(): string {
+  return join(homedir(), '.kl', 'daemon.token');
+}
+
 export class ApiClient {
-  constructor(private readonly options: ApiClientOptions) {}
+  private readonly tokenPath: string;
+
+  constructor(private readonly options: ApiClientOptions) {
+    this.tokenPath = options.tokenPath ?? defaultTokenPath();
+  }
 
   taskUrl(taskId: string): string {
     const base = this.options.baseUrl.replace(/\/+$/, '');
@@ -14,9 +65,16 @@ export class ApiClient {
 
   async request<T>(path: string, init?: RequestInit): Promise<T> {
     const base = this.options.baseUrl.replace(/\/+$/, '');
-    const response = init
-      ? await fetch(`${base}${path}`, { ...init, signal: AbortSignal.timeout(5000) })
-      : await fetch(`${base}${path}`, { signal: AbortSignal.timeout(5000) });
+    const headers = new Headers(init?.headers);
+    const token = this.readToken();
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+    const response = await fetch(`${base}${path}`, {
+      ...init,
+      headers,
+      signal: AbortSignal.timeout(5000),
+    });
     if (!response.ok) {
       throw new Error(`request failed: ${response.status}`);
     }
@@ -56,5 +114,62 @@ export class ApiClient {
 
   deleteSession(id: string): Promise<{ id: string }> {
     return this.request(`/api/v1/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
+  ensureConfigured(): Promise<ConfigCheckResult> {
+    return this.request('/api/v1/config/check', { method: 'POST' });
+  }
+
+  createTask(description: string, sessionId = 'default'): Promise<TaskResult> {
+    return this.request('/api/v1/tasks', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId, description }),
+    });
+  }
+
+  listProviders(): Promise<ProviderResult[]> {
+    return this.request('/api/v1/providers');
+  }
+
+  addProvider(payload: ProviderInput): Promise<ProviderResult> {
+    return this.request('/api/v1/providers', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  listKeys(): Promise<KeysResult> {
+    return this.request('/api/v1/keys');
+  }
+
+  setKey(ref: string, secret: string): Promise<KeyStatusResult> {
+    return this.request(`/api/v1/keys/${encodeURIComponent(ref)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ secret }),
+    });
+  }
+
+  keyStatus(ref: string): Promise<KeyStatusResult> {
+    return this.request(`/api/v1/keys/${encodeURIComponent(ref)}`);
+  }
+
+  clearKey(ref: string): Promise<KeyStatusResult> {
+    return this.request(`/api/v1/keys/${encodeURIComponent(ref)}`, { method: 'DELETE' });
+  }
+
+  health(): Promise<HealthResult> {
+    return this.request('/health');
+  }
+
+  private readToken(): string | undefined {
+    try {
+      const token = readFileSync(this.tokenPath, 'utf8').trim();
+      return token.length > 0 ? token : undefined;
+    } catch {
+      return undefined;
+    }
   }
 }
