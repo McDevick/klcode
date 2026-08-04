@@ -50,15 +50,23 @@ def test_classify_tool_result_timeout_error_is_timeout():
 
 
 def test_classify_tool_result_malformed_json_is_unknown():
-    feedback = classify_tool_result(ToolResult(ok=True, output='{"exit_code": 1, "stdout": "1 failed"'))
+    feedback = classify_tool_result(
+        ToolResult(ok=True, output='{"exit_code": 1, "stdout": "1 failed"'),
+        tool="run_command",
+    )
     assert feedback.category == FeedbackCategory.UNKNOWN
 
 
 def test_classify_tool_result_non_object_json_is_unknown():
-    feedback = classify_tool_result(ToolResult(ok=True, output="[]"))
+    feedback = classify_tool_result(ToolResult(ok=True, output="[]"), tool="run_command")
     assert feedback.category == FeedbackCategory.UNKNOWN
 
 
 def test_classify_tool_result_missing_exit_code_is_unknown():
-    feedback = classify_tool_result(ToolResult(ok=True, output='{"status": "ok"}'))
+    feedback = classify_tool_result(ToolResult(ok=True, output='{"status": "ok"}'), tool="run_command")
     assert feedback.category == FeedbackCategory.UNKNOWN
+
+
+def test_classify_tool_result_plain_output_is_success():
+    feedback = classify_tool_result(ToolResult(ok=True, output="hello"))
+    assert feedback.category == FeedbackCategory.SUCCESS

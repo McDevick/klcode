@@ -16,13 +16,18 @@ def classify_command_result(exit_code: int | None, stdout: str, stderr: str) -> 
     return Feedback(category=FeedbackCategory.UNKNOWN, summary=raw[-1000:])
 
 
-def classify_tool_result(result: ToolResult) -> Feedback:
+_COMMAND_TOOLS = {"run_command", "run_tests", "run_lint", "typecheck"}
+
+
+def classify_tool_result(result: ToolResult, tool: str = "") -> Feedback:
     """Classify a ToolResult into Feedback. Structured command output wins; otherwise fall back to ok/error."""
     if result.ok is False:
         if result.error == "timeout":
             return Feedback(category=FeedbackCategory.TIMEOUT, summary="timeout")
         summary = result.error or result.output or "tool failed with no error message"
         return Feedback(category=FeedbackCategory.TOOL_ERROR, summary=summary[-1000:])
+    if tool not in _COMMAND_TOOLS:
+        return Feedback(category=FeedbackCategory.SUCCESS, summary=result.output[-1000:])
     try:
         payload = json.loads(result.output)
     except json.JSONDecodeError:
