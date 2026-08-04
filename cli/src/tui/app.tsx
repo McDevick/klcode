@@ -3,6 +3,11 @@ import { Box, Text } from 'ink';
 import { ApprovalPanel } from './screens/approval';
 import { ConfigWizard } from './screens/config';
 import { TaskInput } from './screens/task';
+import { CommandRegistry } from '../commands/registry';
+import { SessionCommand } from '../commands/session';
+
+const commands = new CommandRegistry();
+commands.register(SessionCommand);
 
 export function App() {
   const [events, setEvents] = useState<string[]>([]);
@@ -20,6 +25,18 @@ export function App() {
             return;
           }
           setShowConfig(false);
+          if (value.startsWith('/')) {
+            const [commandName, ...args] = value.trim().split(/\s+/);
+            try {
+              const command = commands.resolve(commandName);
+              void Promise.resolve(command.run(args)).then((result: string) => {
+                setEvents((current) => [...current, result]);
+              });
+            } catch {
+              setEvents((current) => [...current, `unknown command: ${commandName}`]);
+            }
+            return;
+          }
           setEvents((current) => [...current, `task: ${value}`]);
           setApproval({ tool: 'run_command', command: value });
         }}

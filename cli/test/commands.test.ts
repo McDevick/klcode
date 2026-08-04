@@ -42,3 +42,18 @@ test('session command opens session by id', async () => {
   expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:8700/api/v1/sessions/s1');
   vi.unstubAllGlobals();
 });
+
+test('session command creates session', async () => {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({ id: 's1' }),
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const result = await SessionCommand.run(['new', 'E:/repo']);
+  expect(JSON.parse(result)).toEqual({ id: 's1' });
+  expect(fetchMock).toHaveBeenCalledWith(
+    'http://127.0.0.1:8700/api/v1/sessions',
+    expect.objectContaining({ method: 'POST' }),
+  );
+  vi.unstubAllGlobals();
+});

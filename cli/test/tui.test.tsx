@@ -114,3 +114,20 @@ test('app opens config wizard from /config', async () => {
   expect(lastFrame()).not.toContain('requires approval');
   unmount();
 });
+
+test('app runs session command from slash input', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [{ id: 's1' }],
+    }),
+  );
+  const { stdin, lastFrame, unmount } = render(<App />);
+  stdin.write('/sessions');
+  stdin.write('\r');
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(lastFrame()).toContain('"id":"s1"');
+  vi.unstubAllGlobals();
+  unmount();
+});
