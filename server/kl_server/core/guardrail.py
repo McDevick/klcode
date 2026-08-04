@@ -58,7 +58,7 @@ class DangerClassifier:
         if lowered_tokens and lowered_tokens[0] == "rm":
             if self._has_rm_force(lowered_tokens) and any(self._is_root_target(token) for token in lowered_tokens[1:]):
                 return True
-        if len(lowered_tokens) >= 2 and lowered_tokens[:2] == ["git", "push"]:
+        if "git" in lowered_tokens and "push" in lowered_tokens:
             if any(token in {"-f", "--force"} for token in lowered_tokens[2:]):
                 return True
         if lowered_tokens and lowered_tokens[0] == "remove-item":
@@ -73,9 +73,11 @@ class DangerClassifier:
             return "dangerous"
         if action.tool not in self.COMMAND_TOOLS:
             return "normal"
-        raw_command = action.raw_command or action.args.get("command") or ""
-        command = re.sub(r"\s+", " ", str(raw_command)).strip().lower()
-        tokens = command.split()
-        if self._is_critical_command(tokens, command):
-            return "critical"
+        for source in (action.raw_command, action.args.get("command")):
+            if not source:
+                continue
+            command = re.sub(r"\s+", " ", str(source)).strip().lower()
+            tokens = command.split()
+            if self._is_critical_command(tokens, command):
+                return "critical"
         return "normal"

@@ -101,3 +101,15 @@ def test_classifier_uses_raw_command():
     classifier = DangerClassifier()
     action = Action(tool="run_command", args={}, raw_command="rm -rf /", task_id="t1")
     assert classifier.classify(action) == "critical"
+
+
+def test_classifier_checks_both_command_sources():
+    classifier = DangerClassifier()
+    action = Action(tool="run_command", args={"command": "rm -rf /"}, raw_command="pytest", task_id="t1")
+    assert classifier.classify(action) == "critical"
+
+
+def test_git_c_dir_push_force_is_critical():
+    classifier = DangerClassifier()
+    action = Action(tool="run_command", args={"command": "git -C repo push -f"}, task_id="t1")
+    assert classifier.classify(action) == "critical"
