@@ -3,7 +3,7 @@ import secrets
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from kl_server.api.routes import router
+from kl_server.api.routes import build_router
 from kl_server.api.ws import build_ws_router
 
 
@@ -22,6 +22,6 @@ def create_app(auth_token: str | None = None) -> FastAPI:
     def health():
         return {"status": "ok"}
 
-    app.include_router(router)
+    app.include_router(build_router())
     app.include_router(build_ws_router(auth_token))
     return app
