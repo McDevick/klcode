@@ -219,7 +219,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 1.12 | ToolExecutor timeout and output truncation | Done (`597a94a`) |
 | 1.13 | Feedback re-injection into AgentLoop | Done (`b96b037`) |
 | 1.14 | OpenAI-compatible provider and config loader | Done (`c0226c2`) |
-| 2.1 | ScopeFence | Pending |
+| 2.1 | ScopeFence | Done (`22650d0`) |
 | 2.2 | SandboxPolicy | Pending |
 | 2.3 | DangerClassifier | Pending |
 | 2.4 | HITL state machine | Pending |
@@ -2359,7 +2359,7 @@ git commit -m "feat: add openai-compatible provider and config loader"
 - Create: `server/kl_server/core/guardrail.py`
 - Test: `server/tests/test_guardrail.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from pathlib import Path
@@ -2374,12 +2374,12 @@ def test_scope_fence_allows_inside_and_blocks_outside(tmp_path):
     assert fence.allow(outside) is False
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_guardrail.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement ScopeFence**
+- [x] **Step 3: Implement ScopeFence**
 
 ```python
 from pathlib import Path
@@ -2394,12 +2394,12 @@ class ScopeFence:
         return candidate == self.root or self.root in candidate.parents
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_guardrail.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/core/guardrail.py server/tests/test_guardrail.py

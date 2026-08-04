@@ -58,6 +58,20 @@
 - 完成时补充 commit hash、验证输出、评审结论和人工干预。
 - 若发现范围越界或未授权功能，必须立即记录并停止。
 
+## 2026-08-04 Task 2.1：ScopeFence（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`server/kl_server/core/guardrail.py` 的 `ScopeFence` 与 `server/tests/test_guardrail.py`。
+- 计划：从 Task 1.14 分支创建 stacked worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后并入待推送链。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-2.1-scope`
+- 分支：`worktree-task-2.1-scope`
+- Implementer：subagent `019fca5b-dea8-7a80-b720-da4b53c4817f`
+- Commit：`518b51d`、`40d4643`、`22650d0`（评审修复）
+- TDD 红：`ModuleNotFoundError: No module named 'kl_server.core.guardrail'`
+- TDD 绿：`6 passed`；完整 server 套件 `123 passed`
+- 评审：spec 合规通过；质量评审通过（root-relative、fail closed、drive-relative/NUL 拒绝）
+
 ## 2026-08-04 Task 1.14：OpenAI-compatible provider and config loader（已完成并验证）
 
 - 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
