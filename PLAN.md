@@ -242,7 +242,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 4.1 | MemoryStore | Done (`96e34db`, `985d313`) |
 | 4.2 | ContextAssembler token budget | Done (`d49fc12`, `d443d31`) |
 | 4.3 | LLM summarizer | Done (`02c717d`, `841089d`) |
-| 4.4 | SkillLoader | Pending |
+| 4.4 | SkillLoader | Done (`d03cbdd`, `601557f`, `dde5bd1`) |
 | 4.5 | HookManager | Pending |
 | 4.6 | MCP adapter | Pending |
 | 4.7 | User tool plugin loader | Pending |
@@ -4285,7 +4285,7 @@ git commit -m "feat: add provider-backed context summarizer"
 - Create: `server/kl_server/skills/loader.py`
 - Test: `server/tests/test_skills.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from kl_server.skills.loader import SkillLoader
@@ -4299,12 +4299,12 @@ def test_skill_loader_finds_by_keyword(tmp_path):
     assert "pytest" in loader.load(["python"])
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_skills.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement SkillLoader**
+- [x] **Step 3: Implement SkillLoader**
 
 ```python
 from pathlib import Path
@@ -4325,12 +4325,12 @@ class SkillLoader:
         return "\n\n".join(docs)
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_skills.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/skills server/tests/test_skills.py
