@@ -57,6 +57,10 @@
 - 修复 TDD 红：`UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte`，`1 failed, 6 passed`
 - 修复 TDD 绿：`server/tests/test_skills.py` → `7 passed`
 - 修复后完整 server 套件：`252 passed, 1 skipped`
+- Code quality review 修复：root 使用 `is_dir()` 校验并将目录迭代包在 `OSError` 异常处理中，失败记录 warning 并返回空；过滤空/空白关键词，无有效关键词时返回空。
+- 修复 TDD 红：普通文件 root 触发 `NotADirectoryError`，空字符串关键词会加载全部技能，`2 failed, 7 passed`
+- 修复 TDD 绿：`server/tests/test_skills.py` → `9 passed`
+- 修复后完整 server 套件：`254 passed, 1 skipped`
 
 ## 2026-08-03 Task 0.1：Server package skeleton
 

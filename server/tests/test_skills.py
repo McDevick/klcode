@@ -17,6 +17,31 @@ def test_skill_loader_missing_root_returns_empty(tmp_path):
     assert loader.load(["python"]) == ""
 
 
+def test_skill_loader_rejects_non_directory_root(tmp_path, caplog):
+    root = tmp_path / "skills.txt"
+    root.write_text("not a directory", encoding="utf-8")
+
+    loader = SkillLoader(str(root))
+
+    with caplog.at_level(logging.WARNING, logger="kl_server.skills.loader"):
+        result = loader.load(["python"])
+
+    assert result == ""
+    assert "Failed to iterate skill root" in caplog.text
+
+
+def test_skill_loader_empty_keywords_load_nothing(tmp_path):
+    skill_dir = tmp_path / "skills"
+    (skill_dir / "python").mkdir(parents=True)
+    (skill_dir / "python" / "SKILL.md").write_text("# Python", encoding="utf-8")
+
+    loader = SkillLoader(str(skill_dir))
+
+    assert loader.load([]) == ""
+    assert loader.load([""]) == ""
+    assert loader.load(["   "]) == ""
+
+
 def test_skill_loader_only_loads_matching_dirs(tmp_path):
     skill_dir = tmp_path / "skills"
     for name in ("python", "typescript"):

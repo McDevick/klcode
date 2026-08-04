@@ -11,15 +11,26 @@ class SkillLoader:
         self.root = Path(root)
 
     def load(self, keywords: list[str]) -> str:
-        if not self.root.exists():
+        normalized_keywords = [keyword.strip() for keyword in keywords if keyword.strip()]
+        if not normalized_keywords:
+            return ""
+
+        if not self.root.is_dir():
+            logger.warning("Failed to iterate skill root %s: not a directory", self.root)
+            return ""
+
+        try:
+            skill_dirs = sorted(self.root.iterdir(), key=lambda path: path.name)
+        except OSError as exc:
+            logger.warning("Failed to iterate skill root %s: %s", self.root, exc)
             return ""
 
         docs = []
-        for skill_dir in sorted(self.root.iterdir(), key=lambda path: path.name):
+        for skill_dir in skill_dirs:
             markdown = skill_dir / "SKILL.md"
             if not skill_dir.is_dir() or not markdown.is_file():
                 continue
-            if not any(keyword in skill_dir.name for keyword in keywords):
+            if not any(keyword in skill_dir.name for keyword in normalized_keywords):
                 continue
             try:
                 docs.append(markdown.read_text(encoding="utf-8"))
