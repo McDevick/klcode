@@ -249,7 +249,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 4.8 | HTTP hook support | Done (`49caa70`) |
 | 4.9 | MCP client transport (stdio / streamable-http) | Done |
 | 4.10 | ContextAssembler integrated into AgentLoop | Done |
-| 4.11 | Wire hooks/skills/MCP/plugins into harness | Pending |
+| 4.11 | Wire hooks/skills/MCP/plugins into harness | Done |
 | 5.1 | Mock-LLM demos | Pending |
 | 5.2 | README and install docs | Pending |
 | 5.3 | Distribution polish | Pending |
@@ -4857,7 +4857,7 @@ The extension modules exist after Tasks 4.4-4.10, but `AgentLoop` still only use
 - Modify: `server/kl_server/core/context.py`
 - Test: `server/tests/test_extensions.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import pytest
@@ -4932,12 +4932,12 @@ async def test_loop_injects_skills_and_fires_hooks():
     assert "task_end" in hooks.events
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_extensions.py -v`
 Expected: FAIL (`skills` and hook events missing).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Modify `AgentLoop.run`:
 
@@ -4998,12 +4998,12 @@ def register_user_tools(registry, plugin_loader: PluginLoader) -> None:
         registry.register(tool)
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_extensions.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/extensions.py server/kl_server/core/agent_loop.py server/kl_server/core/context.py server/tests/test_extensions.py

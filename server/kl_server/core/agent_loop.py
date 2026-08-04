@@ -24,6 +24,8 @@ class AgentLoop:
         on_approval=None,
         context=None,
         memory=None,
+        hooks=None,
+        skills=None,
     ):
         self.provider = provider
         self.tools = tools
@@ -32,12 +34,16 @@ class AgentLoop:
         self.on_approval = on_approval
         self.context = context
         self.memory = memory
+        self.hooks = hooks
+        self.skills = skills
 
     async def run(self, session: Session, task: str, task_id: str = "", workspace_mode: str = "managed") -> str:
         task_id = task_id or session.id
         history = [{"role": "user", "content": task}]
         if self.logger:
             self.logger.write("loop_start", {"task": task[:500]}, task_id)
+        if self.hooks:
+            self.hooks.run("task_start", {"task": task[:500]})
         for iteration in range(self.settings.max_iterations):
             if self.logger:
                 self.logger.write("llm_call", {"iteration": iteration}, task_id)
@@ -59,6 +65,11 @@ class AgentLoop:
                         memory=memory_entries,
                         history=[message["content"] for message in history],
                         task_id=task_id,
+                        skills=(
+                            self.skills.load([task])
+                            if self.skills is not None
+                            else ""
+                        ),
                     )
                     request_messages = [{"role": "user", "content": assembled.text}]
                 response = await self.provider.complete(
@@ -68,6 +79,8 @@ class AgentLoop:
                 if self.logger:
                     self.logger.write("provider_error", {"error": str(exc)[:500]}, task_id)
                     self.logger.write("loop_end", {"reason": "provider_error"}, task_id)
+                if self.hooks:
+                    self.hooks.run("task_end", {"reason": "provider_error"})
                 raise
             text = response.text.strip()
             if self.logger:
@@ -75,6 +88,8 @@ class AgentLoop:
             if text == "DONE":
                 if self.logger:
                     self.logger.write("loop_end", {"reason": "done"}, task_id)
+                if self.hooks:
+                    self.hooks.run("task_end", {"reason": "done"})
                 return text
             try:
                 payload = json.loads(text)
@@ -122,6 +137,8 @@ class AgentLoop:
                 if self.on_approval is None:
                     if self.logger:
                         self.logger.write("loop_end", {"reason": "needs_approval"}, task_id)
+                    if self.hooks:
+                        self.hooks.run("task_end", {"reason": "needs_approval"})
                     return "NEEDS_APPROVAL"
                 decision = await self.on_approval(
                     task_id or session.id,
@@ -139,6 +156,8 @@ class AgentLoop:
                 if decision == "abort":
                     if self.logger:
                         self.logger.write("loop_end", {"reason": "aborted"}, task_id)
+                    if self.hooks:
+                        self.hooks.run("task_end", {"reason": "aborted"})
                     return "ABORTED"
                 if decision != "approve":
                     history.append({"role": "assistant", "content": text})
@@ -156,12 +175,19 @@ class AgentLoop:
                     ),
                     action_id,
                 )
+            if self.hooks:
+                self.hooks.run(
+                    "tool_after",
+                    {"tool": action.tool, "ok": result.ok},
+                )
             feedback = classify_tool_result(result, action.tool)
             history.append({"role": "assistant", "content": text})
             history.append({"role": "tool", "content": result.output})
             history.append({"role": "feedback", "content": f"{feedback.category.value}: {feedback.summary[-500:]}"})
         if self.logger:
             self.logger.write("loop_end", {"reason": "max_iterations"}, task_id)
+        if self.hooks:
+            self.hooks.run("task_end", {"reason": "max_iterations"})
         return "MAX_ITERATIONS"
 
     @staticmethod

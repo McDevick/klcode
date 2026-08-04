@@ -153,6 +153,18 @@
 - 实现说明：`AgentLoop` 新增 `context`/`memory` 参数；有 assembler 时按轮构建带 tool catalog/rules/memory/history/task_id 的上下文；`ToolExecutor` 转发 `ToolRegistry.catalog()` 供工具目录注入。
 - 另修复 Task 4.8 测试抖动：HTTP 失败 abort 断言放宽到 `httpx.HTTPError`，避免 Windows 下 500 连接表现为 ReadError。
 
+## 2026-08-04 Task 4.11：Wire hooks/skills/MCP/plugins into harness（进行中）
+
+- 触发的技能：`test-driven-development`、`subagent-driven-development`、`requesting-code-review`
+- 上下文：4.4-4.10 的扩展模块已存在；本任务把 skill 注入 ContextAssembler、hook 事件接入 AgentLoop，并新增 MCP Tool 与用户插件注册入口。
+- 目标文件：`server/kl_server/extensions.py`、`server/kl_server/core/agent_loop.py`、`server/tests/test_extensions.py`。
+- 预期：AgentLoop 触发 `task_start`/`tool_after`/`task_end`；skills 进入每轮上下文；MCP/用户插件可注册为普通 Tool。
+- 当前状态：已完成并验证。
+- TDD 红：`ModuleNotFoundError: No module named 'kl_server.extensions'`
+- TDD 绿：`server/tests/test_extensions.py` → `3 passed`
+- 完整 server 套件：`302 passed, 1 skipped`
+- 实现说明：`extensions.py` 新增 `McpTool` 和 `register_user_tools`；AgentLoop 新增 `hooks`/`skills` 参数，按事件触发 hook 并在 context build 时注入 skills。
+
 ## 2026-08-03 Task 0.1：Server package skeleton
 
 **状态：已完成并验证**
