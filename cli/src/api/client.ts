@@ -1,6 +1,6 @@
-import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { readDaemonToken } from './daemon-token';
 
 export interface ApiClientOptions {
   baseUrl: string;
@@ -66,7 +66,7 @@ export class ApiClient {
   async request<T>(path: string, init?: RequestInit): Promise<T> {
     const base = this.options.baseUrl.replace(/\/+$/, '');
     const headers = new Headers(init?.headers);
-    const token = this.readToken();
+    const token = readDaemonToken(this.tokenPath);
     if (token) {
       headers.set('Authorization', `Bearer ${token}`);
     }
@@ -162,14 +162,5 @@ export class ApiClient {
 
   health(): Promise<HealthResult> {
     return this.request('/health');
-  }
-
-  private readToken(): string | undefined {
-    try {
-      const token = readFileSync(this.tokenPath, 'utf8').trim();
-      return token.length > 0 ? token : undefined;
-    } catch {
-      return undefined;
-    }
   }
 }

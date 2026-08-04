@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { ApiClient, DEFAULT_BASE_URL } from '../api/client';
 
 export interface ServerProcessLike {
@@ -13,6 +13,7 @@ export interface ServerSpawnOptions {
   cwd?: string;
   stdio?: 'ignore';
   detached?: boolean;
+  env?: NodeJS.ProcessEnv;
 }
 
 export type ServerSpawnImpl = (
@@ -65,6 +66,16 @@ export const ServerCommand = {
           return `server already running (pid ${existingPid})`;
         }
         const spawnImpl = (options.spawnImpl ?? spawn) as ServerSpawnImpl;
+        const serverRoots = [join(process.cwd(), 'server'), join(process.cwd(), '..', 'server')].filter(
+          existsSync,
+        );
+        const pythonPath = serverRoots.length > 0 ? serverRoots.join(delimiter) : undefined;
+        const env = pythonPath
+          ? {
+              ...process.env,
+              PYTHONPATH: [pythonPath, process.env.PYTHONPATH].filter(Boolean).join(delimiter),
+            }
+          : process.env;
         const child = spawnImpl(
           'python',
           ['-m', 'uvicorn', 'kl_server.main:app', '--host', '127.0.0.1', '--port', '8700'],
@@ -72,6 +83,7 @@ export const ServerCommand = {
             cwd: process.cwd(),
             stdio: 'ignore',
             detached: true,
+            env,
           },
         );
         child.unref?.();
@@ -95,7 +107,10 @@ export const ServerCommand = {
               return false;
             }
           });
-        killImpl(pid);
+        const stopped = killImpl(pid);
+        if (!stopped) {
+          return `server stop failed (pid ${pid})`;
+        }
         removePid(pidPath);
         return 'server stopped';
       }

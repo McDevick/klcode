@@ -29,7 +29,11 @@ test('server start spawns uvicorn and writes pid file', async () => {
   expect(spawnMock).toHaveBeenCalledWith(
     'python',
     ['-m', 'uvicorn', 'kl_server.main:app', '--host', '127.0.0.1', '--port', '8700'],
-    expect.any(Object),
+    expect.objectContaining({
+      env: expect.objectContaining({
+        PYTHONPATH: expect.stringContaining('server'),
+      }),
+    }),
   );
   expect(readFileSync(pidPath, 'utf8')).toBe('4242');
 });
@@ -45,6 +49,18 @@ test('server stop kills pid and removes pid file', async () => {
   expect(output).toContain('stopped');
   expect(killMock).toHaveBeenCalledWith(4321);
   expect(existsSync(pidPath)).toBe(false);
+});
+
+test('server stop reports failure and keeps pid file when kill fails', async () => {
+  const dir = makeTempDir();
+  const pidPath = join(dir, 'daemon.pid');
+  writeFileSync(pidPath, '4321');
+  const killMock = vi.fn().mockReturnValue(false);
+
+  const output = await ServerCommand.run(['stop'], { pidPath, killImpl: killMock });
+
+  expect(output).toContain('failed');
+  expect(existsSync(pidPath)).toBe(true);
 });
 
 test('server status calls health and reports running', async () => {
