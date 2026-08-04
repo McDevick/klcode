@@ -58,6 +58,20 @@
 - 完成时补充 commit hash、验证输出、评审结论和人工干预。
 - 若发现范围越界或未授权功能，必须立即记录并停止。
 
+## 2026-08-04 Task 1.12：ToolExecutor timeout and output truncation（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`server/kl_server/core/tool_executor.py` 与 `server/tests/test_tool_executor.py`。
+- 计划：从最新 `dev` 创建独立 worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后合入 `dev`。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-1.12-executor`
+- 分支：`worktree-task-1.12-executor`
+- Implementer：subagent `019fca23-0492-7fe2-afa4-b541ba8a3fbc`
+- Commit：`79b198e`、`d202481`、`597a94a`（评审修复）
+- TDD 红：large output/slow tool 失败
+- TDD 绿：`9 passed`；完整 server 套件 `102 passed`
+- 评审：spec 合规通过；质量评审通过（不可变截断、error 截断、error=None 保留）
+
 ## 2026-08-03/04 Task 1.11：Complete the built-in tool set（已完成并验证）
 
 - 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`

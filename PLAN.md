@@ -216,7 +216,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 1.9 | Basic AgentLoop | Done (`df5993d`) |
 | 1.10 | Credential backends (keyring / encrypted file / .env) | Done (`889db38`) |
 | 1.11 | Complete built-in tool set (shell/git/patch/validation/task/delete) | Done (`b0dc443`) |
-| 1.12 | ToolExecutor timeout and output truncation | Pending |
+| 1.12 | ToolExecutor timeout and output truncation | Done (`597a94a`) |
 | 1.13 | Feedback re-injection into AgentLoop | Pending |
 | 1.14 | OpenAI-compatible provider and config loader | Pending |
 | 2.1 | ScopeFence | Pending |
@@ -1963,7 +1963,7 @@ SPEC §3.5 boundary promises timeouts and resource limits. Task 1.5 only catches
 - Modify: `server/kl_server/core/tool_executor.py`
 - Test: `server/tests/test_tool_executor.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import asyncio
@@ -2014,12 +2014,12 @@ async def test_executor_times_out_slow_tool():
     assert result.error == "timeout"
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_tool_executor.py -v`
 Expected: FAIL (large output returned in full; slow tool blocks).
 
-- [ ] **Step 3: Implement timeout and truncation**
+- [x] **Step 3: Implement timeout and truncation**
 
 ```python
 import asyncio
@@ -2048,12 +2048,12 @@ class ToolExecutor:
         return result
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_tool_executor.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/core/tool_executor.py server/tests/test_tool_executor.py
