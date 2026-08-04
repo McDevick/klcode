@@ -154,3 +154,25 @@ async def test_loop_writes_events_in_realtime(tmp_path):
     lines = (tmp_path / "audit.jsonl").read_text(encoding="utf-8").strip().splitlines()
     events = [line.split('"event": "')[1].split('"')[0] for line in lines]
     assert "loop_start" in events and "llm_call" in events and "tool_result" in events and "loop_end" in events
+
+
+@pytest.mark.asyncio
+async def test_loop_logs_ordered_events_with_task_id(tmp_path):
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+    provider = MockProvider(responses=['{"tool":"final","args":{}}', "DONE"])
+    logger = EventLogger(tmp_path / "audit.jsonl")
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=3),
+        logger=logger,
+    )
+    await loop.run(Session(id="s1", workspace="."), "task")
+    records = [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text(encoding="utf-8").strip().splitlines()]
+    assert all(record["task_id"] == "s1" for record in records)
+    event_names = [record["event"] for record in records]
+    assert event_names[:2] == ["loop_start", "llm_call"]
+    assert "llm_result" in event_names
+    assert "tool_result" in event_names
+    assert event_names[-1] == "loop_end"

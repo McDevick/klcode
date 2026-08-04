@@ -22,14 +22,23 @@ class AgentLoop:
         self.logger = logger
 
     async def run(self, session: Session, task: str, task_id: str = "") -> str:
+        task_id = task_id or session.id
         history = [{"role": "user", "content": task}]
         if self.logger:
             self.logger.write("loop_start", {"task": task[:500]}, task_id)
-        for _ in range(self.settings.max_iterations):
+        for iteration in range(self.settings.max_iterations):
             if self.logger:
-                self.logger.write("llm_call", {"iteration": _}, task_id)
-            response = await self.provider.complete(ProviderRequest(messages=history, model=session.model))
+                self.logger.write("llm_call", {"iteration": iteration}, task_id)
+            try:
+                response = await self.provider.complete(ProviderRequest(messages=history, model=session.model))
+            except Exception as exc:
+                if self.logger:
+                    self.logger.write("provider_error", {"error": str(exc)[:500]}, task_id)
+                    self.logger.write("loop_end", {"reason": "provider_error"}, task_id)
+                raise
             text = response.text.strip()
+            if self.logger:
+                self.logger.write("llm_result", {"text": text[:500]}, task_id)
             if text == "DONE":
                 if self.logger:
                     self.logger.write("loop_end", {"reason": "done"}, task_id)
@@ -37,6 +46,8 @@ class AgentLoop:
             try:
                 payload = json.loads(text)
             except json.JSONDecodeError:
+                if self.logger:
+                    self.logger.write("invalid_action", {"reason": "not-json", "text": text[:500]}, task_id)
                 history.append({"role": "assistant", "content": text})
                 history.append(
                     {
@@ -46,6 +57,8 @@ class AgentLoop:
                 )
                 continue
             if not self._is_valid_action(payload):
+                if self.logger:
+                    self.logger.write("invalid_action", {"reason": "invalid-schema", "text": text[:500]}, task_id)
                 history.append({"role": "assistant", "content": text})
                 history.append(
                     {
@@ -68,7 +81,7 @@ class AgentLoop:
             if self.logger:
                 self.logger.write(
                     "tool_result",
-                    {"tool": action.tool, "ok": result.ok, "error": result.error},
+                    {"tool": action.tool, "ok": result.ok, "error": result.error, "meta": result.meta},
                     task_id,
                 )
             feedback = classify_tool_result(result, action.tool)
