@@ -1,4 +1,5 @@
-from kl_server.core.feedback import classify_command_result
+from kl_server.core.feedback import classify_command_result, classify_tool_result
+from kl_server.models.action import ToolResult
 from kl_server.models.feedback import FeedbackCategory
 
 
@@ -41,3 +42,23 @@ def test_empty_timeout_summary_is_timeout():
     feedback = classify_command_result(None, "", "")
     assert feedback.category == FeedbackCategory.TIMEOUT
     assert feedback.summary == "timeout"
+
+
+def test_classify_tool_result_timeout_error_is_timeout():
+    feedback = classify_tool_result(ToolResult(ok=False, output="", error="timeout"))
+    assert feedback.category == FeedbackCategory.TIMEOUT
+
+
+def test_classify_tool_result_malformed_json_is_unknown():
+    feedback = classify_tool_result(ToolResult(ok=True, output='{"exit_code": 1, "stdout": "1 failed"'))
+    assert feedback.category == FeedbackCategory.UNKNOWN
+
+
+def test_classify_tool_result_non_object_json_is_unknown():
+    feedback = classify_tool_result(ToolResult(ok=True, output="[]"))
+    assert feedback.category == FeedbackCategory.UNKNOWN
+
+
+def test_classify_tool_result_missing_exit_code_is_unknown():
+    feedback = classify_tool_result(ToolResult(ok=True, output='{"status": "ok"}'))
+    assert feedback.category == FeedbackCategory.UNKNOWN

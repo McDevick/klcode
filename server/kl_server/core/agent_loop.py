@@ -31,9 +31,21 @@ class AgentLoop:
                 payload = json.loads(text)
             except json.JSONDecodeError:
                 history.append({"role": "assistant", "content": text})
+                history.append(
+                    {
+                        "role": "feedback",
+                        "content": "provider_error: invalid action; expected JSON object",
+                    }
+                )
                 continue
             if not self._is_valid_action(payload):
                 history.append({"role": "assistant", "content": text})
+                history.append(
+                    {
+                        "role": "feedback",
+                        "content": 'provider_error: invalid action; expected {"tool": str, "args": dict}',
+                    }
+                )
                 continue
             action = Action(
                 tool=payload["tool"],
@@ -45,7 +57,7 @@ class AgentLoop:
             feedback = classify_tool_result(result)
             history.append({"role": "assistant", "content": text})
             history.append({"role": "tool", "content": result.output})
-            history.append({"role": "feedback", "content": f"{feedback.category.value}: {feedback.summary[:500]}"})
+            history.append({"role": "feedback", "content": f"{feedback.category.value}: {feedback.summary[-500:]}"})
         return "MAX_ITERATIONS"
 
     @staticmethod

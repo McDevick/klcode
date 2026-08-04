@@ -19,10 +19,18 @@ def classify_command_result(exit_code: int | None, stdout: str, stderr: str) -> 
 def classify_tool_result(result: ToolResult) -> Feedback:
     """Classify a ToolResult into Feedback. Structured command output wins; otherwise fall back to ok/error."""
     if result.ok is False:
-        return Feedback(category=FeedbackCategory.TOOL_ERROR, summary=result.error or result.output)
+        if result.error == "timeout":
+            return Feedback(category=FeedbackCategory.TIMEOUT, summary="timeout")
+        summary = result.error or result.output or "tool failed with no error message"
+        return Feedback(category=FeedbackCategory.TOOL_ERROR, summary=summary[-1000:])
     try:
         payload = json.loads(result.output)
-        exit_code = payload.get("exit_code")
-        return classify_command_result(exit_code, payload.get("stdout", ""), payload.get("stderr", ""))
-    except (json.JSONDecodeError, AttributeError):
-        return Feedback(category=FeedbackCategory.SUCCESS, summary=result.output[:1000])
+    except json.JSONDecodeError:
+        return Feedback(category=FeedbackCategory.UNKNOWN, summary=result.output[-1000:])
+    if not isinstance(payload, dict) or "exit_code" not in payload or not isinstance(payload["exit_code"], int):
+        return Feedback(category=FeedbackCategory.UNKNOWN, summary=result.output[-1000:])
+    return classify_command_result(
+        payload["exit_code"],
+        str(payload.get("stdout", "")),
+        str(payload.get("stderr", "")),
+    )
