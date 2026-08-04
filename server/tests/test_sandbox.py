@@ -35,3 +35,20 @@ def test_sandbox_denies_absolute_path_and_env_prefix_and_shell_operators():
     assert policy.allow_command("FOO=bar rm -rf .") is False
     assert policy.allow_command("echo hi && rm -rf .") is False
     assert policy.allow_command("echo hi | rm -rf .") is False
+
+
+def test_sandbox_rejects_control_quotes_and_wrappers():
+    policy = SandboxPolicy(allow=[], deny=["rm"])
+    assert policy.allow_command("echo hi\nrm -rf .") is False
+    assert policy.allow_command("'rm' -rf .") is False
+    assert policy.allow_command("\\rm -rf .") is False
+    assert policy.allow_command("sh -c 'rm -rf .'") is False
+    assert policy.allow_command("env rm -rf .") is False
+    assert policy.allow_command("command rm -rf .") is False
+
+
+def test_sandbox_normalizes_path_deny_and_allow():
+    policy = SandboxPolicy(allow=["/usr/bin/pytest"], deny=["/usr/bin/rm"])
+    assert policy.allow_command("/usr/bin/pytest -q") is True
+    assert policy.allow_command("/usr/bin/rm -rf .") is False
+    assert policy.allow_command("rm.exe -rf .") is False

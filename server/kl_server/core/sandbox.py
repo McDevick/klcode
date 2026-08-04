@@ -2,20 +2,53 @@ import os
 import re
 
 
+_SHELL_METACHARS = re.compile(r"[;&|`$()<>]")
+_CONTROL_CHARS = "\n\r\x00"
+_WRAPPERS = {
+    "sh",
+    "bash",
+    "zsh",
+    "cmd",
+    "cmd.exe",
+    "powershell",
+    "powershell.exe",
+    "pwsh",
+    "pwsh.exe",
+    "env",
+    "command",
+    "sudo",
+    "time",
+    "find",
+    "xargs",
+    "eval",
+}
+
+
+def _normalize_binary(name: str) -> str:
+    base = os.path.basename(name)
+    if base.lower().endswith(".exe"):
+        base = base[:-4]
+    return os.path.normcase(base)
+
+
 class SandboxPolicy:
     def __init__(self, allow: list[str], deny: list[str]):
-        self.allow = {os.path.normcase(item) for item in allow}
-        self.deny = {os.path.normcase(item) for item in deny}
+        self.allow = {_normalize_binary(item) for item in allow}
+        self.deny = {_normalize_binary(item) for item in deny}
 
     def allow_command(self, command: str) -> bool:
         if not command or not command.strip():
             return False
-        if re.search(r"[;&|`$()<>]", command):
+        if any(char in command for char in _CONTROL_CHARS):
+            return False
+        if "'" in command or '"' in command or "\\" in command:
+            return False
+        if _SHELL_METACHARS.search(command):
             return False
         tokens = command.split()
         if "=" in tokens[0]:
             return False
-        binary = os.path.normcase(os.path.basename(tokens[0]))
-        if binary in self.deny:
+        binary = _normalize_binary(tokens[0])
+        if binary in self.deny or binary in _WRAPPERS:
             return False
         return not self.allow or binary in self.allow
