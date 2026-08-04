@@ -191,3 +191,133 @@ async def test_loop_logs_invalid_action(tmp_path):
     await loop.run(Session(id="s1", workspace="."), "task")
     records = [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text(encoding="utf-8").strip().splitlines()]
     assert any(record["event"] == "invalid_action" for record in records)
+
+
+from kl_server.core.guardrail import DangerClassifier, Guardrail, HITLManager, ScopeFence
+from kl_server.core.sandbox import SandboxPolicy
+
+
+class ApprovalShellTool(Tool):
+    name = "run_command"
+    description = "runs an approval-gated command"
+    schema = {"type": "object", "properties": {"command": {"type": "string"}}}
+
+    async def execute(self, args, ctx: ToolContext) -> ToolResult:
+        return ToolResult(ok=True, output='{"exit_code": 0, "stdout": "ok", "stderr": ""}')
+
+
+class ApprovalFinalTool(Tool):
+    name = "final"
+    description = "returns final marker"
+    schema = {"type": "object", "properties": {}}
+
+    async def execute(self, args, ctx: ToolContext) -> ToolResult:
+        return ToolResult(ok=True, output="done")
+
+
+def make_approval_executor(tmp_path):
+    registry = ToolRegistry()
+    registry.register(ApprovalShellTool())
+    registry.register(ApprovalFinalTool())
+    guardrail = Guardrail(
+        scope=ScopeFence(str(tmp_path)),
+        sandbox=SandboxPolicy(allow=[], deny=["rm"]),
+        danger=DangerClassifier(),
+        hitl=HITLManager(),
+    )
+    return ToolExecutor(registry, guardrail=guardrail), guardrail
+
+
+@pytest.mark.asyncio
+async def test_approval_suspends_then_resumes(tmp_path):
+    executor, guardrail = make_approval_executor(tmp_path)
+    provider = MockProvider(
+        responses=[
+            '{"tool":"run_command","args":{"command":"git push --force"}}',
+            '{"tool":"final","args":{}}',
+            "DONE",
+        ]
+    )
+    decisions: list[tuple[str, str]] = []
+
+    async def approve(task_id: str, action: dict) -> str:
+        decisions.append((task_id, action["action_id"]))
+        guardrail.hitl.approve(action["action_id"])
+        return "approve"
+
+    loop = AgentLoop(
+        provider=provider,
+        tools=executor,
+        settings=LoopSettings(max_iterations=5),
+        on_approval=approve,
+    )
+    result = await loop.run(Session(id="s1", workspace=str(tmp_path)), "deploy")
+
+    assert result == "DONE"
+    assert len(provider.calls) == 3
+    assert decisions[0][0] == "s1"
+
+
+@pytest.mark.asyncio
+async def test_approval_without_callback_returns_needs_approval(tmp_path):
+    executor, _ = make_approval_executor(tmp_path)
+    provider = MockProvider(responses=['{"tool":"run_command","args":{"command":"git push --force"}}'])
+    loop = AgentLoop(provider=provider, tools=executor, settings=LoopSettings(max_iterations=5))
+
+    result = await loop.run(Session(id="s1", workspace=str(tmp_path)), "deploy")
+
+    assert result == "NEEDS_APPROVAL"
+    assert len(provider.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_approval_reject_continues_with_feedback(tmp_path):
+    executor, guardrail = make_approval_executor(tmp_path)
+    provider = MockProvider(
+        responses=[
+            '{"tool":"run_command","args":{"command":"git push --force"}}',
+            "DONE",
+        ]
+    )
+
+    async def reject(task_id: str, action: dict) -> str:
+        guardrail.hitl.reject(action["action_id"])
+        return "reject"
+
+    loop = AgentLoop(
+        provider=provider,
+        tools=executor,
+        settings=LoopSettings(max_iterations=5),
+        on_approval=reject,
+    )
+    result = await loop.run(Session(id="s1", workspace=str(tmp_path)), "deploy")
+
+    assert result == "DONE"
+    assert len(provider.calls) == 2
+    feedback = [m for m in provider.calls[1].messages if m.get("role") == "feedback"]
+    assert any("rejected" in message["content"] for message in feedback)
+
+
+@pytest.mark.asyncio
+async def test_approval_abort_stops_loop(tmp_path):
+    executor, _ = make_approval_executor(tmp_path)
+    provider = MockProvider(
+        responses=[
+            '{"tool":"run_command","args":{"command":"git push --force"}}',
+            "DONE",
+        ]
+    )
+
+    async def abort(task_id: str, action: dict) -> str:
+        return "abort"
+
+    loop = AgentLoop(
+        provider=provider,
+        tools=executor,
+        settings=LoopSettings(max_iterations=5),
+        on_approval=abort,
+    )
+    result = await loop.run(Session(id="s1", workspace=str(tmp_path)), "deploy")
+
+    assert result == "ABORTED"
+    assert len(provider.calls) == 1

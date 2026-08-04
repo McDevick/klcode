@@ -79,3 +79,22 @@ class TaskManager:
         if cursor.rowcount == 0:
             raise KeyError(task.id)
         await conn.commit()
+
+    async def pause(self, task_id: str) -> None:
+        task = await self.get(task_id)
+        if task.status not in (TaskStatus.RUNNING, TaskStatus.AWAITING_APPROVAL):
+            raise ValueError(f"cannot pause task in {task.status.value}")
+        task.status = TaskStatus.PAUSED
+        await self.update(task)
+
+    async def resume(self, task_id: str) -> None:
+        task = await self.get(task_id)
+        if task.status != TaskStatus.PAUSED:
+            raise ValueError(f"cannot resume task in {task.status.value}")
+        task.status = TaskStatus.RUNNING
+        await self.update(task)
+
+    async def abort(self, task_id: str) -> None:
+        task = await self.get(task_id)
+        task.status = TaskStatus.CANCELED
+        await self.update(task)

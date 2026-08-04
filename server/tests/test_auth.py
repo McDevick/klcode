@@ -48,6 +48,13 @@ def test_websocket_allows_with_token():
         assert websocket.receive_json()["event"] == "tool_result"
 
 
+def test_websocket_allows_with_query_token():
+    client = TestClient(create_app(auth_token="s3cret"))
+    with client.websocket_connect("/ws/tasks/t1?token=s3cret") as websocket:
+        websocket.send_json({"event": "tool_result"})
+        assert websocket.receive_json()["event"] == "tool_result"
+
+
 def test_multiple_apps_have_isolated_tokens():
     client_a = TestClient(create_app(auth_token="token-a"))
     client_b = TestClient(create_app(auth_token="token-b"))
