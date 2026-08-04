@@ -28,7 +28,7 @@ def apply_unified_diff(source: str, diff: str) -> str:
             raise ValueError("patch does not apply")
 
     for line in diff.splitlines(keepends=True):
-        if line.startswith(("---", "+++", "\\")):
+        if not in_hunk and (line.startswith("--- ") or line.startswith("+++ ") or line.startswith("\\")):
             continue
         if line.startswith("@@ "):
             validate_hunk()

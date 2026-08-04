@@ -81,6 +81,9 @@ class GitCommitTool(Tool):
                 return ToolResult(ok=False, output="", error="path outside workspace")
         try:
             await _git(ctx.workspace, "add", "--", *paths)
-            return ToolResult(ok=True, output=await _git(ctx.workspace, "commit", "-m", args["message"]))
+            return ToolResult(
+                ok=True,
+                output=await _git(ctx.workspace, "commit", "--only", "-m", args["message"], "--", *paths),
+            )
         except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
             return ToolResult(ok=False, output="", error=str(exc))
