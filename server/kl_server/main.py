@@ -19,4 +19,7 @@ else:
     except OSError:
         pass
 
+if not auth_token:
+    raise RuntimeError("daemon token file is empty")
+
 app = create_app(auth_token=auth_token)

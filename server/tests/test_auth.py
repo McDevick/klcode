@@ -32,3 +32,21 @@ def test_websocket_rejects_without_token():
     with pytest.raises(WebSocketDisconnect):
         with client.websocket_connect("/ws/tasks/t1") as websocket:
             websocket.send_json({"event": "tool_result"})
+
+
+def test_websocket_allows_with_token():
+    client = TestClient(create_app(auth_token="s3cret"))
+    with client.websocket_connect(
+        "/ws/tasks/t1",
+        headers={"Authorization": "Bearer s3cret"},
+    ) as websocket:
+        websocket.send_json({"event": "tool_result"})
+        assert websocket.receive_json()["event"] == "tool_result"
+
+
+def test_multiple_apps_have_isolated_tokens():
+    client_a = TestClient(create_app(auth_token="token-a"))
+    client_b = TestClient(create_app(auth_token="token-b"))
+    assert client_a.get("/health", headers={"Authorization": "Bearer token-a"}).status_code == 200
+    assert client_a.get("/health", headers={"Authorization": "Bearer token-b"}).status_code == 401
+    assert client_b.get("/health", headers={"Authorization": "Bearer token-b"}).status_code == 200
