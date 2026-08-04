@@ -218,18 +218,26 @@ async def test_latest_history_is_kept_over_lower_priority_summary():
 @pytest.mark.asyncio
 async def test_summarizer_failure_keeps_latest_history_once():
     class FailingSummarizer:
+        invoked = False
+
         async def summarize(self, segments, task_id):
+            self.invoked = True
             raise RuntimeError("summarizer failed")
 
-    assembler = ContextAssembler(max_tokens=100)
-    assembler.summarizer = FailingSummarizer()
+    summarizer = FailingSummarizer()
+    assembler = ContextAssembler(max_tokens=30, token_estimator=len)
+    assembler.summarizer = summarizer
     result = await assembler.build(
         tool_catalog=[],
         rules="rules",
         memory=[],
-        history=["old1", "old2", "latest"],
+        history=["x" * 100, "y" * 100, "latest"],
     )
+
+    assert summarizer.invoked is True
     assert result.text.count("latest") == 1
+    assert "x" * 100 not in result.text
+    assert "y" * 100 not in result.text
 
 
 @pytest.mark.asyncio
