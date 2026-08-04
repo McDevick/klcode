@@ -4,6 +4,7 @@ import React from 'react';
 import { TaskInput } from '../src/tui/screens/task';
 import { ApprovalPanel } from '../src/tui/screens/approval';
 import { App } from '../src/tui/app';
+import { ConfigWizard } from '../src/tui/screens/config';
 
 test('task input renders prompt', () => {
   const { lastFrame } = render(<TaskInput onSubmit={() => {}} />);
@@ -60,5 +61,33 @@ test('app submits task and shows approval actions', async () => {
   stdin.write('a');
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(lastFrame()).toContain('approved');
+  unmount();
+});
+
+test('config wizard accepts fields and saves hidden key', async () => {
+  const onSave = vi.fn();
+  const { stdin, lastFrame, unmount } = render(<ConfigWizard onSave={onSave} />);
+  stdin.write('acme');
+  stdin.write('\t');
+  stdin.write('custom');
+  stdin.write('\t');
+  stdin.write('http://example.com');
+  stdin.write('\t');
+  stdin.write('model-x');
+  stdin.write('\t');
+  stdin.write('secret');
+  stdin.write('\r');
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(lastFrame()).toContain('acme');
+  expect(lastFrame()).toContain('http://example.com');
+  expect(lastFrame()).toContain('model-x');
+  expect(lastFrame()).toContain('******');
+  expect(onSave).toHaveBeenCalledWith({
+    providerName: 'acme',
+    type: 'custom',
+    baseUrl: 'http://example.com',
+    model: 'model-x',
+    apiKey: 'secret',
+  });
   unmount();
 });
