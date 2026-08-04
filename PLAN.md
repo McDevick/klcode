@@ -240,7 +240,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 3.9 | Approval and pause/resume/abort end-to-end | Done (`83e33ae`) |
 | 3.10 | REST routes for sessions/tasks/providers/models/keys | Done (`25d90fd`) |
 | 4.1 | MemoryStore | Done (`96e34db`, `985d313`) |
-| 4.2 | ContextAssembler token budget | Pending |
+| 4.2 | ContextAssembler token budget | Done (`d49fc12`, `d443d31`) |
 | 4.3 | LLM summarizer | Pending |
 | 4.4 | SkillLoader | Pending |
 | 4.5 | HookManager | Pending |
@@ -3635,7 +3635,7 @@ SPEC §3.10 lists `kl init`, `kl config provider add/list/test`, `kl config key 
 - Modify: `cli/src/main.ts`
 - Test: `cli/test/commands.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { expect, test } from 'vitest';
@@ -3651,7 +3651,7 @@ test('run command carries task text', async () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npm test`
 Expected: FAIL with missing modules.
@@ -4165,7 +4165,7 @@ async def test_context_keeps_priority_sections():
 Run: `python -m pytest server/tests/test_context.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement context assembler**
+- [x] **Step 3: Implement context assembler**
 
 ```python
 from dataclasses import dataclass
@@ -4205,12 +4205,12 @@ class ContextAssembler:
         return AssembledContext(text=text, used_tokens=max(1, len(text) // 4))
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_context.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/core/context.py server/tests/test_context.py
