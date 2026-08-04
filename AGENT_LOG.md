@@ -58,6 +58,100 @@
 - 完成时补充 commit hash、验证输出、评审结论和人工干预。
 - 若发现范围越界或未授权功能，必须立即记录并停止。
 
+## 上下文检查点（2026-08-04，Task 3.6 后）
+
+- 已完成并合入 dev：Phase 0（0.3/0.4）、Task 1.1-1.13、Task 2.1-2.10 的远端 PR 已由用户合并；本地 dev 尚未 fetch 到这些合并结果（网络不稳定）。
+- 本地已完成但未推送/合入的 Phase 3：Task 3.1-3.6，分支从 `worktree-task-3.1-api` 到 `worktree-task-3.6-session` 依次 stacked。
+- 下一步：Task 3.7 Daemon token authentication；之后按 PLAN 3.8 -> 3.10 -> 3.4/3.9 等顺序推进。
+- 已知待接线：session 服务端路由 Task 3.10；`/session close` 当前会话语义 Task 3.9/3.10；ConfigCommand 注册与 onSave Task 3.8/3.10。
+- 环境：Python venv `E:\projects\SimpleCodingAgent\.superpowers\sdd\PLAN\venv`；Node 22/npm 10；网络当前不稳定，GitHub 推送可能需重试。
+- 测试基线：server 189 passed（Task 3.1）；CLI 25 passed（Task 3.6）。
+
+## 2026-08-04 Task 3.6：TUI session commands（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`cli/src/commands/session.ts`、`cli/src/api/client.ts`、`cli/test/commands.test.ts`。
+- 计划：从 Task 3.5 分支创建 stacked worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后并入待推送链。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-3.6-session`
+- 分支：`worktree-task-3.6-session`
+- Implementer：subagent `019fcba1-fd69-71b2-9432-0f69e76bfc5a`
+- Commit：`1002b4a`、`8f2cb0d`、`264123b`、`9f54d88`（多轮评审修复）
+- TDD 红：缺失模块/方法
+- TDD 绿：`npm test` 25 passed
+- 评审：spec 合规通过；质量评审通过（子命令、registry 接线、共享 base URL、超时、204）
+- 待接线项：rename/close/delete 服务端路由待 Task 3.10；`/session close` 当前会话语义待 Task 3.9/3.10。
+
+## 2026-08-04 Task 3.5：TUI config wizard（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`cli/src/commands/config.ts`、`cli/src/tui/screens/config.tsx`、`cli/test/commands.test.ts`。
+- 计划：从 Task 3.4 分支创建 stacked worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后并入待推送链。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-3.5-config`
+- 分支：`worktree-task-3.5-config`
+- Implementer：subagent `019fcb92-5e3b-7f42-a48c-467a5c1c5efb`
+- Commit：`372b094`、`5c46cbc`、`2e8d1d1`、`47bf0c0`、`74d643e`（多轮评审修复）
+- TDD 红：`Cannot find module '../src/commands/config'`
+- TDD 绿：`npm test` 17 passed
+- 评审：spec 合规通过；质量评审通过（交互字段、API key 掩码、/config 打开 wizard、集成回归测试）
+
+## 2026-08-04 Task 3.4：TUI task/approval screens（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`cli/src/tui/app.tsx`、`cli/src/tui/screens/task.tsx`、`cli/src/tui/screens/approval.tsx`、`cli/test/tui.test.tsx`。
+- 计划：从 Task 3.3 分支创建 stacked worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后并入待推送链。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-3.4-tui`
+- 分支：`worktree-task-3.4-tui`
+- Implementer：subagent `019fcb7e-9507-7cb0-81db-376f7b2d6181`
+- Commit：`22addf6`、`307765e`、`852ffc0`（多轮评审修复）
+- TDD 红：`Cannot find module '../src/tui/screens/task'`
+- TDD 绿：`npm test` 13 passed
+- 评审：spec 合规通过；质量评审通过（交互接线、App 状态、JSX typecheck）
+
+## 2026-08-04 Task 3.3：Slash command registry（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`cli/src/commands/registry.ts` 与 `cli/test/registry.test.ts`。
+- 计划：从 Task 3.2 分支创建 stacked worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后并入待推送链。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-3.3-commands`
+- 分支：`worktree-task-3.3-commands`
+- Implementer：subagent `019fcb77-55ad-7e42-ac59-7c4c73b712b4`
+- Commit：`5e0152f`、`5f39bcf`（评审修复）
+- TDD 红：`Cannot find module '../src/commands/registry'`
+- TDD 绿：`npm test` 8 passed
+- 评审：spec 合规通过；质量评审通过（归一化、重复冲突、run args）
+
+## 2026-08-04 Task 3.2：CLI API client（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`cli/src/api/client.ts`、`cli/src/api/events.ts`、`cli/test/client.test.ts`。
+- 计划：从 Task 3.1 分支创建 stacked worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后并入待推送链。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-3.2-client`
+- 分支：`worktree-task-3.2-client`
+- Implementer：subagent `019fcb68-bf48-78f1-a860-5b7076edbf48`
+- Commit：`87f7888`、`7c5c7e7`、`33f38ae`、`80a3840`（多轮评审修复）
+- TDD 红：`Cannot find module '../src/api/client'`
+- TDD 绿：`npm test` 4 passed
+- 评审：spec 合规通过；质量评审通过（URL 编码、可选 baseUrl、事件校验与测试）
+
+## 2026-08-04 Task 3.1：FastAPI routes and WebSocket（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`server/kl_server/main.py`、`server/kl_server/api/`、`server/tests/test_ws.py`。
+- 计划：从 Task 2.10 分支创建 stacked worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后并入待推送链。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-3.1-api`
+- 分支：`worktree-task-3.1-api`
+- Implementer：subagent `019fcb50-bee5-77c3-aedb-9644dea3154a`
+- Commit：`fba2526`、`ce8fbe9`、`ffcd19b`（多轮评审修复）
+- TDD 红：缺失模块/路由
+- TDD 绿：`7 passed`；完整 server 套件 `189 passed`
+- 评审：spec 合规通过；质量评审通过（连接池广播、payload 校验、disconnect cleanup）
+
 ## 2026-08-04 Task 2.10：Non-Git workspace stricter approval（已完成并验证）
 
 - 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
