@@ -113,3 +113,14 @@ def test_git_c_dir_push_force_is_critical():
     classifier = DangerClassifier()
     action = Action(tool="run_command", args={"command": "git -C repo push -f"}, task_id="t1")
     assert classifier.classify(action) == "critical"
+
+
+from kl_server.core.guardrail import ApprovalRequest, HITLManager
+
+
+def test_hitl_approve_and_reject():
+    manager = HITLManager()
+    req = manager.request("a1", "run_command", "rm -rf /")
+    assert req.state == "pending"
+    assert manager.approve("a1") == "approved"
+    assert manager.reject("a2") == "rejected"

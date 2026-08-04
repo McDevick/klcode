@@ -81,3 +81,34 @@ class DangerClassifier:
             if self._is_critical_command(tokens, command):
                 return "critical"
         return "normal"
+
+
+from dataclasses import dataclass
+
+
+@dataclass
+class ApprovalRequest:
+    action_id: str
+    tool: str
+    command: str
+    state: str = "pending"
+
+
+class HITLManager:
+    def __init__(self):
+        self.requests: dict[str, ApprovalRequest] = {}
+
+    def request(self, action_id: str, tool: str, command: str) -> ApprovalRequest:
+        req = ApprovalRequest(action_id=action_id, tool=tool, command=command)
+        self.requests[action_id] = req
+        return req
+
+    def approve(self, action_id: str) -> str:
+        self.requests[action_id].state = "approved"
+        return self.requests[action_id].state
+
+    def reject(self, action_id: str) -> str:
+        if action_id not in self.requests:
+            self.requests[action_id] = ApprovalRequest(action_id=action_id, tool="", command="")
+        self.requests[action_id].state = "rejected"
+        return self.requests[action_id].state
