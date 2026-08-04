@@ -236,8 +236,8 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 3.5 | TUI config wizard | Done (`74d643e`) |
 | 3.6 | TUI session commands | Done (`9f54d88`) |
 | 3.7 | Daemon token authentication | Done (`7ea82c3`) |
-| 3.8 | CLI top-level commands (init/run/server) | Pending |
-| 3.9 | Approval and pause/resume/abort end-to-end | Pending |
+| 3.8 | CLI top-level commands (init/run/server) | Done (`aded815`) |
+| 3.9 | Approval and pause/resume/abort end-to-end | Done (`83e33ae`) |
 | 3.10 | REST routes for sessions/tasks/providers/models/keys | Done (`25d90fd`) |
 | 4.1 | MemoryStore | Pending |
 | 4.2 | ContextAssembler token budget | Pending |

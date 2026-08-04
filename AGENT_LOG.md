@@ -86,25 +86,33 @@
 - TDD 绿：`19 passed`；完整 server 套件 `210 passed, 1 skipped`
 - 评审：spec 合规通过；质量评审通过（build_router 闭包隔离、session/task/provider/model/key 契约、auth 中间件、secret 不驻留/不回传）
 
-## 2026-08-04 Task 3.8：CLI top-level commands（进行中）
+## 2026-08-04 Task 3.8：CLI top-level commands（已完成并验证）
 
 - 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
 - 范围：`cli/src/commands/init.ts`、`run.ts`、`server.ts`、`cli/src/api/client.ts`、`cli/src/main.ts`、`cli/test`。
 - 计划：从 Task 3.10 分支创建独立 worktree，派 fresh implementer 并行实现；依赖 Task 3.7 token 与 Task 3.10 REST。
-- 当前状态：implementer 已开工，等待测试与提交。
+- 当前状态：已完成并验证。
 - Worktree：`.claude/worktrees/task-3.8-cli`
 - 分支：`worktree-task-3.8-cli`
 - Implementer：subagent `019fcbda-fc55-7bc1-bc2a-f198eb22fe2c`（McClintock the 2nd）
+- Commit：`a2ec26a`、`aded815`（评审修复）
+- TDD 红：`10 failed | 26 passed`（顶层命令缺失）
+- TDD 绿：`42 passed`；评审修复后 `43 passed`；`npx tsc --noEmit` 通过
+- 评审：spec 合规通过；质量评审通过（token 自动读取、provider/key 子命令、server lifecycle、PYTHONPATH、secret 不回显）
 
-## 2026-08-04 Task 3.9：Approval and pause/resume/abort（进行中）
+## 2026-08-04 Task 3.9：Approval and pause/resume/abort（已完成并验证）
 
 - 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
 - 范围：`server/kl_server/core/agent_loop.py`、`tool_executor.py`、`guardrail.py`、`task_manager.py`、`api/ws.py`、`api/app.py`、`cli/src/tui/screens/approval.tsx`、对应测试。
 - 计划：从 Task 3.10 分支创建独立 worktree，派 fresh implementer 并行实现；依赖 Task 2.8 guardrail、Task 3.1 WS、Task 3.4 TUI。
-- 当前状态：implementer 已开工，等待测试与提交。
+- 当前状态：已完成并验证。
 - Worktree：`.claude/worktrees/task-3.9-approval`
 - 分支：`worktree-task-3.9-approval`
 - Implementer：subagent `019fcbda-fcf5-7fe2-a0df-8f96aa46267b`（Bohr the 2nd）
+- Commit：`d92b1f7`、`83e33ae`（评审修复）
+- TDD 红：server `13 failed`；CLI `1 failed`
+- TDD 绿：server `224 passed, 1 skipped`；CLI `27 passed`；`npx tsc --noEmit` 通过
+- 评审：spec 合规通过；质量评审通过（确定性 action_id、execute_approved、TaskManager 状态迁移、WS HITL 决策、WS token 查询参数、审批退出审计日志）
 
 ## 上下文检查点（2026-08-04，Task 3.6 后）
 
