@@ -1,4 +1,7 @@
+import re
 from pathlib import Path
+
+from kl_server.models.action import Action
 
 
 class ScopeFence:
@@ -20,16 +23,27 @@ class ScopeFence:
         return candidate == self.root or self.root in candidate.parents
 
 
-from kl_server.models.action import Action
-
-
 class DangerClassifier:
-    CRITICAL_PATTERNS = ["rm -rf /", "format c:", "drop database", "git push --force"]
+    COMMAND_TOOLS = {"run_command", "run_tests", "run_lint", "typecheck"}
+    CRITICAL_PATTERNS = [
+        "rm -rf /",
+        "rm -fr /",
+        "rm -r -f /",
+        "rm -f -r /",
+        "format c:",
+        "drop database",
+        "git push --force",
+        "git push -f",
+        "remove-item -recurse -force",
+    ]
 
     def classify(self, action: Action) -> str:
-        command = " ".join(str(v) for v in action.args.values()).lower()
-        if any(pattern in command for pattern in self.CRITICAL_PATTERNS):
-            return "critical"
         if action.tool == "delete_file":
             return "dangerous"
+        if action.tool not in self.COMMAND_TOOLS:
+            return "normal"
+        raw_command = action.args.get("command") or ""
+        command = re.sub(r"\s+", " ", str(raw_command)).strip().lower()
+        if any(pattern in command for pattern in self.CRITICAL_PATTERNS):
+            return "critical"
         return "normal"

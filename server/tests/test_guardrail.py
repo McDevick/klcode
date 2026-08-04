@@ -62,3 +62,24 @@ def test_safe_command_is_normal():
     classifier = DangerClassifier()
     action = Action(tool="run_command", args={"command": "pytest"}, task_id="t1")
     assert classifier.classify(action) == "normal"
+
+
+def test_delete_file_is_dangerous():
+    classifier = DangerClassifier()
+    action = Action(tool="delete_file", args={"path": "a.txt"}, task_id="t1")
+    assert classifier.classify(action) == "dangerous"
+
+
+def test_dangerous_command_variants_are_critical():
+    classifier = DangerClassifier()
+    for command in ["rm -fr /", "rm -r -f /", "git push -f origin main"]:
+        action = Action(tool="run_command", args={"command": command}, task_id="t1")
+        assert classifier.classify(action) == "critical"
+
+
+def test_non_command_tools_are_not_misclassified():
+    classifier = DangerClassifier()
+    write = Action(tool="write_file", args={"path": "a.txt", "content": "rm -rf /"}, task_id="t1")
+    patch = Action(tool="apply_patch", args={"patch": "drop database"}, task_id="t1")
+    assert classifier.classify(write) == "normal"
+    assert classifier.classify(patch) == "normal"
