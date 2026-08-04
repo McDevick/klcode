@@ -161,6 +161,28 @@ async def test_loop_uses_context_assembler():
 
 
 @pytest.mark.asyncio
+async def test_loop_context_preserves_role_labels():
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+    provider = MockProvider(responses=['{"tool":"final","args":{}}', "DONE"])
+    spy = SpyAssembler()
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=3),
+        context=spy,
+        memory=FakeMemory(),
+    )
+
+    await loop.run(Session(id="s1", workspace="."), "task")
+
+    history = spy.last_kwargs["history"]
+    assert history[0] == "user: task"
+    assert any(item.startswith("assistant: ") for item in history)
+    assert any(item.startswith("feedback: ") for item in history)
+
+
+@pytest.mark.asyncio
 async def test_loop_writes_events_in_realtime(tmp_path):
     registry = ToolRegistry()
     registry.register(FinalTool())

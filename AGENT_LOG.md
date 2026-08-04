@@ -32,12 +32,13 @@
 - 回归测试：预算内 5 轮短历史全部保留且 summarizer 不调用；超预算时旧 history 生成摘要且 latest 保留；相同 history 重复 build 只调用一次 summarizer。
 - 验证：server `309 passed, 1 skipped`；CLI `45 passed`。
 
-## 2026-08-04 残余项记录（不阻塞合并）
+## 2026-08-04 残余项处理（A1/A2/A3 已完成）
 
 - L-1【LOW】已修复：`test_summarizer_failure_keeps_latest_history_once` 原先 history 在预算内导致 FailingSummarizer 未被调用；已改为超预算历史，并断言 `invoked=True`、latest 只出现一次、旧原始轮次不泄漏。
-- A-1【ADVISORY】保留：摘要缓存键按完整旧 history 指纹变化，超预算任务每轮 history 变长时仍可能全量重摘要，v1 接受，后续可做增量摘要。
-- A-2【ADVISORY】保留：摘要缓存无淘汰；当前受 `max_iterations` 约束，v1 可接受。
-- A-3【ADVISORY】保留：预算内整段 history 被合并为单条 user message，丢失角色区分；这是 Task 4.10 当前上下文装配设计固有行为，非本次引入。
+- A-1【ADVISORY】已实现：摘要状态改为按 task 保存 `(last_count, summary)`；旧 history 只增不减时，仅对新增 segment 做增量摘要，不再每轮全量重摘要。
+- A-2【ADVISORY】已实现：摘要状态使用有界 `OrderedDict`，默认 `summary_limit=16`，超限淘汰最旧 task；新增淘汰回归测试。
+- A-3【ADVISORY】已实现：AgentLoop 传给 ContextAssembler 的 history 带 `user:`/`assistant:`/`tool:`/`feedback:` 角色前缀，预算内 raw history 不再丢失角色区分。
+- 验证：server `312 passed, 1 skipped`；CLI 45 passed。
 
 ## 2026-08-04 Phase 4 启动：Task 4.1 MemoryStore（进行中）
 

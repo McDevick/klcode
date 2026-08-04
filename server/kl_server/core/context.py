@@ -1,6 +1,7 @@
 """Token-budgeted context assembly for the agent loop."""
 
 import logging
+from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -49,11 +50,15 @@ class ContextAssembler:
         self,
         max_tokens: int,
         token_estimator: Callable[[str], int] | None = None,
+        summary_limit: int = 16,
     ):
+        if summary_limit <= 0:
+            raise ValueError("summary_limit must be positive")
         self.max_tokens = max_tokens
         self.token_estimator = token_estimator or self._default_token_estimate
         self.summarizer = None
-        self._summary_cache: dict[tuple[str, tuple[str, ...]], str] = {}
+        self.summary_limit = summary_limit
+        self._summary_state: OrderedDict[str, tuple[int, str]] = OrderedDict()
 
     @staticmethod
     def _default_token_estimate(text: str) -> int:
@@ -97,13 +102,30 @@ class ContextAssembler:
 
         summary = ""
         if self.summarizer and len(history) > 1:
-            cache_key = (task_id, tuple(history[:-1]))
-            if cache_key in self._summary_cache:
-                summary = self._summary_cache[cache_key]
+            old_segments = history[:-1]
+            state = self._read_summary_state(task_id)
+            if state is not None:
+                last_count, summary = state
+                if len(old_segments) < last_count:
+                    try:
+                        summary = await self.summarizer.summarize(old_segments, task_id)
+                        self._write_summary_state(task_id, len(old_segments), summary)
+                    except Exception:
+                        summary = ""
+                elif len(old_segments) > last_count:
+                    new_segments = old_segments[last_count:]
+                    try:
+                        summary = await self.summarizer.summarize(
+                            [f"Previous summary: {summary}"] + new_segments,
+                            task_id,
+                        )
+                        self._write_summary_state(task_id, len(old_segments), summary)
+                    except Exception:
+                        pass
             else:
                 try:
-                    summary = await self.summarizer.summarize(history[:-1], task_id)
-                    self._summary_cache[cache_key] = summary
+                    summary = await self.summarizer.summarize(old_segments, task_id)
+                    self._write_summary_state(task_id, len(old_segments), summary)
                 except Exception:
                     summary = ""
 
@@ -115,6 +137,18 @@ class ContextAssembler:
 
         text, used_tokens = self._fit_to_budget(sections)
         return AssembledContext(text=text, used_tokens=used_tokens)
+
+    def _read_summary_state(self, task_id: str) -> tuple[int, str] | None:
+        if task_id not in self._summary_state:
+            return None
+        self._summary_state.move_to_end(task_id)
+        return self._summary_state[task_id]
+
+    def _write_summary_state(self, task_id: str, count: int, summary: str) -> None:
+        self._summary_state[task_id] = (count, summary)
+        self._summary_state.move_to_end(task_id)
+        while len(self._summary_state) > self.summary_limit:
+            self._summary_state.popitem(last=False)
 
     def _fit_to_budget(self, sections: list[str]) -> tuple[str, int]:
         budget = max(0, self.max_tokens)

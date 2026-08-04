@@ -63,7 +63,10 @@ class AgentLoop:
                         ),
                         rules=getattr(session, "rules", ""),
                         memory=memory_entries,
-                        history=[message["content"] for message in history],
+                        history=[
+                            f"{message['role']}: {message['content']}"
+                            for message in history
+                        ],
                         task_id=task_id,
                         skills=(
                             self.skills.load([task])

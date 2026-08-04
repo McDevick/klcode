@@ -122,6 +122,87 @@ async def test_assembler_caches_summary_for_unchanged_history():
 
 
 @pytest.mark.asyncio
+async def test_assembler_increments_summary_for_new_old_history():
+    class RecordingSummarizer:
+        def __init__(self):
+            self.calls = []
+
+        async def summarize(self, segments, task_id):
+            self.calls.append(list(segments))
+            return f"summary-{len(self.calls)}"
+
+    assembler = ContextAssembler(max_tokens=30, token_estimator=len)
+    summarizer = RecordingSummarizer()
+    assembler.summarizer = summarizer
+    old1 = "x" * 100
+    old2 = "y" * 100
+
+    await assembler.build(
+        tool_catalog=[],
+        rules="rules",
+        memory=[],
+        history=[old1, "latest1"],
+    )
+    await assembler.build(
+        tool_catalog=[],
+        rules="rules",
+        memory=[],
+        history=[old1, "latest1"],
+    )
+    await assembler.build(
+        tool_catalog=[],
+        rules="rules",
+        memory=[],
+        history=[old1, old2, "latest2"],
+    )
+
+    assert len(summarizer.calls) == 2
+    assert old1 in summarizer.calls[0][0]
+    incremental = summarizer.calls[1]
+    assert incremental[0].startswith("Previous summary:")
+    assert old1 not in incremental[1]
+    assert old2 in incremental[1]
+
+
+@pytest.mark.asyncio
+async def test_assembler_evicts_old_summary_states():
+    class CountingSummarizer:
+        def __init__(self):
+            self.calls = {}
+
+        async def summarize(self, segments, task_id):
+            self.calls[task_id] = self.calls.get(task_id, 0) + 1
+            return "summary"
+
+    assembler = ContextAssembler(
+        max_tokens=30,
+        token_estimator=len,
+        summary_limit=2,
+    )
+    summarizer = CountingSummarizer()
+    assembler.summarizer = summarizer
+    history = ["x" * 100, "y" * 100, "latest"]
+
+    for task_id in ("t1", "t2", "t3"):
+        await assembler.build(
+            tool_catalog=[],
+            rules="rules",
+            memory=[],
+            history=history,
+            task_id=task_id,
+        )
+    await assembler.build(
+        tool_catalog=[],
+        rules="rules",
+        memory=[],
+        history=history,
+        task_id="t1",
+    )
+
+    assert summarizer.calls["t1"] == 2
+
+
+@pytest.mark.asyncio
 async def test_assembler_falls_back_when_provider_fails(caplog):
     class FailingProvider:
         async def complete(self, request):
