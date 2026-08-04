@@ -7,16 +7,34 @@ from kl_server.providers.mock import MockProvider
 @pytest.mark.asyncio
 async def test_summarizer_uses_provider_and_keeps_raw():
     provider = MockProvider(responses=["summary"])
-    summarizer = LLMSummarizer(provider)
+    summarizer = LLMSummarizer(provider, model="mock-model")
     result = await summarizer.summarize(["old action", "old result"], "t1")
     assert result == "summary"
+
+
+@pytest.mark.asyncio
+async def test_summarizer_builds_provider_request():
+    provider = MockProvider(responses=["summary"])
+    summarizer = LLMSummarizer(provider, model="mock-model")
+    segments = ["old action\nline2", "old result"]
+    await summarizer.summarize(segments, "t1")
+
+    assert len(provider.calls) == 1
+    request = provider.calls[0]
+    assert request.model == "mock-model"
+    assert request.max_tokens == 2048
+    content = request.messages[0]["content"]
+    assert request.messages == [{"role": "user", "content": content}]
+    assert "old action\nline2" in content
+    assert "old result" in content
+    assert "t1" in content
 
 
 @pytest.mark.asyncio
 async def test_assembler_uses_provider_summary_without_repeating_latest():
     provider = MockProvider(responses=["summary"])
     assembler = ContextAssembler(max_tokens=100)
-    assembler.summarizer = LLMSummarizer(provider)
+    assembler.summarizer = LLMSummarizer(provider, model="mock-model")
 
     result = await assembler.build(
         tool_catalog=[],
@@ -31,13 +49,13 @@ async def test_assembler_uses_provider_summary_without_repeating_latest():
 
 
 @pytest.mark.asyncio
-async def test_assembler_falls_back_when_provider_fails():
+async def test_assembler_falls_back_when_provider_fails(caplog):
     class FailingProvider:
         async def complete(self, request):
             raise RuntimeError("provider failed")
 
     assembler = ContextAssembler(max_tokens=100)
-    assembler.summarizer = LLMSummarizer(FailingProvider())
+    assembler.summarizer = LLMSummarizer(FailingProvider(), model="mock-model")
     result = await assembler.build(
         tool_catalog=[],
         rules="rules",
@@ -47,6 +65,7 @@ async def test_assembler_falls_back_when_provider_fails():
 
     assert result.contains_priority("latest")
     assert result.text.count("latest") == 1
+    assert "LLM summarization failed" in caplog.text
 
 
 @pytest.mark.asyncio

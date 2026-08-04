@@ -1,18 +1,37 @@
 """Token-budgeted context assembly for the agent loop."""
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from kl_server.providers.base import ProviderRequest
 
+logger = logging.getLogger(__name__)
+
 
 class LLMSummarizer:
-    def __init__(self, provider):
+    def __init__(self, provider, model: str):
         self.provider = provider
+        self.model = model
 
     async def summarize(self, segments: list[str], task_id: str) -> str:
-        prompt = "Summarize these segments with goals, results, failures, and open items:\n" + "\n".join(segments)
-        response = await self.provider.complete(ProviderRequest(messages=[{"role": "user", "content": prompt}], model="mock-model"))
+        numbered_segments = "\n".join(
+            f"{index}. {segment}" for index, segment in enumerate(segments, start=1)
+        )
+        prompt = (
+            "Summarize segments for task "
+            f"{task_id} with goals, results, failures, and open items:\n"
+            f"{numbered_segments}"
+        )
+        request = ProviderRequest(
+            messages=[{"role": "user", "content": prompt}],
+            model=self.model,
+        )
+        try:
+            response = await self.provider.complete(request)
+        except Exception:
+            logger.warning("LLM summarization failed for task %s", task_id, exc_info=True)
+            raise
         return response.text
 
 
