@@ -99,5 +99,18 @@ test('app opens config wizard from /config', async () => {
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(lastFrame()).toContain('config wizard');
   expect(lastFrame()).toContain('api key');
+  stdin.write('acme');
+  stdin.write('\t');
+  stdin.write('custom');
+  stdin.write('\t');
+  stdin.write('http://example.com');
+  stdin.write('\t');
+  stdin.write('model-x');
+  stdin.write('\t');
+  stdin.write('secret');
+  stdin.write('\r');
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(lastFrame()).toContain('config wizard');
+  expect(lastFrame()).not.toContain('requires approval');
   unmount();
 });
