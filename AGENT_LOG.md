@@ -105,10 +105,14 @@
 - 触发的技能：`test-driven-development`、`subagent-driven-development`、`requesting-code-review`
 - 上下文：用户工具放在 `.kl/tools/<name>/`，必须导出 `TOOL` 对象并受同样 ToolRegistry 治理。
 - 目标文件：`server/kl_server/plugins/`、`server/tests/test_plugin_loader.py`。
-- 预期：按文件名导入 `TOOL`，缺失/损坏插件不阻塞其余工具加载。
+- 预期：按 `<name>/tool.py` 导入 `TOOL`，缺失/损坏插件不阻塞其余工具加载。
 - TDD 红：`ModuleNotFoundError: No module named 'kl_server.plugins'`
 - TDD 绿：`server/tests/test_plugin_loader.py` → `5 passed`
 - 完整 server 套件：`284 passed, 1 skipped`
+- Code quality review 修复：插件发现改为 `.kl/tools/<name>/tool.py` 目录布局；每个插件的加载/TOOL 获取/name 校验/注册全部纳入错误边界；校验非空字符串工具名；重复名记录 warning 并跳过；缺失/非目录 root 返回空并记录 warning；唯一 module name 注册 `sys.modules` 并临时加入插件目录到 `sys.path`，支持同目录 helper import。
+- 修复 TDD 绿：`server/tests/test_plugin_loader.py` → `11 passed`
+- 修复后完整 server 套件：`290 passed, 1 skipped`
+- 修复提交信息：`fix: load plugins from tool directories and isolate failures`
 
 ## 2026-08-03 Task 0.1：Server package skeleton
 

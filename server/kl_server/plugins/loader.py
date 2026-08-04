@@ -1,6 +1,8 @@
 import importlib.util
 import logging
+import sys
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -11,35 +13,60 @@ class PluginLoader:
     def __init__(self, root: str):
         self.root = Path(root)
 
-    def load_tools(self) -> dict[str, object]:
-        tools = {}
-        plugin_paths = sorted(self.root.glob("*.py"), key=lambda path: path.name)
+    def load_tools(self) -> dict[str, Any]:
+        tools: dict[str, Any] = {}
+        if not self.root.is_dir():
+            logger.warning("Plugin root %s is not a directory; no tools loaded", self.root)
+            return tools
 
-        for path in plugin_paths:
-            if path.name == "__init__.py":
+        plugin_dirs = sorted(
+            (entry for entry in self.root.iterdir() if entry.is_dir()),
+            key=lambda entry: entry.name,
+        )
+        for plugin_dir in plugin_dirs:
+            path = plugin_dir / "tool.py"
+            if not path.is_file():
+                logger.warning("Plugin directory %s does not contain tool.py", plugin_dir)
                 continue
-
             try:
-                spec = importlib.util.spec_from_file_location(path.stem, path)
-                if spec is None or spec.loader is None:
-                    logger.warning("Failed to load plugin %s: no import spec", path)
+                tool = self._load_plugin(path)
+                if tool is None:
                     continue
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
+                name = getattr(tool, "name", None)
+                if not isinstance(name, str) or not name.strip():
+                    logger.warning(
+                        "Plugin tool in %s does not define a non-empty string name", path
+                    )
+                    continue
+                if name in tools:
+                    logger.warning(
+                        "Duplicate plugin tool name %s from %s; skipping", name, path
+                    )
+                    continue
+                tools[name] = tool
             except Exception as exc:
                 logger.warning("Failed to load plugin %s: %s", path, exc)
-                continue
+        return tools
 
+    def _load_plugin(self, path: Path) -> Any | None:
+        module_name = f"kl_user_plugin_{path.parent.name}"
+        sys.path.insert(0, str(path.parent))
+        try:
+            spec = importlib.util.spec_from_file_location(module_name, path)
+            if spec is None or spec.loader is None:
+                logger.warning("Failed to load plugin %s: no import spec", path)
+                return None
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            try:
+                spec.loader.exec_module(module)
+            finally:
+                sys.modules.pop(module_name, None)
             tool = getattr(module, "TOOL", None)
             if tool is None:
                 logger.warning("Plugin module %s does not export TOOL", path)
-                continue
-
-            name = getattr(tool, "name", None)
-            if not name:
-                logger.warning("Plugin tool in %s does not define a name", path)
-                continue
-
-            tools[name] = tool
-
-        return tools
+            return tool
+        finally:
+            plugin_dir = str(path.parent)
+            if plugin_dir in sys.path:
+                sys.path.remove(plugin_dir)
