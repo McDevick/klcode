@@ -28,12 +28,16 @@ class SnapshotManager:
             raise ValueError("invalid snapshot")
         if meta.read_text(encoding="utf-8") != str(self.workspace.resolve()):
             raise ValueError("snapshot does not belong to this workspace")
-        for child in self.workspace.iterdir():
-            if child.is_symlink() or child.is_file():
-                child.unlink()
-            elif child.is_dir():
-                shutil.rmtree(child)
-        for child in snapshot.iterdir():
-            shutil.move(str(child), self.workspace / child.name)
-        meta.unlink()
-        shutil.rmtree(snapshot)
+        backup = self.workspace.parent / f"{self.workspace.name}.restore.{uuid4().hex[:8]}"
+        if backup.exists():
+            raise FileExistsError("restore backup path already exists")
+        try:
+            shutil.move(str(self.workspace), str(backup))
+            shutil.move(str(snapshot), str(self.workspace))
+        except Exception:
+            if not self.workspace.exists() and backup.exists():
+                shutil.move(str(backup), str(self.workspace))
+            raise
+        finally:
+            shutil.rmtree(backup, ignore_errors=True)
+            meta.unlink(missing_ok=True)
