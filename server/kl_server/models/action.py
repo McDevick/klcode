@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -17,3 +17,4 @@ class ToolResult:
     ok: bool
     output: str
     error: str | None = None
+    meta: dict = field(default_factory=dict)

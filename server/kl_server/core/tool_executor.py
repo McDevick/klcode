@@ -2,6 +2,7 @@ import asyncio
 from dataclasses import replace
 from typing import Any
 
+from kl_server.models.action import Action
 from kl_server.models.action import ToolResult
 from kl_server.tools.base import ToolContext
 from kl_server.tools.registry import ToolRegistry
@@ -31,6 +32,18 @@ class ToolExecutor:
         return text[: self.max_output_chars - len(marker)] + marker
 
     async def execute(self, name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+        if self.guardrail is not None:
+            action = Action(tool=name, args=args, task_id=ctx.task_id, workspace=ctx.workspace)
+            decision = self.guardrail.check(action)
+            if decision == "rejected":
+                return ToolResult(ok=False, output="", error="rejected")
+            if decision == "requires_approval":
+                return ToolResult(
+                    ok=False,
+                    output="",
+                    error="requires_approval",
+                    meta={"tool": name, "args": args},
+                )
         try:
             result = await asyncio.wait_for(self.registry.execute(name, args, ctx), timeout=self.timeout)
         except asyncio.TimeoutError:
