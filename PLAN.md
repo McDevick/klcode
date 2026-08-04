@@ -3656,7 +3656,7 @@ test('run command carries task text', async () => {
 Run: `npm test`
 Expected: FAIL with missing modules.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```ts
 // cli/src/commands/init.ts
@@ -3686,12 +3686,12 @@ export const RunCommand = {
 
 Extend `cli/src/api/client.ts` with `ensureConfigured()` (calls `POST /api/v1/config/check` and returns the missing-provider message), `createTask(text)` (`POST /api/v1/tasks`), and a `server start/stop/status` command that talks to the daemon. Wire everything in `cli/src/main.ts` with `commander`: `kl init`, `kl run "<task>"`, `kl server <start|stop|status>`, `kl config provider <add|list|test>`, `kl config key <set|test|clear|show>`. The API client reads `~/.kl/daemon.token` and sends the `Authorization` header (from Task 3.7).
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `npm test`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add cli/src/commands cli/src/api/client.ts cli/src/main.ts cli/test/commands.test.ts
@@ -3794,7 +3794,7 @@ async def test_task_manager_pause_resume_abort(tmp_path):
 Run: `python -m pytest server/tests/test_task.py server/tests/test_agent_loop.py -v`
 Expected: FAIL (`requires_approval` not handled; `pause/resume/abort` missing).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add `is_approved` to `HITLManager` in `server/kl_server/core/guardrail.py`:
 
@@ -3868,12 +3868,12 @@ async def abort(self, task_id: str) -> None:
 
 Wire the WebSocket (`/ws/tasks/{task_id}`) to broadcast `approval_request` events carrying `{action_id, tool, args, level}`; the approval screen sends `approve` / `reject` / `abort`, which the server resolves against `HITLManager` and notifies the awaiting loop. Add a WebSocket broadcast test in `server/tests/test_ws.py` that connects, triggers a broadcast, and asserts the event arrives.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_task.py server/tests/test_agent_loop.py server/tests/test_ws.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/core server/kl_server/api/ws.py cli/src/tui/screens/approval.tsx server/tests
@@ -3892,7 +3892,7 @@ Task 3.1 only exposes `/health`; Task 3.8 tells the CLI to call `/api/v1/config/
 - Modify: `server/kl_server/api/app.py`
 - Test: `server/tests/test_ws.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from fastapi.testclient import TestClient
@@ -3923,12 +3923,12 @@ def test_key_route_never_returns_secret():
     assert "sk-secret" not in status.text
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_ws.py -v`
 Expected: FAIL with 404 for `/api/v1/tasks`.
 
-- [ ] **Step 3: Implement the REST routes**
+- [x] **Step 3: Implement the REST routes**
 
 Create `server/kl_server/api/routes.py`:
 
@@ -4062,12 +4062,12 @@ def create_app(deps=None, auth_token: str | None = None) -> FastAPI:
 
 Task 5.6 will replace `_state` with real `SessionManager`, `TaskManager`, config, and credential store wiring.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_ws.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/api/routes.py server/kl_server/api/app.py server/tests/test_ws.py
