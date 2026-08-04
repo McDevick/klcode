@@ -34,7 +34,11 @@ class ToolExecutor:
     async def execute(self, name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         if self.guardrail is not None:
             action = Action(tool=name, args=args, task_id=ctx.task_id, workspace=ctx.workspace)
-            decision = self.guardrail.check(action)
+            try:
+                decision = self.guardrail.check(action)
+            except Exception as exc:
+                message = self._truncate(str(exc) or type(exc).__name__)
+                return ToolResult(ok=False, output="", error=f"guardrail_error: {message}")
             if decision == "rejected":
                 return ToolResult(ok=False, output="", error="rejected")
             if decision == "requires_approval":
@@ -42,7 +46,7 @@ class ToolExecutor:
                     ok=False,
                     output="",
                     error="requires_approval",
-                    meta={"tool": name, "args": args},
+                    meta={"tool": name, "args": dict(args)},
                 )
         try:
             result = await asyncio.wait_for(self.registry.execute(name, args, ctx), timeout=self.timeout)

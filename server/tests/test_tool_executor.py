@@ -221,3 +221,31 @@ async def test_executor_returns_requires_approval(tmp_path):
     result = await executor.execute("run_command", {"command": "git push --force"}, ToolContext(workspace=str(tmp_path)))
     assert result.ok is False
     assert result.error == "requires_approval"
+    assert result.meta["tool"] == "run_command"
+    assert result.meta["args"] == {"command": "git push --force"}
+
+
+@pytest.mark.asyncio
+async def test_executor_allows_safe_action_and_does_not_run_rejected(tmp_path):
+    registry = ToolRegistry()
+    registry.register(WriteTool())
+    executor = ToolExecutor(registry, guardrail=make_guardrail(tmp_path))
+    safe = await executor.execute("write_file", {"path": "a.txt", "content": "hi"}, ToolContext(workspace=str(tmp_path)))
+    assert safe.ok is True
+    rejected = await executor.execute("write_file", {"path": "../x", "content": "hi"}, ToolContext(workspace=str(tmp_path)))
+    assert rejected.ok is False
+    assert rejected.error == "rejected"
+
+
+@pytest.mark.asyncio
+async def test_executor_isolates_guardrail_errors(tmp_path):
+    class ExplodingGuardrail:
+        def check(self, action):
+            raise RuntimeError("guardrail boom")
+
+    registry = ToolRegistry()
+    registry.register(WriteTool())
+    executor = ToolExecutor(registry, guardrail=ExplodingGuardrail())
+    result = await executor.execute("write_file", {"path": "a.txt", "content": "hi"}, ToolContext(workspace=str(tmp_path)))
+    assert result.ok is False
+    assert "guardrail_error" in result.error

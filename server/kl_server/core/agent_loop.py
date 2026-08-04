@@ -53,7 +53,11 @@ class AgentLoop:
                 task_id=session.id,
                 workspace=session.workspace,
             )
-            result = await self.tools.execute(action.tool, action.args, ToolContext(workspace=session.workspace))
+            result = await self.tools.execute(
+                action.tool,
+                action.args,
+                ToolContext(workspace=session.workspace, task_id=session.id),
+            )
             feedback = classify_tool_result(result, action.tool)
             history.append({"role": "assistant", "content": text})
             history.append({"role": "tool", "content": result.output})
