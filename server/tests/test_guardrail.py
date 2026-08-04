@@ -1,4 +1,6 @@
+import os
 from pathlib import Path
+
 from kl_server.core.guardrail import ScopeFence
 
 
@@ -35,3 +37,12 @@ def test_scope_fence_relative_path_does_not_depend_on_cwd(tmp_path, monkeypatch)
 def test_scope_fence_fails_closed_on_invalid_path(tmp_path):
     fence = ScopeFence(str(tmp_path))
     assert fence.allow(123) is False
+    assert fence.allow("") is False
+    assert fence.allow("a\x00b") is False
+
+
+def test_scope_fence_rejects_windows_drive_relative_path(tmp_path):
+    if os.name != "nt":
+        return
+    fence = ScopeFence(str(tmp_path))
+    assert fence.allow("C:outside") is False
