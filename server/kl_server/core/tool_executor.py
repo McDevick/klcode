@@ -42,12 +42,40 @@ class ToolExecutor:
             if decision == "rejected":
                 return ToolResult(ok=False, output="", error="rejected")
             if decision == "requires_approval":
+                if hasattr(self.guardrail, "approval_id"):
+                    action_id = self.guardrail.approval_id(action)
+                else:
+                    action_id = f"{ctx.task_id}:{name}:{str(args.get('command', ''))}"
+                if hasattr(self.guardrail, "danger") and hasattr(self.guardrail.danger, "classify"):
+                    level = self.guardrail.danger.classify(action, workspace_mode=ctx.workspace_mode)
+                else:
+                    level = "requires_approval"
                 return ToolResult(
                     ok=False,
                     output="",
                     error="requires_approval",
-                    meta={"tool": name, "args": dict(args)},
+                    meta={
+                        "action_id": action_id,
+                        "tool": name,
+                        "args": dict(args),
+                        "level": level,
+                    },
                 )
+        return await self._run(name, args, ctx)
+
+    async def execute_approved(
+        self,
+        name: str,
+        args: dict[str, Any],
+        ctx: ToolContext,
+        action_id: str,
+    ) -> ToolResult:
+        hitl = getattr(self.guardrail, "hitl", None) if self.guardrail is not None else None
+        if hitl is None or not hitl.is_approved(action_id):
+            return ToolResult(ok=False, output="", error="not_approved")
+        return await self._run(name, args, ctx)
+
+    async def _run(self, name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         try:
             result = await asyncio.wait_for(self.registry.execute(name, args, ctx), timeout=self.timeout)
         except asyncio.TimeoutError:

@@ -51,6 +51,30 @@ test('approval panel handles approve/reject/modify keys', () => {
   unmount();
 });
 
+test('approval panel sends approve/reject/abort decisions', async () => {
+  const sendDecision = vi.fn();
+  const { stdin, unmount } = render(
+    <ApprovalPanel
+      active
+      taskId="t1"
+      actionId="a1"
+      tool="run_command"
+      command="rm -rf /"
+      sendDecision={sendDecision}
+    />,
+  );
+  stdin.write('a');
+  stdin.write('r');
+  stdin.write('x');
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(sendDecision.mock.calls).toEqual([
+    ['approve', 'a1', 't1'],
+    ['reject', 'a1', 't1'],
+    ['abort', 'a1', 't1'],
+  ]);
+  unmount();
+});
+
 test('app submits task and shows approval actions', async () => {
   const { stdin, lastFrame, unmount } = render(<App />);
   stdin.write('hello');

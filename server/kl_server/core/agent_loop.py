@@ -15,11 +15,12 @@ class LoopSettings:
 
 
 class AgentLoop:
-    def __init__(self, provider, tools: ToolExecutor, settings: LoopSettings, logger=None):
+    def __init__(self, provider, tools: ToolExecutor, settings: LoopSettings, logger=None, on_approval=None):
         self.provider = provider
         self.tools = tools
         self.settings = settings
         self.logger = logger
+        self.on_approval = on_approval
 
     async def run(self, session: Session, task: str, task_id: str = "", workspace_mode: str = "managed") -> str:
         task_id = task_id or session.id
@@ -83,6 +84,41 @@ class AgentLoop:
                     "tool_result",
                     {"tool": action.tool, "ok": result.ok, "error": result.error, "meta": result.meta},
                     task_id,
+                )
+            if result.error == "requires_approval":
+                action_id = result.meta.get("action_id") or f"{task_id}:{action.tool}"
+                if self.on_approval is None:
+                    return "NEEDS_APPROVAL"
+                decision = await self.on_approval(
+                    task_id or session.id,
+                    {
+                        "action_id": action_id,
+                        "tool": action.tool,
+                        "args": action.args,
+                        "level": result.meta.get("level", ""),
+                    },
+                )
+                if decision == "reject":
+                    history.append({"role": "assistant", "content": text})
+                    history.append({"role": "feedback", "content": "action rejected by user"})
+                    continue
+                if decision == "abort":
+                    return "ABORTED"
+                if decision != "approve":
+                    history.append({"role": "assistant", "content": text})
+                    history.append(
+                        {"role": "feedback", "content": f"unknown approval decision: {decision}"}
+                    )
+                    continue
+                result = await self.tools.execute_approved(
+                    action.tool,
+                    action.args,
+                    ToolContext(
+                        workspace=session.workspace,
+                        task_id=session.id,
+                        workspace_mode=workspace_mode,
+                    ),
+                    action_id,
                 )
             feedback = classify_tool_result(result, action.tool)
             history.append({"role": "assistant", "content": text})

@@ -4,7 +4,8 @@ import secrets
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-def build_ws_router(auth_token: str | None = None) -> APIRouter:
+
+def build_ws_router(auth_token: str | None = None, hitl=None) -> APIRouter:
     connections: dict[str, set[WebSocket]] = {}
     lock = asyncio.Lock()
     router = APIRouter()
@@ -47,6 +48,51 @@ def build_ws_router(auth_token: str | None = None) -> APIRouter:
                     await websocket.send_json({"task_id": task_id, "error": "payload must be object"})
                     continue
                 payload.pop("task_id", None)
+                decision = payload.get("event")
+                if decision in {"approve", "reject", "abort"}:
+                    action_id = payload.get("action_id")
+                    if not isinstance(action_id, str) or not action_id:
+                        await websocket.send_json(
+                            {"task_id": task_id, "error": "action_id is required", "event": decision}
+                        )
+                        continue
+                    if hitl is None:
+                        await websocket.send_json(
+                            {
+                                "task_id": task_id,
+                                "error": "hitl is not configured",
+                                "event": decision,
+                                "action_id": action_id,
+                            }
+                        )
+                        continue
+                    try:
+                        if decision == "approve":
+                            state = hitl.approve(action_id)
+                        elif decision == "reject":
+                            state = hitl.reject(action_id)
+                        else:
+                            state = hitl.abort(action_id)
+                    except ValueError as exc:
+                        await websocket.send_json(
+                            {
+                                "task_id": task_id,
+                                "error": str(exc),
+                                "event": decision,
+                                "action_id": action_id,
+                            }
+                        )
+                        continue
+                    await broadcast(
+                        task_id,
+                        {
+                            "event": "approval_result",
+                            "action_id": action_id,
+                            "decision": decision,
+                            "state": state,
+                        },
+                    )
+                    continue
                 await broadcast(task_id, payload)
         except (WebSocketDisconnect, RuntimeError):
             pass
