@@ -43,6 +43,25 @@ class CancelledTool(Tool):
         raise asyncio.CancelledError()
 
 
+class BigTool(Tool):
+    name = "big"
+    description = "returns huge output"
+    schema = {"type": "object", "properties": {}}
+
+    async def execute(self, args, ctx: ToolContext) -> ToolResult:
+        return ToolResult(ok=True, output="x" * 100_000)
+
+
+class SlowTool(Tool):
+    name = "slow"
+    description = "sleeps too long"
+    schema = {"type": "object", "properties": {}}
+
+    async def execute(self, args, ctx: ToolContext) -> ToolResult:
+        await asyncio.sleep(1)
+        return ToolResult(ok=True, output="late")
+
+
 @pytest.mark.asyncio
 async def test_crash_returns_tool_error():
     registry = ToolRegistry()
@@ -98,3 +117,22 @@ async def test_cancelled_error_propagates():
 
     with pytest.raises(asyncio.CancelledError):
         await executor.execute("cancel", {}, ToolContext(workspace="."))
+
+
+@pytest.mark.asyncio
+async def test_executor_truncates_large_output():
+    registry = ToolRegistry()
+    registry.register(BigTool())
+    executor = ToolExecutor(registry, max_output_chars=10_000)
+    result = await executor.execute("big", {}, ToolContext(workspace="."))
+    assert len(result.output) == 10_000
+
+
+@pytest.mark.asyncio
+async def test_executor_times_out_slow_tool():
+    registry = ToolRegistry()
+    registry.register(SlowTool())
+    executor = ToolExecutor(registry, timeout=0.05)
+    result = await executor.execute("slow", {}, ToolContext(workspace="."))
+    assert result.ok is False
+    assert result.error == "timeout"
