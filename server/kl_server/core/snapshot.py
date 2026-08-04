@@ -31,13 +31,19 @@ class SnapshotManager:
         backup = self.workspace.parent / f"{self.workspace.name}.restore.{uuid4().hex[:8]}"
         if backup.exists():
             raise FileExistsError("restore backup path already exists")
+        restored = False
         try:
             shutil.move(str(self.workspace), str(backup))
             shutil.move(str(snapshot), str(self.workspace))
+            restored = True
         except Exception:
             if not self.workspace.exists() and backup.exists():
-                shutil.move(str(backup), str(self.workspace))
+                try:
+                    shutil.move(str(backup), str(self.workspace))
+                except Exception:
+                    pass
             raise
         finally:
-            shutil.rmtree(backup, ignore_errors=True)
-            meta.unlink(missing_ok=True)
+            if restored:
+                shutil.rmtree(backup, ignore_errors=True)
+                meta.unlink(missing_ok=True)
