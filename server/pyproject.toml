@@ -14,13 +14,14 @@ dependencies = [
     "aiosqlite",
     "keyring",
     "cryptography",
+    "httpx",
+    "PyYAML",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest",
     "pytest-asyncio",
-    "httpx",
 ]
 
 [tool.setuptools.packages.find]
@@ -29,3 +30,6 @@ include = ["kl_server*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+filterwarnings = [
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
+]
