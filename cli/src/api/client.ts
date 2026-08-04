@@ -6,6 +6,7 @@ export class ApiClient {
   constructor(private readonly options: ApiClientOptions) {}
 
   taskUrl(taskId: string): string {
-    return `${this.options.baseUrl}/api/v1/tasks/${taskId}`;
+    const base = this.options.baseUrl.replace(/\/+$/, '');
+    return `${base}/api/v1/tasks/${encodeURIComponent(taskId)}`;
   }
 }
