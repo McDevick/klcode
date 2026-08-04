@@ -50,3 +50,5 @@ async def task_events(websocket: WebSocket, task_id: str) -> None:
             sockets = _connections.get(task_id)
             if sockets is not None:
                 sockets.discard(websocket)
+                if not sockets:
+                    _connections.pop(task_id, None)

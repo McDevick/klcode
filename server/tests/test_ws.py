@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+from kl_server.api import ws as ws_module
 from kl_server.api.app import create_app
 
 
@@ -43,3 +44,22 @@ def test_task_websocket_handles_malformed_json_and_authoritative_task_id():
         data = websocket.receive_json()
         assert data["task_id"] == "t1"
         assert data["event"] == "ok"
+
+
+def test_task_websocket_handles_non_object_and_multiple_messages():
+    client = TestClient(create_app())
+    with client.websocket_connect("/ws/tasks/t1") as websocket:
+        websocket.send_json([1, 2])
+        assert websocket.receive_json()["error"] == "payload must be object"
+        websocket.send_json({"event": "a"})
+        assert websocket.receive_json()["event"] == "a"
+        websocket.send_json({"event": "b"})
+        assert websocket.receive_json()["event"] == "b"
+
+
+def test_task_websocket_cleans_up_on_disconnect():
+    client = TestClient(create_app())
+    with client.websocket_connect("/ws/tasks/t1") as websocket:
+        websocket.send_json({"event": "ok"})
+        websocket.receive_json()
+    assert not ws_module._connections.get("t1")
