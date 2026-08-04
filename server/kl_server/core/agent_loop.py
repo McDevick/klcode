@@ -15,12 +15,23 @@ class LoopSettings:
 
 
 class AgentLoop:
-    def __init__(self, provider, tools: ToolExecutor, settings: LoopSettings, logger=None, on_approval=None):
+    def __init__(
+        self,
+        provider,
+        tools: ToolExecutor,
+        settings: LoopSettings,
+        logger=None,
+        on_approval=None,
+        context=None,
+        memory=None,
+    ):
         self.provider = provider
         self.tools = tools
         self.settings = settings
         self.logger = logger
         self.on_approval = on_approval
+        self.context = context
+        self.memory = memory
 
     async def run(self, session: Session, task: str, task_id: str = "", workspace_mode: str = "managed") -> str:
         task_id = task_id or session.id
@@ -31,7 +42,28 @@ class AgentLoop:
             if self.logger:
                 self.logger.write("llm_call", {"iteration": iteration}, task_id)
             try:
-                response = await self.provider.complete(ProviderRequest(messages=history, model=session.model))
+                request_messages = history
+                if self.context is not None:
+                    memory_entries = (
+                        await self.memory.find([session.id, task_id])
+                        if self.memory is not None
+                        else []
+                    )
+                    assembled = await self.context.build(
+                        tool_catalog=(
+                            self.tools.catalog()
+                            if hasattr(self.tools, "catalog")
+                            else []
+                        ),
+                        rules=getattr(session, "rules", ""),
+                        memory=memory_entries,
+                        history=[message["content"] for message in history],
+                        task_id=task_id,
+                    )
+                    request_messages = [{"role": "user", "content": assembled.text}]
+                response = await self.provider.complete(
+                    ProviderRequest(messages=request_messages, model=session.model)
+                )
             except Exception as exc:
                 if self.logger:
                     self.logger.write("provider_error", {"error": str(exc)[:500]}, task_id)

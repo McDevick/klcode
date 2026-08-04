@@ -3,6 +3,7 @@ import json
 import pytest
 
 from kl_server.core.agent_loop import AgentLoop, LoopSettings
+from kl_server.core.context import AssembledContext
 from kl_server.core.tool_executor import ToolExecutor
 from kl_server.models.action import ToolResult
 from kl_server.models.task import Session
@@ -115,6 +116,45 @@ async def test_loop_reinjects_feedback_into_history():
     await loop.run(Session(id="s1", workspace="."), "fix")
     feedback_msgs = [m for m in provider.calls[1].messages if m.get("role") == "feedback"]
     assert feedback_msgs and "test_failure" in feedback_msgs[0]["content"]
+
+
+class SpyAssembler:
+    def __init__(self):
+        self.calls = 0
+        self.last_kwargs = {}
+
+    async def build(self, **kwargs) -> AssembledContext:
+        self.calls += 1
+        self.last_kwargs = kwargs
+        return AssembledContext(text="assembled", used_tokens=10)
+
+
+class FakeMemory:
+    async def find(self, tags):
+        return ["remembered decision"]
+
+
+@pytest.mark.asyncio
+async def test_loop_uses_context_assembler():
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+    provider = MockProvider(responses=['{"tool":"final","args":{}}', "DONE"])
+    spy = SpyAssembler()
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=3),
+        context=spy,
+        memory=FakeMemory(),
+    )
+
+    await loop.run(Session(id="s1", workspace="."), "task")
+
+    assert spy.calls >= 1
+    assert spy.last_kwargs["memory"] == ["remembered decision"]
+    assert spy.last_kwargs["task_id"] == "s1"
+    assert spy.last_kwargs["tool_catalog"][0]["name"] == "final"
+    assert provider.calls[0].messages == [{"role": "user", "content": "assembled"}]
 
 
 import pytest

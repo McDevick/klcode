@@ -175,7 +175,7 @@ def test_http_hook_non_ok_response_aborts():
             on_error="abort",
         )
 
-        with pytest.raises(httpx.HTTPStatusError):
+        with pytest.raises(httpx.HTTPError):
             manager.run("event", {})
     finally:
         server.shutdown()

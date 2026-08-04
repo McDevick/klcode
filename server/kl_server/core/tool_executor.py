@@ -31,6 +31,9 @@ class ToolExecutor:
             return marker[: self.max_output_chars]
         return text[: self.max_output_chars - len(marker)] + marker
 
+    def catalog(self) -> list[dict[str, Any]]:
+        return self.registry.catalog()
+
     async def execute(self, name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         if self.guardrail is not None:
             action = Action(tool=name, args=args, task_id=ctx.task_id, workspace=ctx.workspace)

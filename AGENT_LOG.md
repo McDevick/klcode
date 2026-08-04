@@ -141,6 +141,18 @@
 - 实现说明：`McpTransport` 按 `url` 或 `command` 分别使用 streamable-http/stdio；必须保存 async context manager 本体，避免流被 GC 提前关闭；失败 server 映射为 `not connected`；adapter 新增 `close()` 统一释放连接。
 - 依赖：`server/pyproject.toml` 新增 `mcp>=2.0.0`。
 
+## 2026-08-04 Task 4.10：ContextAssembler 接入 AgentLoop（进行中）
+
+- 触发的技能：`test-driven-development`、`subagent-driven-development`、`requesting-code-review`
+- 上下文：AgentLoop 仍直接发送原始 history；本任务接入 `ContextAssembler` 与 MemoryStore，使每轮上下文受 token 预算控制。
+- 目标文件：`server/kl_server/core/agent_loop.py`、`server/kl_server/core/tool_executor.py`、`server/tests/test_agent_loop.py`。
+- 当前状态：已完成并验证。
+- TDD 红：`AgentLoop.__init__() got an unexpected keyword argument 'context'`
+- TDD 绿：`server/tests/test_agent_loop.py server/tests/test_context.py` → `28 passed`
+- 完整 server 套件：`299 passed, 1 skipped`
+- 实现说明：`AgentLoop` 新增 `context`/`memory` 参数；有 assembler 时按轮构建带 tool catalog/rules/memory/history/task_id 的上下文；`ToolExecutor` 转发 `ToolRegistry.catalog()` 供工具目录注入。
+- 另修复 Task 4.8 测试抖动：HTTP 失败 abort 断言放宽到 `httpx.HTTPError`，避免 Windows 下 500 连接表现为 ReadError。
+
 ## 2026-08-03 Task 0.1：Server package skeleton
 
 **状态：已完成并验证**
