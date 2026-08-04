@@ -52,3 +52,17 @@ def test_sandbox_normalizes_path_deny_and_allow():
     assert policy.allow_command("/usr/bin/pytest -q") is True
     assert policy.allow_command("/usr/bin/rm -rf .") is False
     assert policy.allow_command("rm.exe -rf .") is False
+
+
+def test_sandbox_rejects_windows_metachar_and_wrappers():
+    policy = SandboxPolicy(allow=[], deny=["rm", "cmd"])
+    assert policy.allow_command(r"r^m -rf .") is False
+    assert policy.allow_command("%COMSPEC% /c echo hi") is False
+    assert policy.allow_command("start rm -rf .") is False
+    assert policy.allow_command("call rm -rf .") is False
+
+
+def test_sandbox_rejects_all_control_chars():
+    policy = SandboxPolicy(allow=[], deny=[])
+    assert policy.allow_command("pytest\x1b") is False
+    assert policy.allow_command("pytest\t") is False

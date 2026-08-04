@@ -2,8 +2,7 @@ import os
 import re
 
 
-_SHELL_METACHARS = re.compile(r"[;&|`$()<>]")
-_CONTROL_CHARS = "\n\r\x00"
+_SHELL_METACHARS = re.compile(r"[;&|`$()<>%^]")
 _WRAPPERS = {
     "sh",
     "bash",
@@ -21,11 +20,16 @@ _WRAPPERS = {
     "find",
     "xargs",
     "eval",
+    "start",
+    "call",
+    "timeout",
+    "nohup",
+    "busybox",
 }
 
 
 def _normalize_binary(name: str) -> str:
-    base = os.path.basename(name)
+    base = name.replace("\\", "/").rsplit("/", 1)[-1]
     if base.lower().endswith(".exe"):
         base = base[:-4]
     return os.path.normcase(base)
@@ -39,7 +43,7 @@ class SandboxPolicy:
     def allow_command(self, command: str) -> bool:
         if not command or not command.strip():
             return False
-        if any(char in command for char in _CONTROL_CHARS):
+        if any(ord(char) < 32 or ord(char) == 127 for char in command):
             return False
         if "'" in command or '"' in command or "\\" in command:
             return False
