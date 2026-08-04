@@ -8,7 +8,13 @@ def build_provider_registry(config: AppConfig, credential_store) -> ProviderRegi
     registry = ProviderRegistry()
     registry.register("mock", MockProvider())
     for name, provider_config in config.providers.items():
-        api_key = credential_store.get(provider_config.credential_ref) if provider_config.credential_ref else None
+        if provider_config.type != "openai-compatible":
+            raise ValueError(f"unsupported provider type: {provider_config.type}")
+        api_key = None
+        if provider_config.credential_ref is not None:
+            api_key = credential_store.get(provider_config.credential_ref)
+            if api_key is None:
+                raise ValueError(f"credential not found: {provider_config.credential_ref}")
         registry.register(
             name,
             OpenAICompatibleProvider(
