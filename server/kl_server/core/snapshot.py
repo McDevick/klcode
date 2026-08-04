@@ -9,13 +9,16 @@ class SnapshotManager:
 
     def create(self) -> Path:
         snapshot = Path(self.workspace.parent) / f"{self.workspace.name}.snapshot.{uuid4().hex[:8]}"
+        meta = snapshot.with_name(snapshot.name + ".meta")
+        if snapshot.exists() or meta.exists():
+            raise FileExistsError("snapshot path already exists")
         try:
             shutil.copytree(self.workspace, snapshot, symlinks=True)
+            meta.write_text(str(self.workspace.resolve()), encoding="utf-8")
         except Exception:
             shutil.rmtree(snapshot, ignore_errors=True)
+            meta.unlink(missing_ok=True)
             raise
-        meta = snapshot.with_name(snapshot.name + ".meta")
-        meta.write_text(str(self.workspace.resolve()), encoding="utf-8")
         return snapshot
 
     def restore(self, snapshot: Path) -> None:

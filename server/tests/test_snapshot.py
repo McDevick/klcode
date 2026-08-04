@@ -72,3 +72,20 @@ def test_restore_rejects_wrong_workspace(tmp_path):
     with pytest.raises(ValueError):
         SnapshotManager(str(second)).restore(snapshot)
     assert (second / "b.txt").read_text(encoding="utf-8") == "keep"
+
+
+def test_create_does_not_delete_preexisting_snapshot_path(tmp_path, monkeypatch):
+    target = tmp_path / "work"
+    target.mkdir()
+    pre = tmp_path / "work.snapshot.abcdef01"
+    pre.mkdir()
+    (pre / "keep.txt").write_text("keep", encoding="utf-8")
+
+    class FakeUuid:
+        hex = "abcdef01"
+
+    monkeypatch.setattr("kl_server.core.snapshot.uuid4", lambda: FakeUuid())
+    manager = SnapshotManager(str(target))
+    with pytest.raises(FileExistsError):
+        manager.create()
+    assert (pre / "keep.txt").read_text(encoding="utf-8") == "keep"
