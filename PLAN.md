@@ -218,7 +218,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 1.11 | Complete built-in tool set (shell/git/patch/validation/task/delete) | Done (`b0dc443`) |
 | 1.12 | ToolExecutor timeout and output truncation | Done (`597a94a`) |
 | 1.13 | Feedback re-injection into AgentLoop | Done (`b96b037`) |
-| 1.14 | OpenAI-compatible provider and config loader | Pending |
+| 1.14 | OpenAI-compatible provider and config loader | Done (`c0226c2`) |
 | 2.1 | ScopeFence | Pending |
 | 2.2 | SandboxPolicy | Pending |
 | 2.3 | DangerClassifier | Pending |
@@ -2171,7 +2171,7 @@ SPEC §3.4 and §8 require an OpenAI-compatible provider as the first real LLM b
 - Modify: `server/pyproject.toml` (add `PyYAML` and `httpx`)
 - Test: `server/tests/test_openai_provider.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import httpx
@@ -2234,12 +2234,12 @@ def test_provider_factory_builds_mock_and_openai(tmp_path):
     assert registry.get("mock") is not None
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_openai_provider.py -v`
 Expected: FAIL with missing `loader`, `openai_compatible`, or `factory` modules.
 
-- [ ] **Step 3: Implement provider, loader, and factory**
+- [x] **Step 3: Implement provider, loader, and factory**
 
 Modify `server/kl_server/config/config.py`:
 
@@ -2336,12 +2336,12 @@ def build_provider_registry(config: AppConfig, credential_store) -> ProviderRegi
 
 Add `PyYAML` and `httpx` to `server/pyproject.toml` runtime dependencies.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_openai_provider.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/config server/kl_server/providers server/pyproject.toml server/tests/test_openai_provider.py

@@ -58,6 +58,20 @@
 - 完成时补充 commit hash、验证输出、评审结论和人工干预。
 - 若发现范围越界或未授权功能，必须立即记录并停止。
 
+## 2026-08-04 Task 1.14：OpenAI-compatible provider and config loader（已完成并验证）
+
+- 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
+- 范围：`config.py` 字段、`config/loader.py`、`providers/openai_compatible.py`、`providers/factory.py`、`pyproject.toml`、`server/tests/test_openai_provider.py`。
+- 计划：从最新 `dev` 创建独立 worktree，派 fresh implementer 按 TDD 红-绿实现并提交，两阶段评审后合入 `dev`。
+- 当前状态：已完成并验证。
+- Worktree：`.claude/worktrees/task-1.14-openai`
+- 分支：`worktree-task-1.14-openai`
+- Implementer：subagent `019fca49-d816-7c62-887d-0cf756584bef`
+- Commit：`eaf698f`、`c0226c2`（评审修复）
+- TDD 红：`ModuleNotFoundError: No module named 'kl_server.config.loader'`
+- TDD 绿：`9 passed`；完整 server 套件 `117 passed`
+- 评审：spec 合规通过；质量评审通过（消息角色映射、default_model、ProviderError、factory 校验、client close）
+
 ## 2026-08-04 Task 1.13：Feedback re-injection into AgentLoop（已完成并验证）
 
 - 触发的技能：`using-git-worktrees`、`subagent-driven-development`、`test-driven-development`、`requesting-code-review`
