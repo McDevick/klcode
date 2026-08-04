@@ -77,13 +77,28 @@ class GitCommitTool(Tool):
         for path in paths:
             if not isinstance(path, str) or not path:
                 return ToolResult(ok=False, output="", error="paths are required")
-            if not (root / path).resolve().is_relative_to(root):
+            if path.startswith(":"):
+                return ToolResult(ok=False, output="", error="pathspec magic is not allowed")
+            try:
+                resolved = (root / path).resolve()
+            except (OSError, ValueError):
+                return ToolResult(ok=False, output="", error="invalid path")
+            if not resolved.is_relative_to(root):
                 return ToolResult(ok=False, output="", error="path outside workspace")
         try:
-            await _git(ctx.workspace, "add", "--", *paths)
+            await _git(ctx.workspace, "--literal-pathspecs", "add", "--", *paths)
             return ToolResult(
                 ok=True,
-                output=await _git(ctx.workspace, "commit", "--only", "-m", args["message"], "--", *paths),
+                output=await _git(
+                    ctx.workspace,
+                    "--literal-pathspecs",
+                    "commit",
+                    "--only",
+                    "-m",
+                    args["message"],
+                    "--",
+                    *paths,
+                ),
             )
         except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
             return ToolResult(ok=False, output="", error=str(exc))

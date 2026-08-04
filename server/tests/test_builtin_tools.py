@@ -276,6 +276,19 @@ async def test_git_commit_only_requested_paths(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_git_commit_rejects_pathspec_magic(tmp_path):
+    workspace = tmp_path / "sub"
+    workspace.mkdir()
+    (tmp_path / "outside.txt").write_text("outside", encoding="utf-8")
+    (workspace / "inside.txt").write_text("inside", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    ctx = ToolContext(workspace=str(workspace))
+    result = await GitCommitTool().execute({"message": "no magic", "paths": [":(top)outside.txt"]}, ctx)
+    assert result.ok is False
+    assert "pathspec magic" in result.error
+
+
+@pytest.mark.asyncio
 async def test_validation_tool_reports_failed_tests(tmp_path):
     ctx = ToolContext(workspace=str(tmp_path))
     (tmp_path / "test_x.py").write_text("def test_x(): assert False\n", encoding="utf-8")
