@@ -69,6 +69,15 @@
 - 目标文件：`server/kl_server/hooks/`、`server/tests/test_hooks.py`。
 - 预期：`command` hook 收到 JSON payload 到 stdin，输出按顺序返回；超时/错误不阻塞默认流程。
 
+### 2026-08-04 Task 4.5 质量评审修复（已完成）
+
+- 评审要求：非零退出码视为 hook 失败；Windows 命令执行改为 argv list 或平台 shell；校验 `on_error`；畸形 hook 防御；显式 UTF-8 解码。
+- 修复内容：新增 `HookCommandError`，非零退出码按 `ignore`/`abort` 策略处理并截断 stderr；字符串命令使用 `shell=True`，同时支持 argv list；非法 `on_error` 抛 `ValueError`；非 dict/缺 type/缺 command 的 hook 按策略处理；subprocess 使用 `encoding="utf-8", errors="replace"`。
+- TDD 红：`ImportError: cannot import name 'HookCommandError'`，首轮 `1 error`
+- TDD 绿：`server/tests/test_hooks.py` → `15 passed`
+- 完整 server 套件：`269 passed, 1 skipped`
+- 提交信息：`fix: honor hook exit codes and harden command hooks`
+
 ## 2026-08-03 Task 0.1：Server package skeleton
 
 **状态：已完成并验证**
