@@ -246,7 +246,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 4.5 | HookManager | Done (`269db1c`, `fd93d25`, `c0c7d5f`) |
 | 4.6 | MCP adapter | Done (`6aafbd4`) |
 | 4.7 | User tool plugin loader | Done (`66fe49f`, `81519d0`) |
-| 4.8 | HTTP hook support | Done |
+| 4.8 | HTTP hook support | Done (`49caa70`) |
 | 4.9 | MCP client transport (stdio / streamable-http) | Pending |
 | 4.10 | ContextAssembler integrated into AgentLoop | Pending |
 | 4.11 | Wire hooks/skills/MCP/plugins into harness | Pending |
