@@ -59,3 +59,21 @@ class WriteFileTool(Tool):
         except OSError as exc:
             return ToolResult(ok=False, output="", error=str(exc))
         return ToolResult(ok=True, output=str(target))
+
+
+class DeleteFileTool(Tool):
+    name = "delete_file"
+    description = "Delete a file inside the workspace"
+    schema = {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}
+
+    async def execute(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+        workspace = Path(ctx.workspace)
+        root = workspace.resolve()
+        target = (workspace / args["path"]).absolute()
+        if not target.resolve().is_relative_to(root):
+            return ToolResult(ok=False, output="", error="path outside workspace")
+        try:
+            target.unlink(missing_ok=True)
+        except OSError as exc:
+            return ToolResult(ok=False, output="", error=str(exc))
+        return ToolResult(ok=True, output=str(target))

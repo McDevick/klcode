@@ -102,3 +102,243 @@ async def test_write_to_directory_returns_error(tmp_path):
     result = await WriteFileTool().execute({"path": ".", "content": "x"}, ctx)
     assert not result.ok
     assert result.error
+
+
+import json
+import subprocess
+
+import pytest
+
+from kl_server.tools.base import ToolContext
+from kl_server.tools.builtin import register_builtin_tools
+from kl_server.tools.builtin.filesystem import DeleteFileTool
+from kl_server.tools.builtin.git import GitCommitTool, GitStatusTool
+from kl_server.tools.builtin.patch import ApplyPatchTool
+from kl_server.tools.builtin.shell import RunCommandTool
+from kl_server.tools.builtin.task import TaskManageTool
+from kl_server.tools.builtin.validation import RunTestsTool
+from kl_server.tools.registry import ToolRegistry
+
+
+@pytest.mark.asyncio
+async def test_delete_file(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    (tmp_path / "a.txt").write_text("x", encoding="utf-8")
+    result = await DeleteFileTool().execute({"path": "a.txt"}, ctx)
+    assert result.ok is True
+    assert not (tmp_path / "a.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_delete_file_outside_workspace(tmp_path):
+    outside_file = tmp_path.parent / f"outside-{tmp_path.name}.txt"
+    outside_file.write_text("x", encoding="utf-8")
+    ctx = ToolContext(workspace=str(tmp_path))
+    result = await DeleteFileTool().execute({"path": "../" + outside_file.name}, ctx)
+    assert result.ok is False
+    assert outside_file.exists()
+
+
+@pytest.mark.asyncio
+async def test_run_command_returns_structured_output(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    result = await RunCommandTool().execute({"command": "python -c \"import sys; sys.exit(3)\""}, ctx)
+    payload = json.loads(result.output)
+    assert payload["exit_code"] == 3
+    assert payload["truncated"] is False
+
+
+@pytest.mark.asyncio
+async def test_apply_patch_single_hunk(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    (tmp_path / "a.txt").write_text("one\ntwo\n", encoding="utf-8")
+    diff = "--- a.txt\n+++ b.txt\n@@ -1,2 +1,2 @@\n-one\n+one!\n two\n"
+    result = await ApplyPatchTool().execute({"patch": diff}, ctx)
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "one!\ntwo\n"
+
+
+@pytest.mark.asyncio
+async def test_apply_patch_git_diff_prefix(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    (tmp_path / "a.txt").write_text("one\ntwo\n", encoding="utf-8")
+    diff = "--- a/a.txt\n+++ b/a.txt\n@@ -1,2 +1,2 @@\n-one\n+one!\n two\n"
+    result = await ApplyPatchTool().execute({"patch": diff}, ctx)
+    assert result.ok is True
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "one!\ntwo\n"
+
+
+@pytest.mark.asyncio
+async def test_apply_patch_mismatch_does_not_write(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    (tmp_path / "a.txt").write_text("one\n", encoding="utf-8")
+    diff = "--- a.txt\n+++ b.txt\n@@ -1 +1 @@\n-wrong\n+one!\n"
+    result = await ApplyPatchTool().execute({"patch": diff}, ctx)
+    assert result.ok is False
+    assert result.error
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "one\n"
+
+
+@pytest.mark.asyncio
+async def test_apply_patch_rejects_incorrect_hunk_count(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    (tmp_path / "a.txt").write_text("one\ntwo\nthree\n", encoding="utf-8")
+    diff = "--- a.txt\n+++ b.txt\n@@ -1,3 +1,3 @@\n-one\n+one!\n"
+    result = await ApplyPatchTool().execute({"patch": diff}, ctx)
+    assert result.ok is False
+    assert result.error
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "one\ntwo\nthree\n"
+
+
+@pytest.mark.asyncio
+async def test_apply_patch_preserves_header_like_content_lines(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    (tmp_path / "a.txt").write_text("start\n---\nend\n", encoding="utf-8")
+    diff = "--- a.txt\n+++ b.txt\n@@ -1,3 +1,3 @@\n start\n----\n++++\n end\n"
+    result = await ApplyPatchTool().execute({"patch": diff}, ctx)
+    assert result.ok is True
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "start\n+++\nend\n"
+
+
+@pytest.mark.asyncio
+async def test_apply_patch_rejects_multiple_files(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    diff = (
+        "--- a.txt\n+++ b.txt\n@@ -1 +1 @@\n-one\n+one!\n"
+        "--- b.txt\n+++ b.txt\n@@ -1 +1 @@\n-two\n+two!\n"
+    )
+    result = await ApplyPatchTool().execute({"patch": diff}, ctx)
+    assert result.ok is False
+    assert "multi" in result.error
+
+
+@pytest.mark.asyncio
+async def test_git_status_in_repo(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=tmp_path)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path)
+    result = await GitStatusTool().execute({}, ctx)
+    assert result.ok is True
+
+
+@pytest.mark.asyncio
+async def test_git_commit_requires_paths(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    result = await GitCommitTool().execute({"message": "commit"}, ctx)
+    assert result.ok is False
+    assert "paths" in result.error
+
+
+@pytest.mark.asyncio
+async def test_git_commit_rejects_path_outside_workspace(tmp_path):
+    workspace = tmp_path / "sub"
+    workspace.mkdir()
+    (tmp_path / "outside.txt").write_text("outside", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=tmp_path)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path)
+    ctx = ToolContext(workspace=str(workspace))
+    result = await GitCommitTool().execute({"message": "commit", "paths": ["../outside.txt"]}, ctx)
+    assert result.ok is False
+    assert "outside workspace" in result.error
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert "A  outside.txt" not in status
+
+
+@pytest.mark.asyncio
+async def test_git_commit_only_requested_paths(tmp_path):
+    workspace = tmp_path / "sub"
+    workspace.mkdir()
+    (tmp_path / "outside.txt").write_text("outside", encoding="utf-8")
+    (workspace / "inside.txt").write_text("inside", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=tmp_path)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path)
+    subprocess.run(["git", "add", "outside.txt"], cwd=tmp_path, check=True)
+    ctx = ToolContext(workspace=str(workspace))
+    result = await GitCommitTool().execute({"message": "only inside", "paths": ["inside.txt"]}, ctx)
+    assert result.ok is True
+    files = subprocess.run(
+        ["git", "show", "--name-only", "--format=", "HEAD"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert "sub/inside.txt" in files
+    assert "outside.txt" not in files
+
+
+@pytest.mark.asyncio
+async def test_git_commit_rejects_pathspec_magic(tmp_path):
+    workspace = tmp_path / "sub"
+    workspace.mkdir()
+    (tmp_path / "outside.txt").write_text("outside", encoding="utf-8")
+    (workspace / "inside.txt").write_text("inside", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    ctx = ToolContext(workspace=str(workspace))
+    result = await GitCommitTool().execute({"message": "no magic", "paths": [":(top)outside.txt"]}, ctx)
+    assert result.ok is False
+    assert "pathspec magic" in result.error
+
+
+@pytest.mark.asyncio
+async def test_validation_tool_reports_failed_tests(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    (tmp_path / "test_x.py").write_text("def test_x(): assert False\n", encoding="utf-8")
+    result = await RunTestsTool().execute({}, ctx)
+    payload = json.loads(result.output)
+    assert payload["exit_code"] != 0
+
+
+@pytest.mark.asyncio
+async def test_task_manage_crud(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    created = await TaskManageTool().execute({"action": "create", "title": "fix bug"}, ctx)
+    listed = await TaskManageTool().execute({"action": "list"}, ctx)
+    assert created.ok and '"fix bug"' in listed.output
+    updated = await TaskManageTool().execute({"action": "update", "item_id": "1", "status": "done"}, ctx)
+    listed_after = await TaskManageTool().execute({"action": "list"}, ctx)
+    assert updated.ok and '"done"' in listed_after.output
+
+
+@pytest.mark.asyncio
+async def test_task_manage_delete(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    await TaskManageTool().execute({"action": "create", "title": "temp"}, ctx)
+    deleted = await TaskManageTool().execute({"action": "delete", "item_id": "1"}, ctx)
+    listed = await TaskManageTool().execute({"action": "list"}, ctx)
+    assert deleted.ok is True
+    assert '"temp"' not in listed.output
+    second = await TaskManageTool().execute({"action": "create", "title": "second"}, ctx)
+    assert "2" in second.output
+
+
+def test_register_builtin_tools_catalog():
+    registry = ToolRegistry()
+    register_builtin_tools(registry)
+    names = {item["name"] for item in registry.catalog()}
+    assert names == {
+        "list_dir",
+        "read_file",
+        "write_file",
+        "delete_file",
+        "grep",
+        "glob",
+        "apply_patch",
+        "run_command",
+        "git_status",
+        "git_diff",
+        "git_branch",
+        "git_commit",
+        "run_tests",
+        "run_lint",
+        "typecheck",
+        "task_manage",
+    }
