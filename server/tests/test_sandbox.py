@@ -60,6 +60,9 @@ def test_sandbox_rejects_windows_metachar_and_wrappers():
     assert policy.allow_command("%COMSPEC% /c echo hi") is False
     assert policy.allow_command("start rm -rf .") is False
     assert policy.allow_command("call rm -rf .") is False
+    assert policy.allow_command("@rm -rf .") is False
+    assert policy.allow_command("@cmd /c echo hi") is False
+    assert policy.allow_command("@start rm -rf .") is False
 
 
 def test_sandbox_rejects_all_control_chars():

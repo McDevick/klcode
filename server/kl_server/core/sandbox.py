@@ -43,6 +43,8 @@ class SandboxPolicy:
     def allow_command(self, command: str) -> bool:
         if not command or not command.strip():
             return False
+        if command.lstrip().startswith("@"):
+            return False
         if any(ord(char) < 32 or ord(char) == 127 for char in command):
             return False
         if "'" in command or '"' in command or "\\" in command:
