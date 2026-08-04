@@ -4,12 +4,13 @@ export interface TaskEvent {
   [key: string]: unknown;
 }
 
+const DEFAULT_BASE_URL = 'http://127.0.0.1:8700';
+
 export function connectTaskEvents(
-  baseUrl: string,
   taskId: string,
   onEvent: (event: TaskEvent) => void,
 ): WebSocket {
-  const socket = new WebSocket(`${baseUrl.replace(/\/$/, '')}/ws/tasks/${taskId}`);
+  const socket = new WebSocket(`${DEFAULT_BASE_URL}/ws/tasks/${taskId}`);
   socket.onmessage = (message) => {
     onEvent(JSON.parse(String(message.data)) as TaskEvent);
   };
