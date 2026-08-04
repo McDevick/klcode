@@ -99,6 +99,8 @@ class HITLManager:
         self.requests: dict[str, ApprovalRequest] = {}
 
     def request(self, action_id: str, tool: str, command: str) -> ApprovalRequest:
+        if action_id in self.requests and self.requests[action_id].state == "pending":
+            return self.requests[action_id]
         if action_id in self.requests and self.requests[action_id].state != "pending":
             raise ValueError(f"approval request already resolved: {action_id}")
         req = ApprovalRequest(action_id=action_id, tool=tool, command=command)
@@ -124,9 +126,6 @@ class HITLManager:
         return req.state
 
 
-from kl_server.models.action import Action
-
-
 class Guardrail:
     def __init__(self, scope, sandbox, danger, hitl):
         self.scope = scope
@@ -135,14 +134,26 @@ class Guardrail:
         self.hitl = hitl
 
     def check(self, action: Action) -> str:
-        path = action.args.get("path")
-        if path and not self.scope.allow(path):
-            return "rejected"
-        command = action.args.get("command", "")
+        paths = [action.args.get("path")]
+        if isinstance(action.args.get("paths"), list):
+            paths.extend(action.args.get("paths"))
+        patch_paths = re.findall(r"^--- (\S+)", action.args.get("patch", ""), re.M)
+        paths.extend(patch_paths)
+        for path in paths:
+            if path and not self.scope.allow(path):
+                return "rejected"
+        command = action.raw_command or action.args.get("command", "")
         if command and not self.sandbox.allow_command(command):
             return "rejected"
         level = self.danger.classify(action)
-        if level == "critical":
-            self.hitl.request(action.task_id, action.tool, command)
-            return "requires_approval"
+        if level in {"critical", "dangerous"}:
+            approval_id = f"{action.task_id}:{action.tool}:{action.seq}:{command}"
+            try:
+                self.hitl.request(approval_id, action.tool, command)
+                return "requires_approval"
+            except ValueError:
+                existing = self.hitl.requests.get(approval_id)
+                if existing is not None and existing.state == "rejected":
+                    return "rejected"
+                raise
         return "allowed"

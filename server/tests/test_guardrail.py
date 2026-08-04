@@ -172,3 +172,55 @@ def test_guardrail_blocks_outside_scope(tmp_path):
     action = Action(tool="read_file", args={"path": "../outside.py"}, task_id="t1")
     decision = guardrail.check(action)
     assert decision == "rejected"
+
+
+def test_guardrail_rejects_denied_command(tmp_path):
+    guardrail = Guardrail(
+        scope=ScopeFence(str(tmp_path)),
+        sandbox=SandboxPolicy(allow=["pytest"], deny=["rm"]),
+        danger=DangerClassifier(),
+        hitl=HITLManager(),
+    )
+    action = Action(tool="run_command", args={"command": "rm -rf ."}, task_id="t1")
+    assert guardrail.check(action) == "rejected"
+
+
+def test_guardrail_requires_approval_for_dangerous(tmp_path):
+    hitl = HITLManager()
+    guardrail = Guardrail(
+        scope=ScopeFence(str(tmp_path)),
+        sandbox=SandboxPolicy(allow=[], deny=[]),
+        danger=DangerClassifier(),
+        hitl=hitl,
+    )
+    critical = Action(tool="run_command", args={"command": "rm -rf /"}, task_id="t1")
+    delete = Action(tool="delete_file", args={"path": "a.txt"}, task_id="t2")
+    assert guardrail.check(critical) == "requires_approval"
+    assert guardrail.check(delete) == "requires_approval"
+    assert hitl.requests
+
+
+def test_guardrail_checks_raw_command_and_other_paths(tmp_path):
+    guardrail = Guardrail(
+        scope=ScopeFence(str(tmp_path)),
+        sandbox=SandboxPolicy(allow=[], deny=["rm"]),
+        danger=DangerClassifier(),
+        hitl=HITLManager(),
+    )
+    raw = Action(tool="run_command", args={}, raw_command="rm -rf .", task_id="t1")
+    assert guardrail.check(raw) == "rejected"
+    patch = Action(tool="apply_patch", args={"patch": "--- ../outside.py\n+++ b\n@@ -1 +1 @@\n-x\n+y\n"}, task_id="t2")
+    assert guardrail.check(patch) == "rejected"
+    git = Action(tool="git_commit", args={"paths": ["../outside.py"]}, task_id="t3")
+    assert guardrail.check(git) == "rejected"
+
+
+def test_guardrail_allows_safe_action(tmp_path):
+    guardrail = Guardrail(
+        scope=ScopeFence(str(tmp_path)),
+        sandbox=SandboxPolicy(allow=[], deny=["rm"]),
+        danger=DangerClassifier(),
+        hitl=HITLManager(),
+    )
+    action = Action(tool="read_file", args={"path": "a.py"}, task_id="t1")
+    assert guardrail.check(action) == "allowed"
