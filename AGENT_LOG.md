@@ -15,6 +15,31 @@
   - `.kl/tools/<name>/` 目录契约在插件 loader 首版被实现成扁平文件，spec review 前即被 quality review 发现并修正。
   - Windows 下 subprocess/HTTP 测试需要显式 UTF-8 与更宽松的 HTTP 错误断言，避免 locale/连接重置抖动。
 
+## 2026-08-04 Phase 4 复查：按 spec 与 plan 标准审查 + worktree 越界现象（评审会话）
+
+> 本节三条"评审会话"记录由独立复查会话编写，非 phase-4 实现会话；记录审查结论与修复验证，供合并与后续排查参考。
+
+### P-1【流程/HIGH】worktree-per-task 约定被违反
+
+- SPEC_PROCESS §9.1 明确约定"每个独立模块一个 worktree 对应一个 PR"；Phase 0-3 每个 task 均有独立 `worktree-task-*` 分支、推送 origin 并 PR 合回 `dev`。
+- Phase 4 把 11 个 task（4.1-4.11，共 28 commit）全部放在单一 `worktree-phase-4` 分支，且未推送 origin。
+- 根因（按用户转述）：切换会话尝试使 agent 丢失"每 task 独立 worktree"的规则上下文，启动条目把任务写成"按 PLAN 完成 Phase 4 的 4.1-4.11"。
+- 教训：会话切换不能作为丢弃项目流程规则的借口；开工会话必须重新核对 SPEC_PROCESS 与已有 worktree 命名约定。
+- 裁决：用户决定不拆分，Phase 4 直接整体合并。
+
+### 首轮代码发现 F-1..F-6
+
+- F-1【HIGH】skills 运行时永远加载不到：AgentLoop 把整个任务文本当单个 keyword 传给 `SkillLoader.load`，而匹配方向是 `keyword in skill_dir.name`（keyword 须为短目录名子串），长任务文本永不命中。已用真实 `SkillLoader` 复现返回 `''`。
+- F-2【MEDIUM】LLM summarizer 每轮都跑（`len(history) > 2` 即摘要），未按 SPEC §3.8"超预算时"触发。
+- F-3【LOW/质量】`test_agent_loop.py` 出现文件中部重复导入块。
+- F-4【ADVISORY】hook 事件只覆盖 SPEC §3.9 子集（缺动作前/审批/错误/中止等）。
+- F-5【ADVISORY】streamable-http 传输无测试；`mcp>=2.0.0` 未锁上界。
+- F-6【ADVISORY】`McpTool.execute` 不校验 schema，畸形参数直接 `KeyError`。
+
+### 首次复查验证证据
+
+- Server `302 passed, 1 skipped`；CLI `45 passed`；`git diff 5107ec8..ef0753e --check` 干净；未触及 subagent/webui/remote/docker 未授权功能。
+
 ## 2026-08-04 代码发现修复（已完成）
 
 - F-1 HIGH：`SkillLoader` 改为用 skill 目录名匹配任务文本，AgentLoop 接真实 `SkillLoader` 回归测试，不再把整个任务文本当 keyword 去子串匹配目录名。
@@ -25,12 +50,30 @@
 - F-6 ADVISORY：`McpTool` 对 `server`/`tool` 必填参数和 `args` 类型做结构化校验，不再直接 `KeyError`。
 - 验证：server `307 passed, 1 skipped`；CLI `45 passed`；`git diff --check` 干净。
 
+## 2026-08-04 Phase 4 修复后复核：commit 33a5485（评审会话）
+
+- F-1~F-6 全部修复并有回归测试，实测通过：F-1 真实 SkillLoader 集成（task "fix python code" → 注入 python skill）；F-2 超预算门控；F-3 导入清理；F-4 补齐 hook 事件；F-5 `mcp>=2.0.0,<3.0.0` + streamable-http not connected 测试；F-6 McpTool 结构化校验。
+- **新回归 F-7【MEDIUM-HIGH】**：F-2 修复把摘要门控改成"超预算才摘要"，但 sections 只保留 `history[-1]`，导致预算内旧轮次既无原文也无摘要 → 重蹈 SPEC_PROCESS §2.7 用户明确拒绝的"直接裁剪失忆"。
+- 复现（本会话实测）：5 轮短历史 + max_tokens=1000 → `summarizer.calls == 0`，上下文只剩 `round5`，round1-4 全部丢失。
+- 验证：Server `307 passed, 1 skipped`。
+
 ## 2026-08-04 F-7 回归修复（已完成）
 
 - 问题：F-2 修复后，预算内历史不再调用 summarizer，但 sections 只保留 `history[-1]`，导致预算内旧轮次既无原文也无摘要，直接失忆。
 - 修复：`ContextAssembler` 现在优先在预算内保留全部 raw history；只有无法全部容纳时才对被丢弃的旧 history 生成摘要，并用 `(task_id, history[:-1])` 指纹缓存，相同旧 history 不重复调用 provider。
 - 回归测试：预算内 5 轮短历史全部保留且 summarizer 不调用；超预算时旧 history 生成摘要且 latest 保留；相同 history 重复 build 只调用一次 summarizer。
 - 验证：server `309 passed, 1 skipped`；CLI `45 passed`。
+
+## 2026-08-04 F-7 修复后复核：commit 85da874（评审会话）
+
+- F-7 已修复：预算内保留全部 raw history（不再失忆）；超预算对 `history[:-1]` 摘要并保留 latest；`(task_id, history[:-1])` 指纹缓存。
+- 三场景实测通过：预算内 5 轮全保留且不摘要；超预算 calls=1、summary+latest 均在；相同 history 3 次 build 只摘要一次。新行为比此前更贴合 SPEC §3.8"超预算时选择可摘要片段，预算内保留原文"。
+- 残余观察（后续处理见下条）：
+  - L-1【LOW】`test_summarizer_failure_keeps_latest_history_once` 变空洞：history 在预算内，build 提前短路，`FailingSummarizer` 从未被调用（实测 `invoked=False`）。
+  - A-1【ADVISORY】摘要缓存键按完整旧 history 指纹，AgentLoop 每轮 history 变长 → 缓存不命中，超预算任务每轮全量重摘要（整循环 O(n²)）。
+  - A-2【ADVISORY】缓存无淘汰。
+  - A-3【ADVISORY】预算内整段 history 被拍平为单条 user message，丢失 assistant/tool/feedback 角色区分。
+- 验证：Server `309 passed, 1 skipped`。
 
 ## 2026-08-04 残余项处理（A1/A2/A3 已完成）
 
