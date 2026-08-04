@@ -1,6 +1,8 @@
 import asyncio
 
 import pytest
+from kl_server.core.guardrail import DangerClassifier, Guardrail, HITLManager, ScopeFence
+from kl_server.core.sandbox import SandboxPolicy
 from kl_server.models.action import ToolResult
 from kl_server.tools.base import Tool, ToolContext
 from kl_server.tools.registry import ToolRegistry
@@ -181,3 +183,80 @@ async def test_executor_truncates_large_exception_message():
     assert len(result.error) == 100
     assert result.error.endswith("\n...[truncated]")
     assert result.error.startswith("e")
+
+
+class WriteTool(Tool):
+    name = "write_file"
+    description = "writes a file"
+    schema = {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}}
+
+    async def execute(self, args, ctx: ToolContext) -> ToolResult:
+        return ToolResult(ok=True, output="wrote")
+
+
+def make_guardrail(tmp_path):
+    return Guardrail(
+        scope=ScopeFence(str(tmp_path)),
+        sandbox=SandboxPolicy(allow=[], deny=["rm"]),
+        danger=DangerClassifier(),
+        hitl=HITLManager(),
+    )
+
+
+@pytest.mark.asyncio
+async def test_executor_rejects_out_of_scope(tmp_path):
+    registry = ToolRegistry()
+    registry.register(WriteTool())
+    executor = ToolExecutor(registry, guardrail=make_guardrail(tmp_path))
+    result = await executor.execute("write_file", {"path": "../x", "content": "hi"}, ToolContext(workspace=str(tmp_path)))
+    assert result.ok is False
+    assert result.error == "rejected"
+
+
+@pytest.mark.asyncio
+async def test_executor_returns_requires_approval(tmp_path):
+    registry = ToolRegistry()
+    registry.register(WriteTool())
+    executor = ToolExecutor(registry, guardrail=make_guardrail(tmp_path))
+    result = await executor.execute("run_command", {"command": "git push --force"}, ToolContext(workspace=str(tmp_path)))
+    assert result.ok is False
+    assert result.error == "requires_approval"
+    assert result.meta["tool"] == "run_command"
+    assert result.meta["args"] == {"command": "git push --force"}
+
+
+@pytest.mark.asyncio
+async def test_executor_allows_safe_action_and_does_not_run_rejected(tmp_path):
+    registry = ToolRegistry()
+    registry.register(WriteTool())
+    executor = ToolExecutor(registry, guardrail=make_guardrail(tmp_path))
+    safe = await executor.execute("write_file", {"path": "a.txt", "content": "hi"}, ToolContext(workspace=str(tmp_path)))
+    assert safe.ok is True
+    rejected = await executor.execute("write_file", {"path": "../x", "content": "hi"}, ToolContext(workspace=str(tmp_path)))
+    assert rejected.ok is False
+    assert rejected.error == "rejected"
+
+
+@pytest.mark.asyncio
+async def test_executor_isolates_guardrail_errors(tmp_path):
+    class ExplodingGuardrail:
+        def check(self, action):
+            raise RuntimeError("guardrail boom")
+
+    registry = ToolRegistry()
+    registry.register(WriteTool())
+    executor = ToolExecutor(registry, guardrail=ExplodingGuardrail())
+    result = await executor.execute("write_file", {"path": "a.txt", "content": "hi"}, ToolContext(workspace=str(tmp_path)))
+    assert result.ok is False
+    assert "guardrail_error" in result.error
+
+
+@pytest.mark.asyncio
+async def test_executor_uses_workspace_mode_from_context(tmp_path):
+    registry = ToolRegistry()
+    registry.register(WriteTool())
+    executor = ToolExecutor(registry, guardrail=make_guardrail(tmp_path))
+    ctx = ToolContext(workspace=str(tmp_path), workspace_mode="unmanaged")
+    result = await executor.execute("write_file", {"path": "a.py", "content": "x"}, ctx)
+    assert result.ok is False
+    assert result.error == "requires_approval"

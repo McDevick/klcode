@@ -4,11 +4,11 @@ from pydantic import BaseModel, ConfigDict
 class ProviderConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str
-    type: str
+    name: str = ""
+    type: str = "openai-compatible"
     base_url: str
     default_model: str
-    credential_ref: str
+    credential_ref: str | None = None
 
 
 class AppConfig(BaseModel):
