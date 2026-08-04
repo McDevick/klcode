@@ -224,3 +224,40 @@ def test_guardrail_allows_safe_action(tmp_path):
     )
     action = Action(tool="read_file", args={"path": "a.py"}, task_id="t1")
     assert guardrail.check(action) == "allowed"
+
+
+def test_guardrail_checks_all_command_sources(tmp_path):
+    guardrail = Guardrail(
+        scope=ScopeFence(str(tmp_path)),
+        sandbox=SandboxPolicy(allow=[], deny=["rm"]),
+        danger=DangerClassifier(),
+        hitl=HITLManager(),
+    )
+    action = Action(tool="run_command", args={"command": "rm -rf ."}, raw_command="pytest", task_id="t1")
+    assert guardrail.check(action) == "rejected"
+
+
+def test_guardrail_uses_unique_approval_keys(tmp_path):
+    hitl = HITLManager()
+    guardrail = Guardrail(
+        scope=ScopeFence(str(tmp_path)),
+        sandbox=SandboxPolicy(allow=[], deny=[]),
+        danger=DangerClassifier(),
+        hitl=hitl,
+    )
+    first = Action(tool="delete_file", args={"path": "a.txt"}, task_id="t1")
+    second = Action(tool="delete_file", args={"path": "b.txt"}, task_id="t1")
+    assert guardrail.check(first) == "requires_approval"
+    assert guardrail.check(second) == "requires_approval"
+    assert len(hitl.requests) == 2
+
+
+def test_guardrail_fails_closed_on_bad_patch(tmp_path):
+    guardrail = Guardrail(
+        scope=ScopeFence(str(tmp_path)),
+        sandbox=SandboxPolicy(allow=[], deny=[]),
+        danger=DangerClassifier(),
+        hitl=HITLManager(),
+    )
+    action = Action(tool="apply_patch", args={"patch": 123}, task_id="t1")
+    assert guardrail.check(action) == "rejected"

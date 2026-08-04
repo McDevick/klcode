@@ -1,3 +1,4 @@
+import json
 import re
 from pathlib import Path
 
@@ -134,25 +135,34 @@ class Guardrail:
         self.hitl = hitl
 
     def check(self, action: Action) -> str:
-        paths = [action.args.get("path")]
-        if isinstance(action.args.get("paths"), list):
-            paths.extend(action.args.get("paths"))
-        patch_paths = re.findall(r"^--- (\S+)", action.args.get("patch", ""), re.M)
-        paths.extend(patch_paths)
+        try:
+            paths = [action.args.get("path")]
+            if isinstance(action.args.get("paths"), list):
+                paths.extend(action.args.get("paths"))
+            patch_arg = action.args.get("patch", "")
+            if patch_arg:
+                paths.extend(re.findall(r"^--- (\S+)", patch_arg, re.M))
+        except (TypeError, ValueError):
+            return "rejected"
         for path in paths:
             if path and not self.scope.allow(path):
                 return "rejected"
-        command = action.raw_command or action.args.get("command", "")
-        if command and not self.sandbox.allow_command(command):
-            return "rejected"
+        command_sources = [action.raw_command, action.args.get("command")]
+        for source in command_sources:
+            if source and not self.sandbox.allow_command(source):
+                return "rejected"
         level = self.danger.classify(action)
         if level in {"critical", "dangerous"}:
-            approval_id = f"{action.task_id}:{action.tool}:{action.seq}:{command}"
+            approval_command = " | ".join(str(source) for source in command_sources if source)
+            args_key = json.dumps(action.args, sort_keys=True)
+            approval_id = f"{action.task_id}:{action.tool}:{action.seq}:{approval_command}:{args_key}"
             try:
-                self.hitl.request(approval_id, action.tool, command)
+                self.hitl.request(approval_id, action.tool, approval_command)
                 return "requires_approval"
             except ValueError:
                 existing = self.hitl.requests.get(approval_id)
+                if existing is not None and existing.state == "approved":
+                    return "allowed"
                 if existing is not None and existing.state == "rejected":
                     return "rejected"
                 raise
