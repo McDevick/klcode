@@ -241,7 +241,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 3.10 | REST routes for sessions/tasks/providers/models/keys | Done (`25d90fd`) |
 | 4.1 | MemoryStore | Done (`96e34db`, `985d313`) |
 | 4.2 | ContextAssembler token budget | Done (`d49fc12`, `d443d31`) |
-| 4.3 | LLM summarizer | Pending |
+| 4.3 | LLM summarizer | Done (`02c717d`, `841089d`) |
 | 4.4 | SkillLoader | Pending |
 | 4.5 | HookManager | Pending |
 | 4.6 | MCP adapter | Pending |
@@ -3712,7 +3712,7 @@ SPEC §3.2 task states include `awaiting_approval`, `paused`, and `canceled`; TU
 - Modify: `cli/src/tui/screens/approval.tsx` (send approve/reject via WebSocket)
 - Test: `server/tests/test_task.py`, `server/tests/test_agent_loop.py`, `server/tests/test_ws.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import pytest
@@ -3789,7 +3789,7 @@ async def test_task_manager_pause_resume_abort(tmp_path):
     assert (await tasks.get("t1")).status == TaskStatus.CANCELED
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_task.py server/tests/test_agent_loop.py -v`
 Expected: FAIL (`requires_approval` not handled; `pause/resume/abort` missing).
@@ -4224,7 +4224,7 @@ git commit -m "feat: add token-budgeted context assembler"
 - Modify: `server/kl_server/core/context.py`
 - Test: update `server/tests/test_context.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 import pytest
@@ -4240,35 +4240,37 @@ async def test_summarizer_uses_provider_and_keeps_raw():
     assert result == "summary"
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_context.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement summarizer**
+- [x] **Step 3: Implement summarizer**
 
 ```python
 from kl_server.providers.base import ProviderRequest
 
 
 class LLMSummarizer:
-    def __init__(self, provider):
+    def __init__(self, provider, model: str):
         self.provider = provider
+        self.model = model
 
     async def summarize(self, segments: list[str], task_id: str) -> str:
-        prompt = "Summarize these segments with goals, results, failures, and open items:\n" + "\n".join(segments)
-        response = await self.provider.complete(ProviderRequest(messages=[{"role": "user", "content": prompt}], model="mock-model"))
+        numbered = "\n".join(f"{index}. {segment}" for index, segment in enumerate(segments, start=1))
+        prompt = f"Task {task_id}. Summarize these segments with goals, results, failures, and open items:\n{numbered}"
+        response = await self.provider.complete(ProviderRequest(messages=[{"role": "user", "content": prompt}], model=self.model))
         return response.text
 ```
 
-Then assign `assembler.summarizer = LLMSummarizer(provider)`. `ContextAssembler.build` already catches summarizer failures and falls back to `history[-1]`.
+Then assign `assembler.summarizer = LLMSummarizer(provider, model="mock-model")` in tests, or the configured model in production. `ContextAssembler.build` already catches summarizer failures and falls back to `history[-1]`.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_context.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/core/context.py server/tests/test_context.py
@@ -4823,7 +4825,7 @@ else:
 response = await self.provider.complete(ProviderRequest(messages=request_messages, model=session.model))
 ```
 
-Wire `context=ContextAssembler(max_tokens=...)` and `context.summarizer = LLMSummarizer(provider)` in the app startup wiring so production always uses the budgeted path. `Task 4.2`'s own tests remain valid.
+Wire `context=ContextAssembler(max_tokens=...)` and `context.summarizer = LLMSummarizer(provider, model=session.model)` in the app startup wiring so production always uses the budgeted path. `Task 4.2`'s own tests remain valid.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
