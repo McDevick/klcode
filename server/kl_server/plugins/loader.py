@@ -19,10 +19,14 @@ class PluginLoader:
             logger.warning("Plugin root %s is not a directory; no tools loaded", self.root)
             return tools
 
-        plugin_dirs = sorted(
-            (entry for entry in self.root.iterdir() if entry.is_dir()),
-            key=lambda entry: entry.name,
-        )
+        try:
+            plugin_dirs = sorted(
+                (entry for entry in self.root.iterdir() if entry.is_dir()),
+                key=lambda entry: entry.name,
+            )
+        except OSError as exc:
+            logger.warning("Failed to read plugin root %s: %s", self.root, exc)
+            return tools
         for plugin_dir in plugin_dirs:
             path = plugin_dir / "tool.py"
             if not path.is_file():
@@ -50,6 +54,7 @@ class PluginLoader:
 
     def _load_plugin(self, path: Path) -> Any | None:
         module_name = f"kl_user_plugin_{path.parent.name}"
+        modules_before = set(sys.modules)
         sys.path.insert(0, str(path.parent))
         try:
             spec = importlib.util.spec_from_file_location(module_name, path)
@@ -61,7 +66,8 @@ class PluginLoader:
             try:
                 spec.loader.exec_module(module)
             finally:
-                sys.modules.pop(module_name, None)
+                for name in set(sys.modules) - modules_before:
+                    sys.modules.pop(name, None)
             tool = getattr(module, "TOOL", None)
             if tool is None:
                 logger.warning("Plugin module %s does not export TOOL", path)

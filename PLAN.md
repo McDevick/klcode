@@ -245,7 +245,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 4.4 | SkillLoader | Done (`d03cbdd`, `601557f`, `dde5bd1`) |
 | 4.5 | HookManager | Done (`269db1c`, `fd93d25`, `c0c7d5f`) |
 | 4.6 | MCP adapter | Done (`6aafbd4`) |
-| 4.7 | User tool plugin loader | Pending |
+| 4.7 | User tool plugin loader | Done (`66fe49f`, `81519d0`) |
 | 4.8 | HTTP hook support | Pending |
 | 4.9 | MCP client transport (stdio / streamable-http) | Pending |
 | 4.10 | ContextAssembler integrated into AgentLoop | Pending |
@@ -4453,14 +4453,16 @@ git commit -m "feat: add mcp adapter registry"
 - Create: `server/kl_server/plugins/loader.py`
 - Test: `server/tests/test_plugin_loader.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from kl_server.plugins.loader import PluginLoader
 
 
 def test_plugin_loader_imports_tool_module(tmp_path):
-    (tmp_path / "hello_tool.py").write_text(
+    plugin_dir = tmp_path / "hello_tool"
+    plugin_dir.mkdir()
+    (plugin_dir / "tool.py").write_text(
         "from kl_server.models.action import ToolResult\n"
         "from kl_server.tools.base import Tool, ToolContext\n"
         "class HelloTool(Tool):\n"
@@ -4476,12 +4478,12 @@ def test_plugin_loader_imports_tool_module(tmp_path):
     assert loader.load_tools()["hello_tool"].name == "hello_tool"
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_plugin_loader.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement plugin loader**
+- [x] **Step 3: Implement plugin loader**
 
 ```python
 import importlib.util
@@ -4493,21 +4495,23 @@ class PluginLoader:
         self.root = Path(root)
 
     def load_tools(self) -> dict[str, object]:
-        modules = {}
-        for path in self.root.glob("*.py"):
-            spec = importlib.util.spec_from_file_location(path.stem, path)
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            modules[path.stem] = module.TOOL
-        return modules
+        tools = {}
+        for plugin_dir in sorted(self.root.iterdir()):
+            path = plugin_dir / "tool.py"
+            if path.is_file():
+                spec = importlib.util.spec_from_file_location(plugin_dir.name, path)
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                tools[module.TOOL.name] = module.TOOL
+        return tools
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_plugin_loader.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/plugins server/tests/test_plugin_loader.py

@@ -113,6 +113,9 @@
 - 修复 TDD 绿：`server/tests/test_plugin_loader.py` → `11 passed`
 - 修复后完整 server 套件：`290 passed, 1 skipped`
 - 修复提交信息：`fix: load plugins from tool directories and isolate failures`
+- 进一步加固：插件模块执行后清理本次新加入 `sys.modules` 的模块，避免同名 helper 跨插件串用；插件根目录迭代 `OSError` 时记录 warning 并返回空。
+- 加固后 TDD 绿：`server/tests/test_plugin_loader.py` → `12 passed`
+- 加固后完整 server 套件：`291 passed, 1 skipped`
 
 ## 2026-08-03 Task 0.1：Server package skeleton
 

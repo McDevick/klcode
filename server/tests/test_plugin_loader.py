@@ -168,6 +168,35 @@ def test_plugin_loader_imports_helper_from_plugin_directory(tmp_path):
     assert tools["hello_tool"].output == "from-helper"
 
 
+def test_plugin_loader_isolates_helper_modules(tmp_path):
+    for name, helper_value in (("alpha", "A"), ("beta", "B")):
+        plugin_dir = tmp_path / name
+        plugin_dir.mkdir(parents=True)
+        (plugin_dir / "helper.py").write_text(
+            f"VALUE = '{helper_value}'\n",
+            encoding="utf-8",
+        )
+        (plugin_dir / "tool.py").write_text(
+            "import helper\n"
+            "from kl_server.models.action import ToolResult\n"
+            "from kl_server.tools.base import Tool, ToolContext\n"
+            "class HelloTool(Tool):\n"
+            f"    name = 'tool_{helper_value.lower()}'\n"
+            "    description = 'hello'\n"
+            "    schema = {}\n"
+            "    output = helper.VALUE\n"
+            "    async def execute(self, args, ctx: ToolContext):\n"
+            "        return ToolResult(ok=True, output=self.output)\n"
+            "TOOL = HelloTool()\n",
+            encoding="utf-8",
+        )
+
+    tools = PluginLoader(str(tmp_path)).load_tools()
+
+    assert tools["tool_a"].output == "A"
+    assert tools["tool_b"].output == "B"
+
+
 def write_plugin(root, name, source):
     path = root / name / "tool.py"
     path.parent.mkdir(parents=True, exist_ok=True)
