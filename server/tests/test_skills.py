@@ -62,3 +62,18 @@ def test_skill_loader_skips_unreadable_document(tmp_path, monkeypatch, caplog):
 
     assert result == ""
     assert "Failed to read skill document" in caplog.text
+
+
+def test_skill_loader_skips_invalid_utf8_document(tmp_path, caplog):
+    skill_dir = tmp_path / "skills"
+    markdown = skill_dir / "python" / "SKILL.md"
+    markdown.parent.mkdir(parents=True)
+    markdown.write_bytes(b"\xff\xfe")
+
+    loader = SkillLoader(str(skill_dir))
+
+    with caplog.at_level(logging.WARNING, logger="kl_server.skills.loader"):
+        result = loader.load(["python"])
+
+    assert result == ""
+    assert "Failed to read skill document" in caplog.text

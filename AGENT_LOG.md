@@ -53,6 +53,10 @@
 - TDD 绿：`server/tests/test_skills.py` → `6 passed`
 - 完整 server 套件：`251 passed, 1 skipped`
 - 测试修正：原 setup 将 `SKILL.md` 误建为目录导致 Windows PermissionError，已改为先建技能目录再写文档。
+- Spec review 修复：读取异常改为捕获 `(OSError, UnicodeDecodeError)`，新增 invalid UTF-8 回归测试。
+- 修复 TDD 红：`UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte`，`1 failed, 6 passed`
+- 修复 TDD 绿：`server/tests/test_skills.py` → `7 passed`
+- 修复后完整 server 套件：`252 passed, 1 skipped`
 
 ## 2026-08-03 Task 0.1：Server package skeleton
 
