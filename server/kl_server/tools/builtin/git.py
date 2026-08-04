@@ -1,5 +1,6 @@
 import asyncio
 import subprocess
+from pathlib import Path
 from typing import Any
 
 from kl_server.models.action import ToolResult
@@ -72,6 +73,12 @@ class GitCommitTool(Tool):
         paths = args.get("paths")
         if not isinstance(paths, list) or not paths:
             return ToolResult(ok=False, output="", error="paths are required")
+        root = Path(ctx.workspace).resolve()
+        for path in paths:
+            if not isinstance(path, str) or not path:
+                return ToolResult(ok=False, output="", error="paths are required")
+            if not (root / path).resolve().is_relative_to(root):
+                return ToolResult(ok=False, output="", error="path outside workspace")
         try:
             await _git(ctx.workspace, "add", "--", *paths)
             return ToolResult(ok=True, output=await _git(ctx.workspace, "commit", "-m", args["message"]))

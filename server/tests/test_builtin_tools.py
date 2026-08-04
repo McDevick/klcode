@@ -179,6 +179,17 @@ async def test_apply_patch_mismatch_does_not_write(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_apply_patch_rejects_incorrect_hunk_count(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    (tmp_path / "a.txt").write_text("one\ntwo\nthree\n", encoding="utf-8")
+    diff = "--- a.txt\n+++ b.txt\n@@ -1,3 +1,3 @@\n-one\n+one!\n"
+    result = await ApplyPatchTool().execute({"patch": diff}, ctx)
+    assert result.ok is False
+    assert result.error
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "one\ntwo\nthree\n"
+
+
+@pytest.mark.asyncio
 async def test_apply_patch_rejects_multiple_files(tmp_path):
     ctx = ToolContext(workspace=str(tmp_path))
     diff = (
@@ -206,6 +217,28 @@ async def test_git_commit_requires_paths(tmp_path):
     result = await GitCommitTool().execute({"message": "commit"}, ctx)
     assert result.ok is False
     assert "paths" in result.error
+
+
+@pytest.mark.asyncio
+async def test_git_commit_rejects_path_outside_workspace(tmp_path):
+    workspace = tmp_path / "sub"
+    workspace.mkdir()
+    (tmp_path / "outside.txt").write_text("outside", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=tmp_path)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path)
+    ctx = ToolContext(workspace=str(workspace))
+    result = await GitCommitTool().execute({"message": "commit", "paths": ["../outside.txt"]}, ctx)
+    assert result.ok is False
+    assert "outside workspace" in result.error
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert "A  outside.txt" not in status
 
 
 @pytest.mark.asyncio

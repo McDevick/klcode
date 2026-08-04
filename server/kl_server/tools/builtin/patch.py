@@ -17,14 +17,31 @@ def apply_unified_diff(source: str, diff: str) -> str:
     src_lines = source.splitlines(keepends=True)
     out: list[str] = []
     src_idx = 0
+    in_hunk = False
+    old_count = 0
+    new_count = 0
+    consumed_old = 0
+    produced_new = 0
+
+    def validate_hunk() -> None:
+        if in_hunk and (consumed_old != old_count or produced_new != new_count):
+            raise ValueError("patch does not apply")
+
     for line in diff.splitlines(keepends=True):
         if line.startswith(("---", "+++", "\\")):
             continue
         if line.startswith("@@ "):
-            match = re.match(r"@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@", line.strip())
+            validate_hunk()
+            match = re.match(r"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", line.strip())
             if not match:
                 continue
             old_start = int(match.group(1))
+            old_count = int(match.group(2) or 1)
+            new_start = int(match.group(3))
+            new_count = int(match.group(4) or 1)
+            consumed_old = 0
+            produced_new = 0
+            in_hunk = True
             while src_idx < old_start - 1:
                 if src_idx >= len(src_lines):
                     raise ValueError("patch does not apply")
@@ -34,16 +51,27 @@ def apply_unified_diff(source: str, diff: str) -> str:
                 raise ValueError("patch does not apply")
             continue
         if line.startswith("-"):
+            if not in_hunk:
+                raise ValueError("patch does not apply")
             if src_idx >= len(src_lines) or src_lines[src_idx] != line[1:]:
                 raise ValueError("patch does not apply")
+            consumed_old += 1
             src_idx += 1
         elif line.startswith("+"):
+            if not in_hunk:
+                raise ValueError("patch does not apply")
+            produced_new += 1
             out.append(line[1:])
         elif line.startswith(" "):
+            if not in_hunk:
+                raise ValueError("patch does not apply")
             if src_idx >= len(src_lines) or src_lines[src_idx] != line[1:]:
                 raise ValueError("patch does not apply")
+            consumed_old += 1
+            produced_new += 1
             out.append(line[1:])
             src_idx += 1
+    validate_hunk()
     out.extend(src_lines[src_idx:])
     return "".join(out)
 
