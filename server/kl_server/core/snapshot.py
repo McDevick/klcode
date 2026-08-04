@@ -1,9 +1,6 @@
 import shutil
-from uuid import uuid4
 from pathlib import Path
-
-
-_MARKER = ".kl_snapshot"
+from uuid import uuid4
 
 
 class SnapshotManager:
@@ -12,15 +9,21 @@ class SnapshotManager:
 
     def create(self) -> Path:
         snapshot = Path(self.workspace.parent) / f"{self.workspace.name}.snapshot.{uuid4().hex[:8]}"
-        shutil.copytree(self.workspace, snapshot, symlinks=True)
-        (snapshot / _MARKER).write_text(str(self.workspace.resolve()), encoding="utf-8")
+        try:
+            shutil.copytree(self.workspace, snapshot, symlinks=True)
+        except Exception:
+            shutil.rmtree(snapshot, ignore_errors=True)
+            raise
+        meta = snapshot.with_name(snapshot.name + ".meta")
+        meta.write_text(str(self.workspace.resolve()), encoding="utf-8")
         return snapshot
 
     def restore(self, snapshot: Path) -> None:
         snapshot = Path(snapshot)
-        if not snapshot.is_dir() or not (snapshot / _MARKER).is_file():
+        meta = snapshot.with_name(snapshot.name + ".meta")
+        if not snapshot.is_dir() or not meta.is_file():
             raise ValueError("invalid snapshot")
-        if (snapshot / _MARKER).read_text(encoding="utf-8") != str(self.workspace.resolve()):
+        if meta.read_text(encoding="utf-8") != str(self.workspace.resolve()):
             raise ValueError("snapshot does not belong to this workspace")
         for child in self.workspace.iterdir():
             if child.is_symlink() or child.is_file():
@@ -28,8 +31,6 @@ class SnapshotManager:
             elif child.is_dir():
                 shutil.rmtree(child)
         for child in snapshot.iterdir():
-            if child.name == _MARKER:
-                continue
             shutil.move(str(child), self.workspace / child.name)
-        (snapshot / _MARKER).unlink()
+        meta.unlink()
         shutil.rmtree(snapshot)
