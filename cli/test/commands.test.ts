@@ -101,3 +101,19 @@ test('api client surfaces fetch failures', async () => {
   await expect(client.getSession('s1')).rejects.toThrow('request failed: 500');
   vi.unstubAllGlobals();
 });
+
+test('session command handles 204 delete response', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: true,
+      status: 204,
+      json: async () => {
+        throw new Error('no body');
+      },
+    }),
+  );
+  const result = await SessionCommand.run(['delete', 's1']);
+  expect(result).toBe('deleted');
+  vi.unstubAllGlobals();
+});

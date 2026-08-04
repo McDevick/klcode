@@ -18,10 +18,12 @@ export const SessionCommand = {
         return JSON.stringify(await client.renameSession(value, rest.join(' ')));
       case 'close':
         if (!value) return 'current session close is not wired yet';
-        return JSON.stringify(await client.closeSession(value));
+        const closed = await client.closeSession(value);
+        return closed ? JSON.stringify(closed) : 'closed';
       case 'delete':
         if (!value) return 'usage: /session delete <id>';
-        return JSON.stringify(await client.deleteSession(value));
+        const deleted = await client.deleteSession(value);
+        return deleted ? JSON.stringify(deleted) : 'deleted';
       default:
         return JSON.stringify(await client.listSessions());
     }
