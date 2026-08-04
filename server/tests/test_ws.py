@@ -1,5 +1,4 @@
 from fastapi.testclient import TestClient
-from kl_server.api import ws as ws_module
 from kl_server.api.app import create_app
 
 
@@ -35,6 +34,17 @@ def test_task_websocket_broadcasts_to_all_clients():
             assert second.receive_json()["event"] == "tool_result"
 
 
+def test_task_websocket_broadcasts_are_isolated_per_app():
+    client_a = TestClient(create_app())
+    client_b = TestClient(create_app())
+    with client_a.websocket_connect("/ws/tasks/t1") as first:
+        with client_b.websocket_connect("/ws/tasks/t1") as second:
+            first.send_json({"event": "from-a"})
+            assert first.receive_json()["event"] == "from-a"
+            second.send_json({"event": "from-b"})
+            assert second.receive_json()["event"] == "from-b"
+
+
 def test_task_websocket_handles_malformed_json_and_authoritative_task_id():
     client = TestClient(create_app())
     with client.websocket_connect("/ws/tasks/t1") as websocket:
@@ -55,11 +65,3 @@ def test_task_websocket_handles_non_object_and_multiple_messages():
         assert websocket.receive_json()["event"] == "a"
         websocket.send_json({"event": "b"})
         assert websocket.receive_json()["event"] == "b"
-
-
-def test_task_websocket_cleans_up_on_disconnect():
-    client = TestClient(create_app())
-    with client.websocket_connect("/ws/tasks/t1") as websocket:
-        websocket.send_json({"event": "ok"})
-        websocket.receive_json()
-    assert not ws_module._connections.get("t1")

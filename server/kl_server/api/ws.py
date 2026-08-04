@@ -4,28 +4,25 @@ import secrets
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-_connections: dict[str, set[WebSocket]] = {}
-_lock = asyncio.Lock()
-
-
-async def broadcast(task_id: str, payload: dict) -> None:
-    async with _lock:
-        sockets = set(_connections.get(task_id, ()))
-    dead: list[WebSocket] = []
-    for websocket in sockets:
-        try:
-            await websocket.send_json({"task_id": task_id, **payload})
-        except Exception:
-            dead.append(websocket)
-    if dead:
-        async with _lock:
-            sockets = _connections.setdefault(task_id, set())
-            for websocket in dead:
-                sockets.discard(websocket)
-
-
 def build_ws_router(auth_token: str | None = None) -> APIRouter:
+    connections: dict[str, set[WebSocket]] = {}
+    lock = asyncio.Lock()
     router = APIRouter()
+
+    async def broadcast(task_id: str, payload: dict) -> None:
+        async with lock:
+            sockets = set(connections.get(task_id, ()))
+        dead: list[WebSocket] = []
+        for websocket in sockets:
+            try:
+                await websocket.send_json({"task_id": task_id, **payload})
+            except Exception:
+                dead.append(websocket)
+        if dead:
+            async with lock:
+                sockets = connections.setdefault(task_id, set())
+                for websocket in dead:
+                    sockets.discard(websocket)
 
     @router.websocket("/ws/tasks/{task_id}")
     async def task_events(websocket: WebSocket, task_id: str) -> None:
@@ -36,8 +33,8 @@ def build_ws_router(auth_token: str | None = None) -> APIRouter:
                 await websocket.close(code=1008)
                 return
         await websocket.accept()
-        async with _lock:
-            _connections.setdefault(task_id, set()).add(websocket)
+        async with lock:
+            connections.setdefault(task_id, set()).add(websocket)
         try:
             while True:
                 raw = await websocket.receive_text()
@@ -54,11 +51,11 @@ def build_ws_router(auth_token: str | None = None) -> APIRouter:
         except (WebSocketDisconnect, RuntimeError):
             pass
         finally:
-            async with _lock:
-                sockets = _connections.get(task_id)
+            async with lock:
+                sockets = connections.get(task_id)
                 if sockets is not None:
                     sockets.discard(websocket)
                     if not sockets:
-                        _connections.pop(task_id, None)
+                        connections.pop(task_id, None)
 
     return router
