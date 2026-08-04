@@ -100,6 +100,16 @@
 - 提交信息：`6aafbd4`（`feat: add mcp adapter registry`）
 - 评审结论：spec ✅；quality Approved（未实现 transport，未新增 `mcp` 依赖）。
 
+## 2026-08-04 Task 4.7：User tool plugin loader（已完成并验证）
+
+- 触发的技能：`test-driven-development`、`subagent-driven-development`、`requesting-code-review`
+- 上下文：用户工具放在 `.kl/tools/<name>/`，必须导出 `TOOL` 对象并受同样 ToolRegistry 治理。
+- 目标文件：`server/kl_server/plugins/`、`server/tests/test_plugin_loader.py`。
+- 预期：按文件名导入 `TOOL`，缺失/损坏插件不阻塞其余工具加载。
+- TDD 红：`ModuleNotFoundError: No module named 'kl_server.plugins'`
+- TDD 绿：`server/tests/test_plugin_loader.py` → `5 passed`
+- 完整 server 套件：`284 passed, 1 skipped`
+
 ## 2026-08-03 Task 0.1：Server package skeleton
 
 **状态：已完成并验证**
