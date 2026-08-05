@@ -21,7 +21,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/main.js --banner:js=\"#!/usr/bin/env node\"",
+    "build": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/main.js --banner:js=\"#!/usr/bin/env node\" --packages=external",
     "prepack": "npm run build",
     "test": "vitest run"
   },

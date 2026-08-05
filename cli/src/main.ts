@@ -1,10 +1,13 @@
+import * as React from 'react';
 import { Command } from 'commander';
+import { render } from 'ink';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { ConfigCommand } from './commands/config';
 import { InitCommand } from './commands/init';
 import { RunCommand } from './commands/run';
 import { ServerCommand } from './commands/server';
+import { App } from './tui/app';
 
 export function cliName(): string {
   return 'kl-code';
@@ -42,6 +45,13 @@ export function buildProgram(): Command {
     .description('manage providers and keys')
     .action(async (area: string, action: string, args: string[]) => {
       console.log(await ConfigCommand.run([area, action, ...args]));
+    });
+
+  program
+    .command('tui')
+    .description('launch the interactive TUI')
+    .action(() => {
+      render(React.createElement(App));
     });
 
   return program;

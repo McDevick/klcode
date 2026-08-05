@@ -36,6 +36,27 @@ test('client sends bearer token from token file', async () => {
   }
 });
 
+test('client runs a task via the run endpoint', async () => {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 202,
+    json: async () => ({ status: 'running' }),
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    const client = new ApiClient({ baseUrl: 'http://127.0.0.1:8700' });
+    const result = await client.runTask('t1');
+
+    expect(result).toEqual({ status: 'running' });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:8700/api/v1/tasks/t1/run',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 test('client omits authorization when token file is missing', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'kl-client-no-token-'));
   const tokenPath = join(dir, 'missing-token');

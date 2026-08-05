@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text } from 'ink';
 import { DEFAULT_BASE_URL } from '../../api/client';
 import { readDaemonToken } from '../../api/daemon-token';
 
@@ -25,62 +25,18 @@ export function sendApprovalDecision(
 export function ApprovalPanel({
   tool,
   command,
-  onApprove,
-  onReject,
-  onModify,
-  onAbort,
-  active = false,
-  taskId,
-  actionId,
-  baseUrl,
-  sendDecision,
+  level,
 }: {
   tool: string;
   command: string;
-  onApprove?: () => void;
-  onReject?: () => void;
-  onModify?: () => void;
-  onAbort?: () => void;
-  active?: boolean;
-  taskId?: string;
-  actionId?: string;
-  baseUrl?: string;
-  sendDecision?: (decision: ApprovalDecision, actionId: string, taskId: string) => void;
+  level?: string;
 }) {
-  const send = (decision: ApprovalDecision) => {
-    if (!actionId || !taskId) return;
-    if (sendDecision) {
-      sendDecision(decision, actionId, taskId);
-    } else {
-      sendApprovalDecision(decision, actionId, taskId, baseUrl);
-    }
-  };
-
-  useInput(
-    (input) => {
-      if (input === 'a') {
-        onApprove?.();
-        send('approve');
-      } else if (input === 'r') {
-        onReject?.();
-        send('reject');
-      } else if (input === 'x') {
-        onAbort?.();
-        send('abort');
-      } else if (input === 'm') {
-        onModify?.();
-      }
-    },
-    { isActive: active },
-  );
-
   return (
     <Box flexDirection="column">
       <Text>
-        requires approval: {tool} {command}
+        requires approval{level ? ` (${level})` : ''}: {tool} {command}
       </Text>
-      <Text>[a]pprove [r]eject [m]odify</Text>
-      <Text>[x]bort</Text>
+      <Text>[a]pprove [r]eject [m]odify [x]bort</Text>
     </Box>
   );
 }

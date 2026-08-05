@@ -120,6 +120,12 @@ export class ApiClient {
     return this.request('/api/v1/config/check', { method: 'POST' });
   }
 
+  runTask(taskId: string): Promise<{ status: string }> {
+    return this.request(`/api/v1/tasks/${encodeURIComponent(taskId)}/run`, {
+      method: 'POST',
+    });
+  }
+
   createTask(description: string, sessionId = 'default'): Promise<TaskResult> {
     return this.request('/api/v1/tasks', {
       method: 'POST',

@@ -10,7 +10,7 @@ test('commander exposes top-level commands', () => {
 
   expect(program.name()).toBe('kl');
   const names = program.commands.map((command) => command.name());
-  expect(names).toEqual(expect.arrayContaining(['init', 'run', 'server', 'config']));
+  expect(names).toEqual(expect.arrayContaining(['init', 'run', 'server', 'config', 'tui']));
 });
 
 test('commander commands define expected arguments', () => {
