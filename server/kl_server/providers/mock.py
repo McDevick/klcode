@@ -9,5 +9,7 @@ class MockProvider:
     async def complete(self, request: ProviderRequest) -> ProviderResponse:
         self.calls.append(request)
         if not self.responses:
-            return ProviderResponse(text="final")
+            # Without configured responses the agent loop finishes immediately;
+            # configure a response list to drive tool actions before finishing.
+            return ProviderResponse(text="DONE")
         return ProviderResponse(text=self.responses.pop(0))

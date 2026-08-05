@@ -13,10 +13,10 @@ async def test_mock_provider_returns_sequence():
 
 
 @pytest.mark.asyncio
-async def test_mock_provider_defaults_to_final():
+async def test_mock_provider_defaults_to_done():
     provider = MockProvider()
     response = await provider.complete(ProviderRequest(messages=[], model="mock-model"))
-    assert response.text == "final"
+    assert response.text == "DONE"
 
 
 @pytest.mark.asyncio
