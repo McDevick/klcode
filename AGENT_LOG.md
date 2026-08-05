@@ -3,6 +3,22 @@
 > 本文件按任务执行全程实时记录关键节点，不在任务完成后统一补写。
 > 每条记录包含：时间戳、task 编号、触发的 Superpowers 技能、关键 prompt/context、subagent 输出或 commit hash、人工干预、教训。
 
+## 2026-08-05 Review fix F2-F7（已完成）
+
+- 范围：针对 PR #46 review 的 MEDIUM/Advisory 问题修复。
+- 触发的技能：`test-driven-development`、`verification-before-completion`
+- Implementer：controller 本地修复（subagent 通道不可用）
+- 分支/Worktree：`worktree-task-5.6-bootstrap` / `.claude/worktrees/task-5.6-bootstrap`
+- 修复：
+  - F2：CLI events 无 token 测试显式传入不存在的 tokenPath，不再受 `~/.kl/daemon.token` 影响。
+  - F3：`/health` 不要求 Bearer token。
+  - F4：`kl_server.main` 导入不再建 `.kl`/写 token/访问 keyring；deps 与 token 延迟到 FastAPI lifespan 启动。
+  - F5：session/task 读、改、删路径接入真实 manager；SessionManager 增加 list/update/delete。
+  - F6：demos 不再硬编码 `server/`，通过 `examples/_demo_import.py` 动态定位 `kl_server` 包。
+  - F7：bootstrap SandboxPolicy 不再 blanket deny git/curl，保留 rm/docker deny。
+- 验证：CLI 45 passed；server focused 50 passed + test_main 3 passed；全量 server 323 passed, 1 skipped；`git diff --check` 干净。
+- 主提交：`61cf307`。
+
 ## 2026-08-05 Task 5.6：Application bootstrap and server composition（已完成）
 
 - 时间戳：2026-08-05 10:49（开工）。
