@@ -353,8 +353,13 @@ def build_router() -> APIRouter:
         deps = getattr(request.app.state, "deps", None)
         if deps is None:
             raise HTTPException(status_code=501, detail="requires a configured server")
-        if payload.provider != "mock" and payload.provider not in deps.config.providers:
-            raise HTTPException(status_code=404, detail="provider not found")
+        if payload.provider != "mock":
+            if payload.provider not in deps.config.providers:
+                raise HTTPException(status_code=404, detail="provider not found")
+            try:
+                deps.provider_registry.get(payload.provider)
+            except KeyError:
+                raise HTTPException(status_code=404, detail="provider not found")
         deps.config.default_provider = payload.provider
         deps.config.default_model = payload.model
         _persist_config(deps)

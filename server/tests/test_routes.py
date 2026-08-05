@@ -434,6 +434,34 @@ def test_config_model_set_unknown_provider_returns_404(tmp_path):
     assert response.json()["detail"] == "provider not found"
 
 
+def test_config_model_set_degraded_provider_returns_404(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "default_provider: mock\n"
+        "providers:\n"
+        "  deepseek:\n"
+        "    type: openai-compatible\n"
+        "    base_url: https://api.deepseek.com/v1\n"
+        "    default_model: deepseek-chat\n"
+        "    credential_ref: deepseek\n",
+        encoding="utf-8",
+    )
+    # 不设置 deepseek 凭证 → bootstrap 退化，registry 仅含 mock
+    deps = build_app_dependencies(
+        config_path=config_path,
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+    client = TestClient(create_app(deps=deps))
+
+    response = client.post("/api/v1/config/model", json={"provider": "deepseek"})
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "provider not found"
+
+
 def test_config_check_reports_configured_providers(tmp_path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
