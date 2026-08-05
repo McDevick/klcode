@@ -2,7 +2,7 @@
 
 ## 1. 最有用的技能
 
-最有用的是 `test-driven-development` 和 `subagent-driven-development`。前者把“完成”从自我判断变成可执行红绿证据：5.1 的 `ModuleNotFoundError`、5.3 的构建/打包失败都直接暴露缺口；后者让每个 task 有独立 worktree、独立 diff 和独立验证，出错时能快速定位是哪一步偏离。
+最有用的是 `test-driven-development` 和 `subagent-driven-development`。前者把“完成”从自我判断变成可执行红绿证据：5.1 的 `ModuleNotFoundError`、5.3 的构建/打包失败都直接暴露缺口；后者按每 task 派独立 implementer（ID 记录于 AGENT_LOG 对应条目），并有独立 worktree、独立 diff 和独立验证，出错时能快速定位是哪一步偏离。
 
 `using-git-worktrees` 在跨 task 协作中同样关键。Phase 4 的 P-1 证明，一旦把 4.1-4.11 塞进单一 `worktree-phase-4`，规则会失守；Phase 5 改为 stacked worktree 后，AGENT_LOG 作为共享文件也能保持每 task 可审。
 
@@ -16,7 +16,7 @@
 
 ## 4. 自主运行时长与漂移
 
-单 task 内约 1-2 小时可保持稳定；跨 task 连续 2-4 小时后，漂移概率明显上升。Phase 4 是一次反例：会话切换后丢失 worktree 规则，把一个 phase 当成一个 task。只要 prompt 只给当前 task、文件清单和验证命令，fresh subagent 可以在一个 task 内自主；但“继续做下一件事”不能交给同一上下文太久。
+单 task 内约 1-2 小时可保持稳定；跨 task 连续 2-4 小时后，漂移概率明显上升。Phase 4 是一次反例：会话切换后丢失 worktree 规则，把一个 phase 当成一个 task。只要 prompt 只给当前 task、文件清单和验证命令，独立 implementer subagent 可以在一个 task 内自主；但“继续做下一件事”不能交给同一上下文太久。
 
 ## 5. 最优 task 粒度
 
@@ -28,7 +28,7 @@ SPEC/PLAN 越明确，subagent 越少自由发挥。最接近的偏离案例是 
 
 ## 7. 最有效的 prompt/context 策略
 
-“当前 task 只改哪些文件、跑哪些验证、明确不做哪些事”最有效。5.3 能在范围内不注册 `tui`、不虚构 license，正是因为 prompt 把边界写清楚。fresh subagent 不需要完整历史，需要的是精确契约和可执行验收。
+“当前 task 只改哪些文件、跑哪些验证、明确不做哪些事”最有效。5.3 能在范围内不注册 `tui`、不虚构 license，正是因为 prompt 把边界写清楚。独立 implementer subagent 不需要完整历史，需要的是精确契约和可执行验收。
 
 ## 8. 凭据与分发迫使想清的问题
 
