@@ -1,49 +1,51 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { ApprovalPanel, sendApprovalDecision, type ApprovalDecision } from './screens/approval';
-import { ConfigWizard } from './screens/config';
-import { TaskInput } from './screens/task';
+import { Header } from './components/header';
+import { Messages } from './components/messages';
+import { InputFooter } from './components/input-footer';
 import { CommandRegistry } from '../commands/registry';
 import { SessionCommand } from '../commands/session';
 import { ApiClient, DEFAULT_BASE_URL } from '../api/client';
 import { connectTaskEvents } from '../api/events';
+import { sendApprovalDecision, type ApprovalDecision } from './screens/approval';
+import type { ApprovalRequest, ChatMessage, RunningTask, SlashCommand, ToolCall } from './types';
 
 const commands = new CommandRegistry();
 commands.register(SessionCommand);
 
-interface ApprovalRequest {
-  actionId: string;
-  tool: string;
-  command: string;
-  level: string;
-}
+const SLASH_COMMANDS: SlashCommand[] = [
+  { name: '/sessions', desc: '列出历史会话' },
+  { name: '/session', desc: '会话管理 new/open/rename/close/delete' },
+  { name: '/config', desc: '打开配置向导' },
+  { name: '/status', desc: '查看当前状态' },
+  { name: '/help', desc: '显示帮助' },
+  { name: '/abort', desc: '中止当前任务' },
+  { name: '/pause', desc: '暂停任务' },
+  { name: '/continue', desc: '继续任务' },
+  { name: '/exit', desc: '退出 TUI' },
+];
 
-type EventKind = 'info' | 'success' | 'error' | 'warning';
-
-interface UiEvent {
-  text: string;
-  kind: EventKind;
-}
-
-const EVENT_COLORS: Record<EventKind, string> = {
-  info: 'white',
-  success: 'green',
-  error: 'red',
-  warning: 'yellow',
-};
+const MAX_TOKENS = 8000;
+const TOKENS_PER_EVENT = 120;
 
 export function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [taskStatus, setTaskStatus] = useState('idle');
-  const [events, setEvents] = useState<UiEvent[]>([]);
+  const [isOnline, setIsOnline] = useState(false);
+  const [conversationName, setConversationName] = useState('KL Code 会话');
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [running, setRunning] = useState<RunningTask | null>(null);
   const [approval, setApproval] = useState<ApprovalRequest | null>(null);
-  const [showConfig, setShowConfig] = useState(false);
   const [inputValue, setInputValue] = useState('');
+  const [menuIndex, setMenuIndex] = useState(0);
+  const [offset, setOffset] = useState(0);
   const inputRef = useRef('');
+  const nextMessageId = useRef(1);
 
-  const pushEvent = (text: string, kind: EventKind = 'info') => {
-    setEvents((current) => [...current, { text, kind }]);
+  const pushMessage = (role: ChatMessage['role'], content: string, kind: ChatMessage['kind'] = 'text') => {
+    setMessages((current) => [...current, { id: nextMessageId.current++, role, content, kind }]);
+    setOffset(0);
   };
 
   useEffect(() => {
@@ -52,16 +54,19 @@ export function App() {
       .createSession({ workspace: process.cwd() })
       .then((session) => {
         setSessionId(session.id);
-        pushEvent(`session ${session.id} ready`, 'success');
+        setIsOnline(true);
+        pushMessage('agent', `会话 ${session.id} 已就绪`, 'done');
       })
       .catch((error: unknown) => {
-        pushEvent(`session error: ${String(error)}`, 'error');
+        setIsOnline(false);
+        pushMessage('agent', `会话创建失败: ${String(error)}`, 'error');
       });
   }, []);
 
   useEffect(() => {
     if (taskId === null) return;
     const socket = connectTaskEvents(taskId, (event) => {
+      setIsOnline(true);
       if (event.event === 'approval_request') {
         setApproval({
           actionId: String(event.action_id),
@@ -69,111 +74,50 @@ export function App() {
           command: JSON.stringify(event.args),
           level: String(event.level),
         });
-        pushEvent(
-          `approval required (${String(event.level)}): ${String(event.tool)} ${JSON.stringify(event.args)}`,
-          'warning',
+        pushMessage(
+          'agent',
+          `审批请求（${String(event.level)}）: ${String(event.tool)} ${JSON.stringify(event.args)}`,
+          'info',
         );
         return;
       }
       if (event.event === 'task_end') {
         const status = String(event.status);
         setTaskStatus(status);
-        pushEvent(
-          `task ${taskId} ended: ${status}`,
-          status === 'succeeded' ? 'success' : status === 'failed' ? 'error' : 'warning',
+        setRunning(null);
+        pushMessage(
+          'agent',
+          `任务完成: ${status}`,
+          status === 'succeeded' ? 'done' : status === 'failed' ? 'error' : 'info',
         );
         return;
       }
       if (event.event === 'error') {
-        pushEvent(String(event.error ?? 'error'), 'error');
+        setRunning(null);
+        pushMessage('agent', `错误: ${String(event.error ?? 'unknown')}`, 'error');
         return;
       }
-      pushEvent(String(event.event));
+      setRunning((current) => {
+        if (current === null) return current;
+        let toolCalls = current.toolCalls;
+        if (event.event === 'tool_result') {
+          const payload = (event.payload ?? {}) as { tool?: string; ok?: boolean; error?: string | null };
+          toolCalls = [
+            ...current.toolCalls,
+            {
+              name: payload.tool ?? 'tool',
+              args: JSON.stringify(event.payload),
+              summary: payload.error ? `error: ${payload.error}` : 'ok',
+            },
+          ];
+        }
+        return { ...current, tokensUsed: current.tokensUsed + TOKENS_PER_EVENT, toolCalls };
+      });
     });
     return () => {
       socket.close?.();
     };
   }, [taskId]);
-
-  const submitTask = (value: string) => {
-    if (value === '/config' || value === '/cfg') {
-      setShowConfig(true);
-      return;
-    }
-    setShowConfig(false);
-    if (value.startsWith('/')) {
-      const [commandName, ...args] = value.trim().split(/\s+/);
-      if (commandName === '/exit') {
-        process.exit(0);
-      }
-      if (commandName === '/help') {
-        pushEvent(commands.help());
-        pushEvent('/status /abort /pause /continue /exit');
-        return;
-      }
-      if (commandName === '/status') {
-        pushEvent(
-          `session: ${sessionId ?? 'none'}  task: ${taskId ?? 'none'}  status: ${taskStatus}  approval: ${approval !== null ? 'pending' : 'none'}`,
-        );
-        return;
-      }
-      if (commandName === '/abort' || commandName === '/pause' || commandName === '/continue') {
-        if (taskId === null) {
-          pushEvent(`${commandName}: no task`, 'warning');
-          return;
-        }
-        const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
-        const action =
-          commandName === '/abort'
-            ? client.abortTask(taskId)
-            : commandName === '/pause'
-              ? client.pauseTask(taskId)
-              : client.continueTask(taskId);
-        void action
-          .then((result) => {
-            setTaskStatus(result.status);
-            pushEvent(`task ${result.status}`);
-          })
-          .catch((error: unknown) => {
-            pushEvent(`task error: ${String(error)}`, 'error');
-          });
-        return;
-      }
-      try {
-        const command = commands.resolve(commandName);
-        void Promise.resolve(command.run(args))
-          .then((result: string) => {
-            pushEvent(result);
-          })
-          .catch((error: unknown) => {
-            pushEvent(`command error: ${String(error)}`, 'error');
-          });
-      } catch {
-        pushEvent(`unknown command: ${commandName}`, 'warning');
-      }
-      return;
-    }
-    if (sessionId === null) {
-      pushEvent('task error: no session', 'error');
-      return;
-    }
-    const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
-    client
-      .createTask(value, sessionId)
-      .then((task) => {
-        setTaskId(task.id);
-        setTaskStatus('pending');
-        pushEvent(`task ${task.id} created`);
-        return client.runTask(task.id);
-      })
-      .then(() => {
-        setTaskStatus('running');
-        pushEvent('task running');
-      })
-      .catch((error: unknown) => {
-        pushEvent(`task error: ${String(error)}`, 'error');
-      });
-  };
 
   const handleApproval = (decision: ApprovalDecision) => {
     if (approval !== null && taskId !== null) {
@@ -181,6 +125,110 @@ export function App() {
     }
     setApproval(null);
   };
+
+  const runSlashCommand = (commandName: string, args: string[]) => {
+    if (commandName === '/exit') {
+      process.exit(0);
+    }
+    if (commandName === '/help') {
+      pushMessage('agent', SLASH_COMMANDS.map((c) => `${c.name} — ${c.desc}`).join('\n'), 'info');
+      return;
+    }
+    if (commandName === '/status') {
+      pushMessage(
+        'agent',
+        `session: ${sessionId ?? 'none'}\ntask: ${taskId ?? 'none'}\nstatus: ${taskStatus}\napproval: ${approval !== null ? 'pending' : 'none'}`,
+        'info',
+      );
+      return;
+    }
+    if (commandName === '/config') {
+      pushMessage('agent', '配置请使用 CLI 命令：kl config provider add / kl config key set', 'info');
+      return;
+    }
+    if (commandName === '/abort' || commandName === '/pause' || commandName === '/continue') {
+      if (taskId === null) {
+        pushMessage('agent', `${commandName}: 当前无任务`, 'info');
+        return;
+      }
+      const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
+      const action =
+        commandName === '/abort'
+          ? client.abortTask(taskId)
+          : commandName === '/pause'
+            ? client.pauseTask(taskId)
+            : client.continueTask(taskId);
+      void action
+        .then((result) => {
+          setTaskStatus(result.status);
+          if (result.status === 'canceled') {
+            setRunning(null);
+          }
+          pushMessage('agent', `任务状态: ${result.status}`, 'info');
+        })
+        .catch((error: unknown) => {
+          pushMessage('agent', `操作失败: ${String(error)}`, 'error');
+        });
+      return;
+    }
+    try {
+      const command = commands.resolve(commandName);
+      void Promise.resolve(command.run(args))
+        .then((result: string) => {
+          pushMessage('agent', result, 'info');
+        })
+        .catch((error: unknown) => {
+          pushMessage('agent', `命令错误: ${String(error)}`, 'error');
+        });
+    } catch {
+      pushMessage('agent', `未知命令: ${commandName}`, 'error');
+    }
+  };
+
+  const submitTask = (value: string) => {
+    const trimmed = value.trim();
+    if (trimmed === '') return;
+    if (trimmed.startsWith('/')) {
+      const [commandName, ...args] = trimmed.split(/\s+/);
+      runSlashCommand(commandName, args);
+      return;
+    }
+    pushMessage('user', trimmed);
+    if (sessionId === null) {
+      pushMessage('agent', '会话未就绪，无法提交任务', 'error');
+      return;
+    }
+    const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
+    client
+      .createTask(trimmed, sessionId)
+      .then((task) => {
+        setTaskId(task.id);
+        setTaskStatus('pending');
+        setConversationName(trimmed.slice(0, 20));
+        return client.runTask(task.id).then(() => task.id);
+      })
+      .then((id) => {
+        setTaskStatus('running');
+        setRunning({
+          taskId: id,
+          startedAt: Date.now(),
+          tokensUsed: 0,
+          maxTokens: MAX_TOKENS,
+          toolCalls: [],
+        });
+      })
+      .catch((error: unknown) => {
+        pushMessage('agent', `任务提交失败: ${String(error)}`, 'error');
+      });
+  };
+
+  const applySlashCommand = (command: SlashCommand) => {
+    inputRef.current = `${command.name} `;
+    setInputValue(inputRef.current);
+    setMenuIndex(0);
+  };
+
+  const menuOpen = inputValue.startsWith('/') && !inputValue.includes(' ');
 
   useInput((input, key) => {
     if (approval !== null) {
@@ -190,18 +238,53 @@ export function App() {
         handleApproval('reject');
       } else if (input === 'x') {
         handleApproval('abort');
-      } else if (input === 'm') {
-        setApproval(null);
       }
       return;
     }
-    if (showConfig) {
-      return;
+    if (menuOpen) {
+      if (key.upArrow) {
+        setMenuIndex((index) => Math.max(0, index - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setMenuIndex((index) => Math.min(SLASH_COMMANDS.length - 1, index + 1));
+        return;
+      }
+      if (key.return) {
+        applySlashCommand(SLASH_COMMANDS[menuIndex]);
+        return;
+      }
+      if (key.escape) {
+        inputRef.current = '';
+        setInputValue('');
+        return;
+      }
     }
     if (key.return) {
+      if (key.shift) {
+        inputRef.current += '\n';
+        setInputValue(inputRef.current);
+        return;
+      }
       submitTask(inputRef.current);
       inputRef.current = '';
       setInputValue('');
+      return;
+    }
+    if (key.upArrow) {
+      setOffset((current) => current + 10);
+      return;
+    }
+    if (key.downArrow) {
+      setOffset((current) => Math.max(0, current - 10));
+      return;
+    }
+    if (key.pageUp) {
+      setOffset((current) => current + 20);
+      return;
+    }
+    if (key.pageDown) {
+      setOffset((current) => Math.max(0, current - 20));
       return;
     }
     if (key.backspace || key.delete) {
@@ -213,38 +296,24 @@ export function App() {
     setInputValue(inputRef.current);
   });
 
-  const statusColor =
-    taskStatus === 'failed'
-      ? 'red'
-      : taskStatus === 'succeeded' || taskStatus === 'canceled'
-        ? 'green'
-        : taskStatus === 'running'
-          ? 'cyan'
-          : 'white';
-
   return (
-    <Box flexDirection="column">
-      <Box borderStyle="single" borderColor="cyan" paddingX={1}>
-        <Text bold color="cyan">
-          KL Code
-        </Text>
-        <Text> session: {sessionId ?? 'none'}</Text>
-        <Text> task: {taskId ?? 'none'}</Text>
-        <Text color={statusColor}> status: {taskStatus}</Text>
-      </Box>
-      <Box flexGrow={1} flexDirection="column" paddingX={1}>
-        {events.map((event, index) => (
-          <Text key={index} color={EVENT_COLORS[event.kind]}>
-            {event.text}
+    <Box flexDirection="column" height="100%">
+      <Header conversationName={conversationName} isOnline={isOnline} />
+      <Messages messages={messages} running={running} offset={offset} />
+      {approval !== null ? (
+        <Box height={3} borderStyle="round" borderColor="yellow" paddingX={1}>
+          <Text color="yellow">
+            ⚠ 审批请求（{approval.level}）: {approval.tool} {approval.command}
           </Text>
-        ))}
-      </Box>
-      {approval ? (
-        <ApprovalPanel tool={approval.tool} command={approval.command} level={approval.level} />
-      ) : showConfig ? (
-        <ConfigWizard />
+          <Text> [a]pprove [r]eject [x]abort</Text>
+        </Box>
       ) : (
-        <TaskInput value={inputValue} />
+        <InputFooter
+          value={inputValue}
+          menuOpen={menuOpen}
+          menuIndex={menuIndex}
+          commands={SLASH_COMMANDS}
+        />
       )}
     </Box>
   );

@@ -26,8 +26,10 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@inkjs/ui": "^2.0.0",
     "commander": "^15.0.0",
     "ink": "^7.1.1",
+    "marked": "^18.0.9",
     "react": "^19.2.8"
   },
   "devDependencies": {

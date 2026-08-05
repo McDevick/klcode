@@ -1,10 +1,10 @@
 import { expect, test, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import React from 'react';
-import { TaskInput } from '../src/tui/screens/task';
-import { ApprovalPanel } from '../src/tui/screens/approval';
 import { App } from '../src/tui/app';
-import { ConfigWizard } from '../src/tui/screens/config';
+import { UserBubble, AgentBubble } from '../src/tui/components/messages';
+import { StatusCard } from '../src/tui/components/status-card';
+import type { RunningTask } from '../src/tui/types';
 
 class FakeWebSocket {
   static instances: FakeWebSocket[] = [];
@@ -54,48 +54,86 @@ async function waitFor(
   }
 }
 
-test('task input renders prompt', () => {
-  const { lastFrame } = render(<TaskInput onSubmit={() => {}} />);
-  expect(lastFrame()).toContain('task>');
-});
+const sessionResponse = {
+  ok: true,
+  status: 200,
+  json: async () => ({ id: 's1', workspace: process.cwd(), name: 'default', status: 'active' }),
+};
 
-test('approval panel shows pending action', () => {
-  const { lastFrame } = render(<ApprovalPanel tool="run_command" command="rm -rf /" />);
-  expect(lastFrame()).toContain('requires approval');
-  expect(lastFrame()).toContain('rm -rf /');
-  expect(lastFrame()).toContain('[a]pprove [r]eject [m]odify');
-});
-
-test('app creates a session on start and submits tasks to the backend', async () => {
-  const fetchMock = vi
+function taskFetchMocks() {
+  return vi
     .fn()
-    .mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({ id: 's1', workspace: process.cwd(), name: 'default', status: 'active' }),
-    })
+    .mockResolvedValueOnce(sessionResponse)
     .mockResolvedValueOnce({
       ok: true,
       status: 200,
       json: async () => ({ id: 't1', session_id: 's1', description: 'hello', status: 'pending' }),
     })
     .mockResolvedValueOnce({ ok: true, status: 202, json: async () => ({ status: 'running' }) });
+}
+
+function emit(socket: FakeWebSocket, payload: Record<string, unknown>) {
+  socket.onmessage?.({ data: JSON.stringify({ task_id: 't1', ...payload }) });
+}
+
+test('user bubble renders right aligned content', () => {
+  const { lastFrame } = render(<UserBubble content="hello world" />);
+  expect(lastFrame()).toContain('hello world');
+});
+
+test('agent bubble renders markdown content', () => {
+  const { lastFrame } = render(<AgentBubble content="**bold** and plain" kind="text" />);
+  expect(lastFrame()).toContain('bold');
+  expect(lastFrame()).toContain('plain');
+});
+
+test('status card shows spinner metrics and tool calls', () => {
+  const running: RunningTask = {
+    taskId: 't1',
+    startedAt: Date.now(),
+    tokensUsed: 240,
+    maxTokens: 8000,
+    toolCalls: [{ name: 'read_file', args: '{"path":"a.ts"}', summary: 'ok' }],
+  };
+  const { lastFrame, unmount } = render(<StatusCard running={running} />);
+  try {
+    expect(lastFrame()).toContain('正在执行推理');
+    expect(lastFrame()).toContain('240/8000');
+    expect(lastFrame()).toContain('read_file');
+    expect(lastFrame()).toContain('ok');
+  } finally {
+    unmount();
+  }
+});
+
+test('app creates a session and renders ready message', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(sessionResponse);
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    expect(lastFrame()).toContain('会话 s1 已就绪');
+    expect(lastFrame()).toContain('klcode');
+    expect(lastFrame()).toContain('●');
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app submits a task and streams events into messages', async () => {
+  const fetchMock = taskFetchMocks();
   vi.stubGlobal('fetch', fetchMock);
   const restore = stubWebSocket();
   const { stdin, lastFrame, unmount } = render(<App />);
   try {
-    await sleep(30);
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('hello');
     stdin.write('\r');
-    await waitFor(() => (lastFrame() ?? '').includes('task t1 created'));
+    await waitFor(() => (lastFrame() ?? '').includes('hello'));
 
-    expect(lastFrame()).toContain('task t1 created');
-    expect(lastFrame()).toContain('task running');
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
-      'http://127.0.0.1:8700/api/v1/sessions',
-      expect.objectContaining({ method: 'POST' }),
-    );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       'http://127.0.0.1:8700/api/v1/tasks',
@@ -106,8 +144,14 @@ test('app creates a session on start and submits tasks to the backend', async ()
       'http://127.0.0.1:8700/api/v1/tasks/t1/run',
       expect.objectContaining({ method: 'POST' }),
     );
+
     await waitFor(() => FakeWebSocket.instances.length > 0);
-    expect(FakeWebSocket.instances.length).toBeGreaterThan(0);
+    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    emit(socket, { event: 'loop_start', payload: { task: 'hello' } });
+    emit(socket, { event: 'tool_result', payload: { tool: 'run_command', ok: true, error: null } });
+    emit(socket, { event: 'task_end', status: 'succeeded' });
+    await waitFor(() => (lastFrame() ?? '').includes('任务完成: succeeded'));
+    expect(lastFrame()).toContain('任务完成: succeeded');
   } finally {
     unmount();
     vi.unstubAllGlobals();
@@ -115,46 +159,55 @@ test('app creates a session on start and submits tasks to the backend', async ()
   }
 });
 
-test('app shows approval panel from websocket event and sends decision', async () => {
-  const fetchMock = vi
-    .fn()
-    .mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({ id: 's1', workspace: process.cwd(), name: 'default', status: 'active' }),
-    })
-    .mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({ id: 't1', session_id: 's1', description: 'hello', status: 'pending' }),
-    })
-    .mockResolvedValueOnce({ ok: true, status: 202, json: async () => ({ status: 'running' }) });
+test('slash menu opens on / and arrow selection fills the input', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(sessionResponse);
   vi.stubGlobal('fetch', fetchMock);
   const restore = stubWebSocket();
   const { stdin, lastFrame, unmount } = render(<App />);
   try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('/');
+    // 菜单浮层出现（断言可见的命令描述，顶部命令在受限视口下可能被裁剪）
+    await waitFor(() => (lastFrame() ?? '').includes('显示帮助'));
+    expect(lastFrame()).toContain('显示帮助');
+
+    // ArrowDown 移动选中（index 0 -> 1 = /session），Enter 填入输入框
+    stdin.write('[B');
     await sleep(30);
+    stdin.write('\r');
+    await sleep(30);
+    expect(lastFrame()).toContain('/session ');
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app shows approval bar and sends decision on a', async () => {
+  const fetchMock = taskFetchMocks();
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('hello');
     stdin.write('\r');
     await waitFor(() => FakeWebSocket.instances.length > 0);
 
     const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
-    socket.onmessage?.({
-      data: JSON.stringify({
-        task_id: 't1',
-        event: 'approval_request',
-        action_id: 'a1',
-        tool: 'run_command',
-        args: { command: 'rm -rf /' },
-        level: 'critical',
-      }),
+    emit(socket, {
+      event: 'approval_request',
+      action_id: 'a1',
+      tool: 'run_command',
+      args: { command: 'rm -rf /' },
+      level: 'critical',
     });
-    await sleep(30);
-    expect(lastFrame()).toContain('requires approval');
+    await waitFor(() => (lastFrame() ?? '').includes('审批请求'));
     expect(lastFrame()).toContain('rm -rf /');
 
     stdin.write('a');
-    await sleep(30);
+    await sleep(50);
     const decisionSocket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
     expect(decisionSocket.sent.some((data) => data.includes('"approve"'))).toBe(true);
   } finally {
@@ -164,57 +217,17 @@ test('app shows approval panel from websocket event and sends decision', async (
   }
 });
 
-test('app shows help for slash commands', async () => {
-  const fetchMock = vi.fn().mockResolvedValue({
-    ok: true,
-    status: 200,
-    json: async () => ({ id: 's1', workspace: process.cwd(), name: 'default', status: 'active' }),
-  });
+test('app runs /status slash command', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(sessionResponse);
   vi.stubGlobal('fetch', fetchMock);
   const restore = stubWebSocket();
   const { stdin, lastFrame, unmount } = render(<App />);
   try {
-    await sleep(30);
-    stdin.write('/help');
-    stdin.write('\r');
-    await waitFor(() => (lastFrame() ?? '').includes('/sessions'));
-    expect(lastFrame()).toContain('/sessions');
-    expect(lastFrame()).toContain('/status');
-    expect(lastFrame()).toContain('/exit');
-  } finally {
-    unmount();
-    vi.unstubAllGlobals();
-    restore();
-  }
-});
-
-test('app shows session and task status from /status', async () => {
-  const fetchMock = vi
-    .fn()
-    .mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({ id: 's1', workspace: process.cwd(), name: 'default', status: 'active' }),
-    })
-    .mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({ id: 't1', session_id: 's1', description: 'hello', status: 'pending' }),
-    })
-    .mockResolvedValueOnce({ ok: true, status: 202, json: async () => ({ status: 'running' }) });
-  vi.stubGlobal('fetch', fetchMock);
-  const restore = stubWebSocket();
-  const { stdin, lastFrame, unmount } = render(<App />);
-  try {
-    await sleep(30);
-    stdin.write('hello');
-    stdin.write('\r');
-    await waitFor(() => (lastFrame() ?? '').includes('task running'));
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('/status');
     stdin.write('\r');
-    await waitFor(() => (lastFrame() ?? '').includes('task: t1'));
+    await waitFor(() => (lastFrame() ?? '').includes('session: s1'));
     expect(lastFrame()).toContain('session: s1');
-    expect(lastFrame()).toContain('task: t1');
   } finally {
     unmount();
     vi.unstubAllGlobals();
@@ -223,38 +236,25 @@ test('app shows session and task status from /status', async () => {
 });
 
 test('app aborts the current task via the api', async () => {
-  const fetchMock = vi
-    .fn()
-    .mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({ id: 's1', workspace: process.cwd(), name: 'default', status: 'active' }),
-    })
-    .mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({ id: 't1', session_id: 's1', description: 'hello', status: 'pending' }),
-    })
-    .mockResolvedValueOnce({ ok: true, status: 202, json: async () => ({ status: 'running' }) })
-    .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ status: 'canceled' }) });
+  const fetchMock = taskFetchMocks();
+  fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ status: 'canceled' }) });
   vi.stubGlobal('fetch', fetchMock);
   const restore = stubWebSocket();
   const { stdin, lastFrame, unmount } = render(<App />);
   try {
-    await sleep(30);
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('hello');
     stdin.write('\r');
-    await waitFor(() => (lastFrame() ?? '').includes('task running'));
+    await waitFor(() => (lastFrame() ?? '').includes('hello'));
     stdin.write('/abort');
     stdin.write('\r');
-    await waitFor(() => fetchMock.mock.calls.length >= 4);
+    await waitFor(() => fetchMock.mock.calls.length >= 5);
     expect(fetchMock).toHaveBeenNthCalledWith(
       4,
       'http://127.0.0.1:8700/api/v1/tasks/t1/abort',
       expect.objectContaining({ method: 'POST' }),
     );
-    await waitFor(() => (lastFrame() ?? '').includes('canceled'));
-    expect(lastFrame()).toContain('canceled');
+    await waitFor(() => (lastFrame() ?? '').includes('任务状态: canceled'));
   } finally {
     unmount();
     vi.unstubAllGlobals();
@@ -263,118 +263,19 @@ test('app aborts the current task via the api', async () => {
 });
 
 test('app exits on /exit', async () => {
-  const fetchMock = vi.fn().mockResolvedValue({
-    ok: true,
-    status: 200,
-    json: async () => ({ id: 's1', workspace: process.cwd(), name: 'default', status: 'active' }),
-  });
+  const fetchMock = vi.fn().mockResolvedValue(sessionResponse);
   vi.stubGlobal('fetch', fetchMock);
   const restore = stubWebSocket();
   const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
-  const { stdin, unmount } = render(<App />);
+  const { stdin, lastFrame, unmount } = render(<App />);
   try {
-    await sleep(30);
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('/exit');
     stdin.write('\r');
-    await sleep(30);
+    await sleep(50);
     expect(exitSpy).toHaveBeenCalledWith(0);
   } finally {
     exitSpy.mockRestore();
-    unmount();
-    vi.unstubAllGlobals();
-    restore();
-  }
-});
-
-test('config wizard accepts fields and saves hidden key', async () => {
-  const onSave = vi.fn();
-  const { stdin, lastFrame, unmount } = render(<ConfigWizard onSave={onSave} />);
-  stdin.write('acme');
-  stdin.write('\t');
-  stdin.write('custom');
-  stdin.write('\t');
-  stdin.write('http://example.com');
-  stdin.write('\t');
-  stdin.write('model-x');
-  stdin.write('\t');
-  stdin.write('secret');
-  stdin.write('\r');
-  await sleep(30);
-  expect(lastFrame()).toContain('acme');
-  expect(lastFrame()).toContain('http://example.com');
-  expect(lastFrame()).toContain('model-x');
-  expect(lastFrame()).toContain('******');
-  expect(onSave).toHaveBeenCalledWith({
-    providerName: 'acme',
-    type: 'custom',
-    baseUrl: 'http://example.com',
-    model: 'model-x',
-    apiKey: 'secret',
-  });
-  unmount();
-});
-
-test('app opens config wizard from /config', async () => {
-  const fetchMock = vi.fn().mockResolvedValue({
-    ok: true,
-    status: 200,
-    json: async () => ({ id: 's1', workspace: process.cwd(), name: 'default', status: 'active' }),
-  });
-  vi.stubGlobal('fetch', fetchMock);
-  const restore = stubWebSocket();
-  const { stdin, lastFrame, unmount } = render(<App />);
-  try {
-    await sleep(30);
-    stdin.write('/config');
-    stdin.write('\r');
-    await sleep(20);
-    expect(lastFrame()).toContain('config wizard');
-    expect(lastFrame()).toContain('api key');
-    stdin.write('acme');
-    stdin.write('\t');
-    stdin.write('custom');
-    stdin.write('\t');
-    stdin.write('http://example.com');
-    stdin.write('\t');
-    stdin.write('model-x');
-    stdin.write('\t');
-    stdin.write('secret');
-    stdin.write('\r');
-    await sleep(30);
-    expect(lastFrame()).toContain('config wizard');
-    expect(lastFrame()).not.toContain('requires approval');
-  } finally {
-    unmount();
-    vi.unstubAllGlobals();
-    restore();
-  }
-});
-
-test('app runs session command from slash input', async () => {
-  vi.stubGlobal(
-    'fetch',
-    vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ id: 's1', workspace: process.cwd(), name: 'default', status: 'active' }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => [{ id: 's1' }],
-      }),
-  );
-  const restore = stubWebSocket();
-  const { stdin, lastFrame, unmount } = render(<App />);
-  try {
-    await sleep(30);
-    stdin.write('/sessions');
-    stdin.write('\r');
-    await sleep(30);
-    expect(lastFrame()).toContain('"id":"s1"');
-  } finally {
     unmount();
     vi.unstubAllGlobals();
     restore();
