@@ -174,3 +174,36 @@ def test_provider_factory_rejects_unsupported_type(tmp_path):
     config = load_app_config(path)
     with pytest.raises(ValueError, match="unsupported provider type: anthropic"):
         build_provider_registry(config, FakeCredentialStore())
+
+
+def test_provider_factory_reads_key_from_env(tmp_path, monkeypatch):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "providers:\n"
+        "  deepseek:\n"
+        "    type: openai-compatible\n"
+        "    base_url: https://api.deepseek.com\n"
+        "    default_model: deepseek-chat\n",
+        encoding="utf-8",
+    )
+    config = load_app_config(path)
+    monkeypatch.setenv("KL_KEY_DEEPSEEK", "sk-env")
+    registry = build_provider_registry(config, FakeCredentialStore(secret=None))
+    assert registry.get("deepseek").api_key == "sk-env"
+
+
+def test_provider_factory_credential_ref_beats_env(tmp_path, monkeypatch):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "providers:\n"
+        "  openai:\n"
+        "    type: openai-compatible\n"
+        "    base_url: https://example.com/v1\n"
+        "    default_model: gpt-test\n"
+        "    credential_ref: openai\n",
+        encoding="utf-8",
+    )
+    config = load_app_config(path)
+    monkeypatch.setenv("KL_KEY_OPENAI", "sk-env")
+    registry = build_provider_registry(config, FakeCredentialStore(secret="sk-store"))
+    assert registry.get("openai").api_key == "sk-store"

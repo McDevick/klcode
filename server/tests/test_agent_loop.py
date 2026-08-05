@@ -157,7 +157,9 @@ async def test_loop_uses_context_assembler():
     assert spy.last_kwargs["memory"] == ["remembered decision"]
     assert spy.last_kwargs["task_id"] == "s1"
     assert spy.last_kwargs["tool_catalog"][0]["name"] == "final"
-    assert provider.calls[0].messages == [{"role": "user", "content": "assembled"}]
+    # A system message carries the action protocol in front of the assembled user message.
+    assert provider.calls[0].messages[0]["role"] == "system"
+    assert provider.calls[0].messages[1] == {"role": "user", "content": "assembled"}
 
 
 @pytest.mark.asyncio
@@ -235,6 +237,39 @@ async def test_loop_logs_invalid_action(tmp_path):
     await loop.run(Session(id="s1", workspace="."), "task")
     records = [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text(encoding="utf-8").strip().splitlines()]
     assert any(record["event"] == "invalid_action" for record in records)
+
+
+@pytest.mark.asyncio
+async def test_loop_forwards_provider_default_model_for_mock_placeholder():
+    """Sessions default to model='mock-model'; real providers should receive
+    their configured default model instead of the mock placeholder."""
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+    provider = MockProvider(responses=["DONE"])
+    provider.model = "deepseek-chat"
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=2),
+    )
+
+    await loop.run(Session(id="s1", workspace="."), "task")
+
+    assert provider.calls[0].model == "deepseek-chat"
+
+
+@pytest.mark.asyncio
+async def test_loop_keeps_explicit_session_model():
+    provider = MockProvider(responses=["DONE"])
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(ToolRegistry()),
+        settings=LoopSettings(max_iterations=2),
+    )
+
+    await loop.run(Session(id="s1", workspace=".", model="gpt-test"), "task")
+
+    assert provider.calls[0].model == "gpt-test"
 
 
 class ApprovalShellTool(Tool):
