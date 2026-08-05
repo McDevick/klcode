@@ -1,5 +1,7 @@
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
+
+from kl_server.models.task import Session, Task
 
 
 class CreateSessionPayload(BaseModel):
@@ -46,17 +48,26 @@ def build_router() -> APIRouter:
         return list(sessions.values())
 
     @router.post("/sessions")
-    def create_session(payload: CreateSessionPayload):
+    async def create_session(payload: CreateSessionPayload, request: Request):
         nonlocal next_session_id
-        session = {
-            "id": f"s{next_session_id}",
-            "workspace": payload.workspace,
-            "name": payload.name,
-            "status": "active",
-        }
+        deps = getattr(request.app.state, "deps", None)
+        session_id = f"s{next_session_id}"
+        session = Session(
+            id=session_id,
+            workspace=payload.workspace,
+            name=payload.name,
+        )
+        if deps is not None:
+            await deps.sessions.create(session)
         next_session_id += 1
-        sessions[session["id"]] = session
-        return session
+        record = {
+            "id": session.id,
+            "workspace": session.workspace,
+            "name": session.name,
+            "status": session.status,
+        }
+        sessions[session.id] = record
+        return record
 
     @router.get("/sessions/{session_id}")
     def get_session(session_id: str):
@@ -88,17 +99,26 @@ def build_router() -> APIRouter:
         return Response(status_code=204)
 
     @router.post("/tasks")
-    def create_task(payload: CreateTaskPayload):
+    async def create_task(payload: CreateTaskPayload, request: Request):
         nonlocal next_task_id
-        task = {
-            "id": f"t{next_task_id}",
-            "session_id": payload.session_id,
-            "description": payload.description,
-            "status": "pending",
-        }
+        deps = getattr(request.app.state, "deps", None)
+        task_id = f"t{next_task_id}"
+        task = Task(
+            id=task_id,
+            session_id=payload.session_id,
+            description=payload.description,
+        )
+        if deps is not None:
+            await deps.tasks.create(task)
         next_task_id += 1
-        tasks[task["id"]] = task
-        return task
+        record = {
+            "id": task.id,
+            "session_id": task.session_id,
+            "description": task.description,
+            "status": task.status.value,
+        }
+        tasks[task.id] = record
+        return record
 
     @router.get("/tasks/{task_id}")
     def get_task(task_id: str):

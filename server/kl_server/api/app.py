@@ -7,8 +7,13 @@ from kl_server.api.routes import build_router
 from kl_server.api.ws import build_ws_router
 
 
-def create_app(auth_token: str | None = None, hitl=None) -> FastAPI:
+def create_app(
+    auth_token: str | None = None,
+    hitl=None,
+    deps=None,
+) -> FastAPI:
     app = FastAPI()
+    app.state.deps = deps
 
     @app.middleware("http")
     async def auth_middleware(request, call_next):
