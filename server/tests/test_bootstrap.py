@@ -69,6 +69,9 @@ def test_bootstrap_wires_api_routes_to_deps(tmp_path):
         async def create(self, task):
             self.store[task.id] = task
 
+        async def list(self):
+            return list(self.store.values())
+
         async def get(self, task_id):
             if task_id not in self.store:
                 raise KeyError(task_id)
