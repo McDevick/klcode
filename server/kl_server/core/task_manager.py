@@ -47,6 +47,23 @@ class TaskManager:
         row = await cursor.fetchone()
         if row is None:
             raise KeyError(task_id)
+        return self._row_to_task(row)
+
+    async def list(self) -> list[Task]:
+        conn = await self.db.connect()
+        cursor = await conn.execute(
+            """
+            SELECT id, session_id, description, status, workspace_mode,
+                   branch, snapshot_path, summary, created_at
+            FROM tasks
+            ORDER BY created_at
+            """
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_task(row) for row in rows]
+
+    @staticmethod
+    def _row_to_task(row) -> Task:
         return Task(
             id=row["id"],
             session_id=row["session_id"],

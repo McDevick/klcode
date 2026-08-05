@@ -74,6 +74,19 @@ def build_router() -> APIRouter:
             "status": task.status.value,
         }
 
+    def next_seq(existing_ids: list[str], prefix: str) -> int:
+        return (
+            max(
+                (
+                    int(item[len(prefix):])
+                    for item in existing_ids
+                    if item.startswith(prefix) and item[len(prefix):].isdigit()
+                ),
+                default=0,
+            )
+            + 1
+        )
+
     router = APIRouter(prefix="/api/v1")
 
     @router.get("/ping")
@@ -91,6 +104,10 @@ def build_router() -> APIRouter:
     async def create_session(payload: CreateSessionPayload, request: Request):
         nonlocal next_session_id
         deps = getattr(request.app.state, "deps", None)
+        if deps is not None:
+            # 从已持久化的记录计算下一个序号，避免服务重启后与既有 id 冲突
+            existing = await deps.sessions.list()
+            next_session_id = next_seq([item.id for item in existing], "s")
         session_id = f"s{next_session_id}"
         session = Session(
             id=session_id,
@@ -170,6 +187,9 @@ def build_router() -> APIRouter:
     async def create_task(payload: CreateTaskPayload, request: Request):
         nonlocal next_task_id
         deps = getattr(request.app.state, "deps", None)
+        if deps is not None:
+            existing = await deps.tasks.list()
+            next_task_id = next_seq([item.id for item in existing], "t")
         task_id = f"t{next_task_id}"
         task = Task(
             id=task_id,

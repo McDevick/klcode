@@ -266,6 +266,42 @@ def test_provider_add_writes_config_yaml_with_deps(tmp_path):
     assert "http://127.0.0.1:9999/v1" in content
 
 
+def test_create_session_after_restart_avoids_id_conflict(tmp_path):
+    # 第一次启动：创建 s1 并持久化
+    first = make_deps_client(tmp_path)
+    created = first.post("/api/v1/sessions", json={"workspace": str(tmp_path)})
+    assert created.status_code == 200
+    assert created.json()["id"] == "s1"
+
+    # 模拟服务重启：新 deps + 新 app，但同一个数据库文件
+    restarted = make_deps_client(tmp_path)
+    created_again = restarted.post("/api/v1/sessions", json={"workspace": str(tmp_path)})
+
+    assert created_again.status_code == 200
+    assert created_again.json()["id"] != "s1"
+
+
+def test_create_task_after_restart_avoids_id_conflict(tmp_path):
+    first = make_deps_client(tmp_path)
+    session = first.post("/api/v1/sessions", json={"workspace": str(tmp_path)}).json()
+    task = first.post(
+        "/api/v1/tasks", json={"session_id": session["id"], "description": "first"}
+    ).json()
+    assert task["id"] == "t1"
+
+    restarted = make_deps_client(tmp_path)
+    session_again = restarted.post(
+        "/api/v1/sessions", json={"workspace": str(tmp_path)}
+    ).json()
+    task_again = restarted.post(
+        "/api/v1/tasks",
+        json={"session_id": session_again["id"], "description": "second"},
+    )
+
+    assert task_again.status_code == 200
+    assert task_again.json()["id"] != "t1"
+
+
 def test_route_state_is_isolated_per_app_instance():
     client_a = make_client()
     client_b = make_client()
