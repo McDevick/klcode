@@ -280,3 +280,87 @@ test('session command handles 204 delete response', async () => {
   expect(result).toBe('deleted');
   vi.unstubAllGlobals();
 });
+
+test('config model show returns current model', async () => {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      provider: 'mock',
+      model: 'mock-model',
+      available: [{ provider: 'mock', model: 'mock-model', base_url: '' }],
+    }),
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    const result = await ConfigCommand.run(['model', 'show']);
+
+    expect(result).toContain('mock-model');
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${DEFAULT_BASE_URL}/api/v1/config/model`,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test('config model set posts provider and model', async () => {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ provider: 'deepseek', model: 'deepseek-chat', available: [] }),
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    const result = await ConfigCommand.run(['model', 'set', 'deepseek', 'deepseek-chat']);
+
+    expect(result).toContain('deepseek');
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${DEFAULT_BASE_URL}/api/v1/config/model`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ provider: 'deepseek', model: 'deepseek-chat' }),
+      }),
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test('config model set without model posts empty model', async () => {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ provider: 'deepseek', model: 'deepseek-chat', available: [] }),
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    await ConfigCommand.run(['model', 'set', 'deepseek']);
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toEqual({ provider: 'deepseek', model: '' });
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test('config model list shows available providers', async () => {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => [
+      { provider: 'mock', model: 'mock-model', base_url: '' },
+      { provider: 'deepseek', model: 'deepseek-chat', base_url: 'https://api.deepseek.com/v1' },
+    ],
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    const result = await ConfigCommand.run(['model', 'list']);
+
+    expect(result).toContain('mock: mock-model');
+    expect(result).toContain('deepseek: deepseek-chat');
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

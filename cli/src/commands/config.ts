@@ -11,6 +11,9 @@ export const ConfigCommand = {
     if (area === 'key') {
       return runKey(subcommand, rest);
     }
+    if (area === 'model') {
+      return runModel(subcommand, rest);
+    }
     return 'opening config wizard';
   },
 };
@@ -47,6 +50,31 @@ async function runProvider(subcommand: string | undefined, rest: string[]): Prom
     }
     default:
       return 'usage: kl config provider add|list|test';
+  }
+}
+
+async function runModel(subcommand: string | undefined, rest: string[]): Promise<string> {
+  const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
+
+  switch (subcommand) {
+    case 'set': {
+      const [provider, model] = rest;
+      if (!provider) {
+        return 'usage: kl config model set <provider> [model]';
+      }
+      const state = await client.setModelConfig(model ? { provider, model } : { provider });
+      return `model: ${state.provider} / ${state.model}`;
+    }
+    case 'show': {
+      const state = await client.getModelConfig();
+      return `provider: ${state.provider}\nmodel: ${state.model}`;
+    }
+    case 'list': {
+      const available = await client.listModels();
+      return available.map((item) => `${item.provider}: ${item.model}`).join('\n');
+    }
+    default:
+      return 'usage: kl config model set|show|list';
   }
 }
 
