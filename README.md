@@ -8,7 +8,7 @@
 
 本仓库目录名仍沿用 `SimpleCodingAgent`，但项目正式名称定为 **KL Code**，后续文档、命名、标识统一使用该名称。
 
-当前进度：Python 侧已完成核心框架（模型、Provider、AgentLoop、工具、存储、守卫、MCP/插件、内存与上下文），CLI 脚手架可用；服务端完整组装与 CLI TUI 仍处于 roadmap 阶段（见“已知限制”）。
+当前进度：Phase 1–5 核心框架已全部实现并通过测试 —— 后端（模型、Provider、AgentLoop、工具系统、治理守卫、沙箱、反馈闭环、上下文/记忆、存储、MCP/插件/skills/hooks、bootstrap 服务端组装）与 CLI（init/run/server/config 命令、打包分发）均可运行。CLI TUI 组件已实现但仍未接线启动，属 roadmap（见”已知限制”）。
 
 ## 环境要求
 
@@ -54,30 +54,51 @@ cd cli
 npm test
 ```
 
-开发启动（roadmap，尚未可用）：
+### 启动服务端（daemon）
+
+服务端 bootstrap（Task 5.6）已完成，可直接启动：
+
+```powershell
+# 推荐：使用项目 venv（已装依赖）
+& <venv>\Scripts\python.exe -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700
+# 或安装 server[dev] 后使用 console 入口：
+kl-server
+```
+
+首次启动会自动创建 `~/.kl/daemon.token`，并在当前目录（workspace）生成 `.kl/`（`config.yaml`、`kl.db`、`audit.jsonl`、`memory.db`）。缺少 `config.yaml` 也能启动，默认 provider 为 `mock`。
+
+`make dev`（roadmap，尚未可用）：
 
 ```bash
 make dev
 ```
 
-`make dev` 当前是占位守卫：仅输出 `make dev is not available until server main and cli tui entrypoints exist` 并以退出码 1 结束，直到 `kl_server.main` 与 CLI TUI 入口完成。
+`make dev` 当前是占位守卫：输出 `make dev is not available until server main and cli tui entrypoints exist` 并以退出码 1 结束，直到 CLI TUI 入口完成。
 
 ### CLI
 
-CLI 计划程序名为 `kl`（见 `cli/src/main.ts` 中 `program.name('kl')`）。当前尚未发布可执行文件，也没有 `bin` 入口，开发期从 `cli/` 目录运行：
+CLI 计划程序名为 `kl`（`cli/src/main.ts` 中 `program.name('kl')`）。已配置 `bin` 与 esbuild 构建（`npm run build` → `cli/dist/main.js`）。开发期可从 `cli/` 目录直接运行：
 
 ```powershell
 cd cli
 npx tsx src/main.ts --help
 ```
 
-已接线的子命令（示例均以 `kl` 表示最终程序名）：
+或构建后链接为全局命令：
 
-- `kl server start|stop|status`：管理本地守护进程。`start` 通过 `python -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700` 拉起服务，PID 写入 `~/.kl/daemon.pid`。
-- `kl init`：查询初始化状态。需要守护进程已运行并能访问 `http://127.0.0.1:8700`，否则连接被拒而失败；请先执行 `kl server start`。
-- `kl run <task>`：提交一次性任务。
-- `kl config <area> <action> ...`：管理 provider 与 key（如 `kl config provider list`、`kl config key show <ref>`）。
-- `kl tui`：**尚未接线**，`cli/src/main.ts` 中没有 `tui` 子命令。当前运行会以退出码 1 返回 `error: unknown command 'tui'`，属于 roadmap。
+```powershell
+cd cli
+npm run build   # 生成 dist/main.js
+npm link        # 之后可用 kl <命令>
+```
+
+已接线的子命令：
+
+- `kl server start|stop|status`：管理本地守护进程。`start` 通过 `python -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700` 拉起服务，PID 写入 `~/.kl/daemon.pid`。注意 `start` 调用的是系统 `python`，若系统 Python 未装 fastapi/uvicorn 会失败，此时请用项目 venv 手动启动（见上文"启动服务端"）。
+- `kl init`：查询初始化状态。需要守护进程已运行，否则连接被拒而失败；请先启动 daemon。
+- `kl run <task>`：提交一次性任务。**已知限制**：当前默认使用 session `default`，若服务端数据库尚无该 session 会返回 500；需先用 API 创建 session（详见 `docs/project-check.md` U-1）。
+- `kl config <area> <action> ...`：管理 provider 与 key（如 `kl config provider list`、`kl config key show <ref>`）。当前 provider/key 仅写入服务端内存态，重启即丢失，不影响 bootstrap 从 `config.yaml` 构建的真实 provider registry（见 `docs/project-check.md` U-5）。
+- `kl tui`：**尚未接线**，`cli/src/main.ts` 中没有 `tui` 子命令，属于 roadmap。
 
 ## 分发命令
 
@@ -88,7 +109,12 @@ make test      # 运行 server pytest 与 CLI vitest
 make dev       # roadmap 占位，默认退出码 1
 ```
 
-当前没有打包发布命令：CLI 未提供 `bin`/构建产物，server 未配置发布目标，分发能力属于后续规划。
+打包配置已就绪（Task 5.3）：
+
+- server：`server/pyproject.toml`，`python -m build server` 产出 wheel/sdist，console 入口 `kl-server`
+- CLI：`cli/package.json` 配置 `bin`/`files`/`prepack`，`npm pack` 只发布 `dist` 构建产物
+
+实际发布（push 到 PyPI / npm）尚未执行，属后续规划。
 
 ## 目录结构
 
@@ -112,18 +138,21 @@ make dev       # roadmap 占位，默认退出码 1
 - 命令执行受 `kl_server.core.guardrail`（ScopeFence、DangerClassifier、HITLManager）与 `kl_server.core.sandbox`（SandboxPolicy）约束。
 - 审计日志由 `kl_server.core.event_logger` 写入，敏感字段（密钥、token、密码、私钥等）会被脱敏。
 - 凭证通过 `kl_server.config.credentials`（keyring 等后端）管理，仓库不提交任何真实凭证。
-- 上述守卫与真实服务组装尚未完全接线，属于待集成能力；部署前需按 `SPEC.md` 完成最终组合并重新审计。
+- 守卫与服务端组装已在 bootstrap（Task 5.6）中接线；部署前仍需按 `SPEC.md` 完成最终安全审计。
 
 ## 关键配置
 
 - Provider 注册默认使用 `mock`；可通过配置新增 openai-compatible 实例。
 - 配置加载：`kl_server.config.loader.load_app_config`，配置模型 `kl_server.config.config.AppConfig`（YAML，`extra="forbid"`）。
 - 凭证存储：`kl_server.config.credentials`（keyring 后端，含内存回退与 .env 支持）。
-- 配置 YAML 路径的读写尚未接入服务端运行流程（属于 Server Bootstrap/Task 5.6），当前以模块级 API 与测试契约为准。
+- 配置 YAML 由 `bootstrap.build_app_dependencies` 在服务启动时加载（Task 5.6 已接入）。CLI 的 provider/key 配置命令暂未写回该文件，见"已知限制"。
 
 ## 已知限制
 
-- `make dev` 与 `kl tui` 尚未接线，均按 roadmap 处理。
-- `kl init` 依赖守护进程已运行；守护进程未启动时，它会直接因连接被拒（`ECONNREFUSED 127.0.0.1:8700`）而失败，前置条件为 `kl server start`。
-- 服务端 bootstrap 与真实组合（SessionManager/TaskManager/配置装配）尚未激活，属 Task 5.6。
+- `kl tui` 尚未接线（组件已实现），`make dev` 仍为占位守卫，均按 roadmap 处理。
+- `kl run` 默认使用 session `default`，若服务端数据库尚无该 session 会返回 500；需先用 API 创建 session（见 `docs/project-check.md` U-1）。
+- 服务端对引用不存在 session 的 task 创建返回 500，应返回 4xx（见 `docs/project-check.md` U-3）。
+- `kl server start` 依赖系统 `python`；系统 Python 缺 fastapi/uvicorn 等依赖时拉不起服务，请用项目 venv 手动启动。
+- `kl config` 的 provider/key 仅保存在服务端内存态，重启丢失，未写回 `.kl/config.yaml`（见 `docs/project-check.md` U-5）。
+- `kl init` 依赖守护进程已运行，否则连接被拒（`ECONNREFUSED 127.0.0.1:8700`）而失败。
 - WebUI、subagent 分派、远程部署与 Docker **不在** `SPEC.md`/`PLAN.md` 授权范围内，仓库不会承诺这些能力。
