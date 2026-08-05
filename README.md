@@ -49,7 +49,7 @@ make test
 等价命令：
 
 ```powershell
-python -m pytest server/tests -q --pyargs
+python -m pytest server/tests -q
 cd cli
 npm test
 ```
