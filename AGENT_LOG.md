@@ -29,7 +29,7 @@
 
 - 时间戳：2026-08-05 09:59（开工），提交时间见本条补记。
 - 范围：Phase 5 过程文档与反思报告。
-- 触发的技能：`subagent-driven-development`、`using-git-worktrees`、`verification-first`
+- 触发的技能：`subagent-driven-development`、`using-git-worktrees`、`verification-before-completion`
 - Implementer：implementer subagent `019fcfa3-0e6e-7a80-bd84-725fbb941fff`
 - 分支：`worktree-task-5.4-process`，stacked 于 `worktree-task-5.3-dist`
 - Worktree：`.claude/worktrees/task-5.4-process`
@@ -50,7 +50,7 @@
 ## 2026-08-05 Task 5.3：Distribution polish（已完成）
 
 - 范围：Phase 5 分发元数据与可复现构建。
-- 触发的技能：`subagent-driven-development`、`using-git-worktrees`、`test-driven-development`（verification-first）
+- 触发的技能：`subagent-driven-development`、`using-git-worktrees`、`test-driven-development`（verification-before-completion）
 - Implementer：implementer subagent `019fcf7b-3d54-7a00-80da-b35dde94866b`
 - 分支：`worktree-task-5.3-dist`，stacked 于 `worktree-task-5.2-docs`
 - Worktree：`.claude/worktrees/task-5.3-dist`
@@ -85,7 +85,7 @@
 ## 2026-08-05 Task 5.2：README 与安装文档（已完成）
 
 - 范围：Phase 5 的冷启动文档与计划索引。
-- 触发的技能：`subagent-driven-development`、`using-git-worktrees`、`test-driven-development`（verification-first）
+- 触发的技能：`subagent-driven-development`、`using-git-worktrees`、`test-driven-development`（verification-before-completion）
 - Implementer：implementer subagent `019fcf5d-cd8f-7291-87af-a15e3094d315`
 - 分支：`worktree-task-5.2-docs`，stacked 于 `worktree-task-5.1-demos`
 - Worktree：`.claude/worktrees/task-5.2-docs`
