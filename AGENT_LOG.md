@@ -3,6 +3,27 @@
 > 本文件按任务执行全程实时记录关键节点，不在任务完成后统一补写。
 > 每条记录包含：时间戳、task 编号、触发的 Superpowers 技能、关键 prompt/context、subagent 输出或 commit hash、人工干预、教训。
 
+## 2026-08-05 Project check fix U-1/U-2/U-3/U-6（已完成）
+
+- 时间戳：2026-08-05 12:00（开工）。
+- 范围：基于 `docs/project-check.md` 检查结论，修复用户核心期望（TUI 交互、后端稳定）相关的未达标项。
+- 触发的技能：`test-driven-development`、`verification-before-completion`、`check`
+- Implementer：controller 本地 TDD 实现
+- 分支：`dev`（Phase 5 合并后的本地 dev）
+- 修复：
+  - **U-1**：`kl run` 先 `POST /sessions`（workspace=cwd）再用真实 session id 提交 task，端到端验证 `task t1 created (pending)`。
+  - **U-3**：`create_task` 真实 manager 路径校验 session 存在，缺失返回 404（不再 500）。
+  - **U-2**：TUI 接线——
+    - `main.ts` 新增 `tui` 子命令；`npm run build` 改用 `--packages=external`（ink 内部 `react-devtools-core` 无法 bundle，ink/react 作为运行时依赖）。
+    - 后端新增任务执行链路：`POST /api/v1/tasks/{id}/run`（202 + 后台执行 + 状态机）、`api/task_events.py`（`TaskEventBus` WS 广播 + `ApprovalHub` 审批 Future + `WsForwardingLogger` 事件转发）、ws.py 决策接入 hub、app.py 接线。
+    - `App` 接入真实后端：建 session → createTask → runTask → WS 订阅实时事件 → `approval_request` 触发审批面板 → `a/r/x` 发决策。
+    - 输入架构重构：App 顶层单一 `useInput` + `useRef` 缓冲（规避 ink 7.1.1 多 useInput 组件同批次切换导致 readable listener 丢失的竞态；规避 React state 异步导致 `\r` 提交读旧值）。
+  - **U-6**：README 全面更新（Task 5.6 完成后状态、启动方式、已知限制如实标注）。
+- TDD 红绿：每个修复先写失败测试再实现（server `test_task_events.py` 5 个、`test_task_execution.py` 4 个、routes/ws 各补测试；CLI run/client/main/tui 测试重构）。
+- 验证：server `336 passed, 1 skipped`；CLI `45 passed`（`npx vitest run test/` 限定主 checkout，`.claude/` 已 gitignore 不影响 CI）；4 个 demo 通过；`git diff --check` 干净。
+- 遗留：U-4（`kl server start` 系统 python 依赖）、U-5（config 内存态）、U-7（REFLECTION 字数，用户亲自写）；TUI 暂停类斜杠指令为 roadmap。
+- 教训：CLI 测试用 mock fetch/WebSocket 无法覆盖真实后端集成（`kl run` 500 在 324+45 全绿下仍存在），必须做真实 uvicorn 端到端验证；ink 多 useInput 组件在同一渲染批次 active 切换存在 listener 丢失竞态，单 useInput 顶层分发更稳。
+
 ## 2026-08-05 Review fix F2-F7（已完成）
 
 - 范围：针对 PR #46 review 的 MEDIUM/Advisory 问题修复。
