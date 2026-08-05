@@ -254,7 +254,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 5.2 | README and install docs | Done (`e8b62c5`, `5703874`, `bdf4b0b`) |
 | 5.3 | Distribution polish | Done (`6ec8c2c`, `6453879`, `93f381a`) |
 | 5.4 | Process docs and reflection | Done (`30218d2`, `0bfbfb8`, `729b71d`) |
-| 5.5 | Final CI pass and deliverables | Done (hash recorded in AGENT_LOG) |
+| 5.5 | Final CI pass and deliverables | Done (`666231f`, `ff30fb1`) |
 | 5.6 | Application bootstrap and server composition | Pending (remaining task) |
 
 Every task opens a `AGENT_LOG.md` entry before implementation and updates it in real time. Every completed task also updates this table and the relevant `- [ ]` checkboxes in this file.
