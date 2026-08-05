@@ -105,14 +105,16 @@ npm link        # 之后可用 kl <命令>
 
 ### 启动 TUI（交互界面）
 
-先启动服务端（见上），再从 `cli/` 目录打开 TUI：
+先启动服务端（见上），然后打开 TUI：
 
 ```powershell
+# 最简单：仓库根目录一条命令（自动构建并启动，等价于 node cli/dist/main.js tui）
+npm run tui
+
+# 或从 cli/ 目录：
 cd cli
-npx tsx src/main.ts tui          # 开发模式
-# 或构建后直接运行：
-npm run build
-node dist/main.js tui
+npx tsx src/main.ts tui          # 开发模式（免构建）
+node dist/main.js tui            # 已构建过时
 ```
 
 TUI 启动后自动创建 session（workspace 为当前目录）并连接服务端，支持：

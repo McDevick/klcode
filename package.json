@@ -1,0 +1,9 @@
+{
+  "name": "kl-code-root",
+  "private": true,
+  "description": "KL Code repository root convenience scripts (the CLI package lives in cli/)",
+  "scripts": {
+    "build": "npm --prefix cli run build",
+    "tui": "npm --prefix cli run build && node cli/dist/main.js tui"
+  }
+}
