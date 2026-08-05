@@ -3,6 +3,31 @@
 > 本文件按任务执行全程实时记录关键节点，不在任务完成后统一补写。
 > 每条记录包含：时间戳、task 编号、触发的 Superpowers 技能、关键 prompt/context、subagent 输出或 commit hash、人工干预、教训。
 
+## 2026-08-05 Task 5.6：Application bootstrap and server composition（已完成）
+
+- 时间戳：2026-08-05 10:49（开工）。
+- 范围：Phase 5 最后一项，组合现有模块为可运行 FastAPI server。
+- 触发的技能：`subagent-driven-development`（尝试派发）、`using-git-worktrees`、`test-driven-development`、`verification-before-completion`
+- Implementer：controller 本地 TDD 兜底；fresh implementer subagent 通道不可用，`multi_agent_v1__spawn_agent` 返回 `unsupported call`。按 Superpowers 文档补充 `[features] multi_agent = true` 后本会话仍未生效，故未伪造 subagent 记录。
+- 分支：`worktree-task-5.6-bootstrap`，stacked 于 `worktree-task-5.5-ci` tip `a4d73d6`
+- Worktree：`.claude/worktrees/task-5.6-bootstrap`
+- TDD 红：`server/tests/test_bootstrap.py` 收集失败，`ModuleNotFoundError: No module named 'kl_server.bootstrap'`
+- TDD 绿：聚焦 `test_bootstrap.py` + `test_ws.py` → `13 passed`，输出无警告；全量 `pytest server/tests -q` → `318 passed, 1 skipped`
+- 文件变更：
+  - 新建 `server/kl_server/bootstrap.py`：`build_app_dependencies()` 组装 config、Database、SessionManager、TaskManager、credential store、provider registry、tool registry、guardrail、ToolExecutor、EventLogger、MemoryStore、ContextAssembler、HookManager、SkillLoader、McpAdapter、PluginLoader、AgentLoop。
+  - 修改 `server/kl_server/api/app.py`：`create_app(..., deps=None)` 暴露 `app.state.deps`。
+  - 修改 `server/kl_server/api/routes.py`：session/task 创建在 `deps` 存在时写入真实 `SessionManager`/`TaskManager`，无 deps 时保持原有内存 fallback。
+  - 修改 `server/kl_server/main.py`：通过 `build_app_dependencies()` 构造 deps 并传入 `create_app()`。
+  - 新建 `server/tests/test_bootstrap.py`：provider/tool/manager 注册断言 + API deps 接线断言。
+  - `tools/builtin/__init__.py` 已有 `register_builtin_tools`，未重复修改。
+- 偏差：
+  - PLAN 示例测试未显式提供凭据，但当前 `build_provider_registry()` 对配置了 `credential_ref` 的 provider 要求凭据已存在；测试改为传入 `InMemoryCredentialStore`，避免依赖操作系统钥匙串。
+  - `AppDependencies` 使用 PLAN 测试要求的 `provider_registry`/`tool_registry` 字段名，而非示例中的 `providers`/`tools`。
+  - API 接线测试使用最小 fake manager，避免 httpx ASGI + aiosqlite 产生 `DeprecationWarning`；真实 manager 持久化由既有 storage 测试覆盖。
+- 验证：`git diff --check` 干净；实现提交后 `git status --short` 无未跟踪文件。
+- 人工干预：subagent 通道不可用，controller 按 TDD 本地实现并记录。
+- 主提交：`e8d5834`（`feat: compose harness modules into runnable server`）。
+
 ## 2026-08-05 Task 5.5：Final CI pass and deliverables（已完成）
 
 - 时间戳：2026-08-05 10:14（开工），提交时间见本条补记。
