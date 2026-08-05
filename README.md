@@ -73,7 +73,7 @@ kl-server
 make dev
 ```
 
-`make dev` 当前是占位守卫：输出 `make dev is not available until server main and cli tui entrypoints exist` 并以退出码 1 结束，直到 CLI TUI 入口完成。
+`make dev` 当前是占位守卫：输出 `make dev is not available until server main and cli tui entrypoints exist` 并以退出码 1 结束（服务端与 TUI 入口均已就绪，该目标待接线为"同时启动服务端与 TUI"）。
 
 ### CLI
 
@@ -98,7 +98,27 @@ npm link        # 之后可用 kl <命令>
 - `kl init`：查询初始化状态。需要守护进程已运行，否则连接被拒而失败；请先启动 daemon。
 - `kl run <task>`：提交一次性任务。自动创建 session（workspace 为当前目录）后提交，任务在服务端后台执行。
 - `kl config <area> <action> ...`：管理 provider 与 key（如 `kl config provider list`、`kl config key show <ref>`）。`kl config key set` 写入服务端凭据库（keyring/内存回退）；`kl config provider add` 注册 provider 并写回 `.kl/config.yaml`（重启后仍生效）。
-- `kl tui`：**尚未接线**，`cli/src/main.ts` 中没有 `tui` 子命令，属于 roadmap。
+- `kl tui`：启动交互式 TUI（见下文"启动 TUI"）。
+
+### 启动 TUI（交互界面）
+
+先启动服务端（见上），再从 `cli/` 目录打开 TUI：
+
+```powershell
+cd cli
+npx tsx src/main.ts tui          # 开发模式
+# 或构建后直接运行：
+npm run build
+node dist/main.js tui
+```
+
+TUI 启动后自动创建 session（workspace 为当前目录）并连接服务端，支持：
+
+- 输入任务回车 → 创建任务并在服务端后台执行，实时显示事件流（loop / tool / feedback / task_end）
+- 危险动作弹出审批面板：`a` 批准、`r` 拒绝、`x` 中止、`m` 修改（修改暂为关闭面板）
+- 斜杠指令：`/sessions`、`/session new|open|rename|close|delete`、`/config`（配置向导）、`/status`（当前 session/task/审批状态）、`/help`、`/abort`、`/pause`、`/continue`、`/exit`
+
+> 需要真实终端（TTY）：ink 在非交互管道（如 `echo | kl tui`）下会提示 raw mode 不支持，请在交互式终端中运行。
 
 ## 分发命令
 
