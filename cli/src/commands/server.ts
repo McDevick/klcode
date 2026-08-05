@@ -33,13 +33,63 @@ export interface ServerCommandOptions {
 
 const PYTHON_CANDIDATES = ['python', 'python3', 'py'];
 
+function serverRoots(): string[] {
+  return [join(process.cwd(), 'server'), join(process.cwd(), '..', 'server')].filter(
+    existsSync,
+  );
+}
+
+function probeEnv(): NodeJS.ProcessEnv {
+  const roots = serverRoots();
+  if (roots.length === 0) {
+    return process.env;
+  }
+  return {
+    ...process.env,
+    PYTHONPATH: [roots.join(delimiter), process.env.PYTHONPATH]
+      .filter(Boolean)
+      .join(delimiter),
+  };
+}
+
 async function defaultPythonResolver(): Promise<string | null> {
+  const env = probeEnv();
+  const venvPython = process.platform === 'win32' ? 'Scripts\\python.exe' : 'bin/python';
+
+  // 优先使用项目 venv：系统 python 可能装有旧版 kl-server（如指向 worktree），
+  // README 明确要求用项目 venv 运行服务端。
+  const venvCandidates = [
+    join(process.cwd(), '.superpowers', 'sdd', 'PLAN', 'venv'),
+    join(process.cwd(), 'venv'),
+    join(process.cwd(), '.venv'),
+    join(process.cwd(), '..', 'venv'),
+    join(process.cwd(), '..', '.venv'),
+  ];
+  for (const venv of venvCandidates) {
+    const python = join(venv, venvPython);
+    if (!existsSync(python)) continue;
+    try {
+      execFileSync(python, ['-c', 'import uvicorn, fastapi, kl_server'], {
+        stdio: 'pipe',
+        env,
+      });
+      return python;
+    } catch {
+      // try the next venv
+    }
+  }
+
+  // PATH 候选：解析真实可执行路径。Windows 的 py launcher 会另起 python.exe 后退出，
+  // 直接 spawn launcher 会导致 pid 指向已退出的进程且服务端生命周期不稳定。
   for (const candidate of PYTHON_CANDIDATES) {
     try {
-      execFileSync(candidate, ['-c', 'import uvicorn, fastapi, kl_server'], {
-        stdio: 'pipe',
-      });
-      return candidate;
+      const probe = execFileSync(
+        candidate,
+        ['-c', 'import sys; import uvicorn, fastapi, kl_server; print(sys.executable)'],
+        { encoding: 'utf8', stdio: 'pipe', env },
+      );
+      const resolved = probe.trim();
+      return resolved.length > 0 ? resolved : candidate;
     } catch {
       // try the next candidate
     }
@@ -88,10 +138,7 @@ export const ServerCommand = {
           return 'server start failed: no usable python found (needs uvicorn, fastapi and kl_server; use the project venv python)';
         }
         const spawnImpl = (options.spawnImpl ?? spawn) as ServerSpawnImpl;
-        const serverRoots = [join(process.cwd(), 'server'), join(process.cwd(), '..', 'server')].filter(
-          existsSync,
-        );
-        const pythonPath = serverRoots.length > 0 ? serverRoots.join(delimiter) : undefined;
+        const pythonPath = serverRoots().join(delimiter);
         const env = pythonPath
           ? {
               ...process.env,
