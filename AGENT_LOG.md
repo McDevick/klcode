@@ -3,6 +3,29 @@
 > 本文件按任务执行全程实时记录关键节点，不在任务完成后统一补写。
 > 每条记录包含：时间戳、task 编号、触发的 Superpowers 技能、关键 prompt/context、subagent 输出或 commit hash、人工干预、教训。
 
+## 2026-08-05 Task 5.2：README 与安装文档（已完成）
+
+- 范围：Phase 5 的冷启动文档与计划索引。
+- 触发的技能：`subagent-driven-development`、`using-git-worktrees`、`test-driven-development`（verification-first）
+- Implementer：implementer subagent（本会话）
+- 分支：`worktree-task-5.2-docs`，stacked 于 `worktree-task-5.1-demos`
+- Worktree：`.claude/worktrees/task-5.2-docs`
+- 验证命令与结果：
+  - 服务端：venv python `pytest server/tests -q --pyargs`（设 `PYTHONPATH=<worktree>/server`）→ `316 passed, 1 skipped`
+  - CLI：`cd cli && npm ci && npm test` → `9 files, 45 passed`
+  - `make dev`：本机无 `make`；核对 Makefile 确认为占位守卫，输出 `make dev is not available until server main and cli tui entrypoints exist` 并以退出码 1 结束，README 如实登记为 roadmap。
+  - `kl init`（等价 `npx tsx src/main.ts init` 运行，守护进程未启动）：以退出码 1 报 `fetch failed` / `connect ECONNREFUSED 127.0.0.1:8700`，README 前置条件注明“先 `kl server start`”。
+  - `kl tui`（`npx tsx src/main.ts tui`）：`cli/src/main.ts` 无 `tui` 子命令，实测返回 `error: unknown command 'tui'` 且退出码 1，README 记为 roadmap。
+- 文件变更：
+  - 修改 `README.md`：补充项目简介后的环境要求、安装、运行、分发命令、目录结构、安全边界、关键配置、已知限制。
+  - 新建 `docs/superpowers/plans/README.md`：说明主计划在根 `PLAN.md`，控制器台账 `.superpowers/sdd/PLAN/progress.md` 为本地/git-ignored，任务记录在根 `AGENT_LOG.md`。
+  - 修改 `AGENT_LOG.md`：本条记录。
+- 重要发现：
+  - `kl tui` 目前未接线，`cli` 也没有 `bin`/构建产物，README 把 `kl` 计划程序名与当前 dev 运行方式（`npx tsx src/main.ts`）分开写明，避免虚构可执行命令。
+  - `kl init` 在守护进程未启动时直接抛 `TypeError: fetch failed`（ECONNREFUSED），不产生友好提示；README 以明确的“先 `kl server start`”前置条件覆盖。
+  - 配置 YAML 的读写尚未接入服务端运行流程（属 Task 5.6 bootstrap），README 只承诺模块级 API 与测试契约。
+- 教训：文档必须与当前可执行行为一致；对尚未实现的命令（`make dev`、`kl tui`、`kl` 可执行文件）一律标注 roadmap 与前置条件，不通过改代码来“凑成功”。
+
 ## 2026-08-05 Task 5.1：Mock-LLM demos（已完成）
 
 - 范围：Phase 5 的 mock-LLM 机制 demo 脚本与回归测试。
