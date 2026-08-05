@@ -167,9 +167,11 @@ test('slash menu opens on / and arrow selection fills the input', async () => {
   try {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('/');
-    // 菜单浮层出现（断言底部可见的命令描述，顶部命令在受限视口下可能被裁剪）
-    await waitFor(() => (lastFrame() ?? '').includes('退出 TUI'));
+    // 菜单完整显示所有命令（文档流，不受视口裁剪）
+    await waitFor(() => (lastFrame() ?? '').includes('列出历史会话'));
+    expect(lastFrame()).toContain('列出历史会话');
     expect(lastFrame()).toContain('退出 TUI');
+    expect(lastFrame()).toContain('显示帮助');
 
     // ArrowDown 移动选中（index 0 -> 1 = /session），Enter 填入输入框
     stdin.write('[B');

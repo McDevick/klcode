@@ -25,7 +25,7 @@ export function InputFooter({
   return (
     <Box flexDirection="column" flexShrink={0}>
       {menuOpen ? (
-        <Box position="absolute" bottom={1} flexDirection="column" paddingX={1}>
+        <Box flexDirection="column" paddingX={1}>
           {commands.map((command, index) => (
             <Text key={command.name} color={index === menuIndex ? 'cyan' : 'gray'}>
               {index === menuIndex ? '▸ ' : '  '}
