@@ -262,6 +262,46 @@ test('app aborts the current task via the api', async () => {
   }
 });
 
+test('typing a full slash command executes it instead of filling the menu', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(sessionResponse);
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('/exit');
+    stdin.write('\r');
+    await sleep(50);
+    expect(exitSpy).toHaveBeenCalledWith(0);
+  } finally {
+    exitSpy.mockRestore();
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('slash menu filters commands by typed prefix and completes on enter', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(sessionResponse);
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    // /ab 只匹配 /abort（过滤），非精确匹配 → Enter 补全
+    stdin.write('/ab');
+    await sleep(30);
+    stdin.write('\r');
+    await sleep(30);
+    expect(lastFrame()).toContain('/abort ');
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
 test('app exits on /exit', async () => {
   const fetchMock = vi.fn().mockResolvedValue(sessionResponse);
   vi.stubGlobal('fetch', fetchMock);

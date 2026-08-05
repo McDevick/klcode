@@ -228,7 +228,11 @@ export function App() {
     setMenuIndex(0);
   };
 
-  const menuOpen = inputValue.startsWith('/') && !inputValue.includes(' ');
+  // 按输入前缀过滤命令；输入完整命令时高亮精确匹配项
+  const filteredCommands = SLASH_COMMANDS.filter((command) =>
+    command.name.startsWith(inputValue),
+  );
+  const menuOpen = inputValue.startsWith('/') && !inputValue.includes(' ') && filteredCommands.length > 0;
 
   useInput((input, key) => {
     if (approval !== null) {
@@ -247,11 +251,20 @@ export function App() {
         return;
       }
       if (key.downArrow) {
-        setMenuIndex((index) => Math.min(SLASH_COMMANDS.length - 1, index + 1));
+        setMenuIndex((index) => Math.min(filteredCommands.length - 1, index + 1));
         return;
       }
       if (key.return) {
-        applySlashCommand(SLASH_COMMANDS[menuIndex]);
+        // 输入完整命令时直接执行，而不是被菜单拦截填入其他项
+        const exact = filteredCommands.find((command) => command.name === inputValue);
+        if (exact !== undefined) {
+          submitTask(inputValue);
+          inputRef.current = '';
+          setInputValue('');
+          setMenuIndex(0);
+        } else {
+          applySlashCommand(filteredCommands[Math.min(menuIndex, filteredCommands.length - 1)]);
+        }
         return;
       }
       if (key.escape) {
@@ -311,8 +324,8 @@ export function App() {
         <InputFooter
           value={inputValue}
           menuOpen={menuOpen}
-          menuIndex={menuIndex}
-          commands={SLASH_COMMANDS}
+          menuIndex={Math.min(menuIndex, filteredCommands.length - 1)}
+          commands={filteredCommands}
         />
       )}
     </Box>
