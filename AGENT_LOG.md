@@ -27,6 +27,7 @@
 - 验证：`git diff --check` 干净；实现提交后 `git status --short` 无未跟踪文件。
 - 人工干预：subagent 通道不可用，controller 按 TDD 本地实现并记录。
 - 主提交：`e8d5834`（`feat: compose harness modules into runnable server`）。
+- 评审补记：spec reviewer 与 quality reviewer 派发均因 subagent 通道不可用由 controller 本地完成；Spec PASS，Quality Approved，无 Critical/Important，Minor 见 `.superpowers/sdd/PLAN/task-5.6-report.md`。
 
 ## 2026-08-05 Task 5.5：Final CI pass and deliverables（已完成）
 
