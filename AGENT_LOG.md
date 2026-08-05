@@ -3,6 +3,30 @@
 > 本文件按任务执行全程实时记录关键节点，不在任务完成后统一补写。
 > 每条记录包含：时间戳、task 编号、触发的 Superpowers 技能、关键 prompt/context、subagent 输出或 commit hash、人工干预、教训。
 
+## 2026-08-05 Task 5.1：Mock-LLM demos（已完成）
+
+- 范围：Phase 5 的 mock-LLM 机制 demo 脚本与回归测试。
+- 触发的技能：`subagent-driven-development`、`test-driven-development`、`using-git-worktrees`
+- Implementer：implementer subagent（本会话）
+- 分支：`worktree-task-5.1-demos`，基于 `dev`（commit `6492c23`）
+- Worktree：`.claude/worktrees/task-5.1-demos`
+- TDD 红：`ModuleNotFoundError: No module named 'examples'`（demo 模块尚不存在，收集阶段报错）
+- TDD 绿：`server/tests/test_examples.py -v` → `4 passed`
+- 新增文件：
+  - `examples/guardrail_demo.py`：`run_command("rm -rf /")` 分类为 `critical`
+  - `examples/feedback_demo.py`：`AgentLoop` + 自适应 `FeedbackAwareMockProvider`，失败注入 → `test_failure` → 改变下一步 → `success`
+  - `examples/context_demo.py`：`ContextAssembler` 预算内构建并触发 `LLMSummarizer`
+  - `examples/tool_error_demo.py`：`ToolExecutor` 捕获崩溃并返回 `ToolResult(ok=False, error='boom')`
+  - `server/tests/test_examples.py`：4 个 demo 回归测试
+- Demo 输出摘要：
+  - guardrail: `rm -rf /` → critical
+  - feedback timeline: `test_failure -> assert failed: test_app_basic`、`success -> all tests passed`，attempts `[1, 2]`
+  - context: `budget=90 used=69`，包含 summarizer 输出
+  - tool_error: `ok=False error='boom'`
+- 验证：四个 demo 均无网络、确定性输出；完整 server 套件 `316 passed, 1 skipped`（新增 4 个）；`git diff --check` 干净。
+- Commit：`62e903e`（demos + test_examples）
+- 教训：反馈时间线通过记录 provider 的 `request.messages` 快照重建；tool error 演示按 executor 实际行为打印 `ToolResult(ok=False)`，保持与真实行为一致。
+
 ## 2026-08-04 Phase 4 全量验证（已完成）
 
 - 范围：Task 4.1-4.11 全部完成，分支 `worktree-phase-4`。
