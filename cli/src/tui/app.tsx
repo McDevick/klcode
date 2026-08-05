@@ -19,6 +19,7 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { name: '/session', desc: '会话管理 new/open/rename/close/delete' },
   { name: '/config', desc: '打开配置向导' },
   { name: '/status', desc: '查看当前状态' },
+  { name: '/model', desc: '查看/切换模型' },
   { name: '/help', desc: '显示帮助' },
   { name: '/abort', desc: '中止当前任务' },
   { name: '/pause', desc: '暂停任务' },
@@ -145,6 +146,36 @@ export function App() {
     }
     if (commandName === '/config') {
       pushMessage('agent', '配置请使用 CLI 命令：kl config provider add / kl config key set', 'info');
+      return;
+    }
+    if (commandName === '/model') {
+      const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
+      if (args.length === 0) {
+        client
+          .getModelConfig()
+          .then((state) => {
+            const lines = [
+              `当前: ${state.provider} / ${state.model}`,
+              '可用:',
+              ...state.available.map((item) => `  ${item.provider}: ${item.model}`),
+            ];
+            pushMessage('agent', lines.join('\n'), 'info');
+          })
+          .catch((error: unknown) => {
+            pushMessage('agent', `模型配置读取失败: ${String(error)}`, 'error');
+          });
+        return;
+      }
+      const provider = args[0];
+      const model = args[1];
+      client
+        .setModelConfig(model ? { provider, model } : { provider })
+        .then((state) => {
+          pushMessage('agent', `模型已切换: ${state.provider} / ${state.model}`, 'done');
+        })
+        .catch((error: unknown) => {
+          pushMessage('agent', `模型切换失败: ${String(error)}`, 'error');
+        });
       return;
     }
     if (commandName === '/abort' || commandName === '/pause' || commandName === '/continue') {

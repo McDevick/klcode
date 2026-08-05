@@ -168,18 +168,18 @@ test('slash menu opens on / and arrow selection fills the input', async () => {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('/');
     // 命令面板出现（测试视口较矮，断言窗口底部靠输入框的可见项）
-    await waitFor(() => (lastFrame() ?? '').includes('继续任务'));
-    expect(lastFrame()).toContain('继续任务');
+    await waitFor(() => (lastFrame() ?? '').includes('暂停任务'));
+    expect(lastFrame()).toContain('暂停任务');
 
-    // 滚动窗口：ArrowDown 一路到 /exit（index 8）后菜单滚动显示底部命令
-    for (let i = 0; i < 8; i += 1) {
+    // 滚动窗口：ArrowDown 一路到 /exit（index 9）后菜单滚动显示底部命令
+    for (let i = 0; i < 9; i += 1) {
       stdin.write('[B');
     }
     await sleep(30);
     expect(lastFrame()).toContain('退出 TUI');
 
     // ArrowDown 回到 index 1（/session），Enter 填入输入框
-    for (let i = 0; i < 7; i += 1) {
+    for (let i = 0; i < 8; i += 1) {
       stdin.write('[A');
     }
     await sleep(30);
@@ -325,6 +325,70 @@ test('app exits on /exit', async () => {
     expect(exitSpy).toHaveBeenCalledWith(0);
   } finally {
     exitSpy.mockRestore();
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app /model shows current and available models', async () => {
+  // 第 1 次 fetch：App 初始化创建 session；第 2 次 fetch：/model 读取模型配置
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(sessionResponse)
+    .mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        provider: 'mock',
+        model: 'mock-model',
+        available: [{ provider: 'mock', model: 'mock-model', base_url: '' }],
+      }),
+    });
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('/model');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('当前: mock / mock-model'));
+    expect(lastFrame()).toContain('当前: mock / mock-model');
+    expect(lastFrame()).toContain('mock: mock-model');
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app /model <provider> switches model via api', async () => {
+  // 第 1 次 fetch：创建 session；第 2 次 fetch：/model 切换（POST）
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(sessionResponse)
+    .mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        provider: 'deepseek',
+        model: 'deepseek-chat',
+        available: [{ provider: 'deepseek', model: 'deepseek-chat', base_url: 'https://api.deepseek.com/v1' }],
+      }),
+    });
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('/model deepseek');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('模型已切换: deepseek / deepseek-chat'));
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:8700/api/v1/config/model',
+      expect.objectContaining({ method: 'POST', body: expect.stringContaining('"provider":"deepseek"') }),
+    );
+  } finally {
     unmount();
     vi.unstubAllGlobals();
     restore();
