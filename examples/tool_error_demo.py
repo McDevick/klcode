@@ -4,9 +4,9 @@ import asyncio
 import sys
 from pathlib import Path
 
-_SERVER_DIR = Path(__file__).resolve().parent.parent / "server"
-if str(_SERVER_DIR) not in sys.path:
-    sys.path.insert(0, str(_SERVER_DIR))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _demo_import import ensure_kl_server_importable  # noqa: E402
+ensure_kl_server_importable()
 
 from kl_server.core.tool_executor import ToolExecutor  # noqa: E402
 from kl_server.models.action import ToolResult  # noqa: E402

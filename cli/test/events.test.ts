@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { connectTaskEvents, type TaskEvent } from '../src/api/events';
 
 test('connectTaskEvents parses valid events and ignores malformed ones', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'kl-events-no-token-'));
+  const tokenPath = join(dir, 'missing.token');
   class FakeWebSocket {
     url: string;
     onmessage: ((event: { data: string }) => void) | null = null;
@@ -20,6 +22,7 @@ test('connectTaskEvents parses valid events and ignores malformed ones', () => {
   const received: TaskEvent[] = [];
   const socket = connectTaskEvents('t1', (event) => received.push(event), {
     baseUrl: 'http://example.com/',
+    tokenPath,
   }) as unknown as FakeWebSocket;
 
   try {
@@ -29,6 +32,7 @@ test('connectTaskEvents parses valid events and ignores malformed ones', () => {
     socket.onmessage?.({ data: JSON.stringify({ task_id: 't1' }) });
     expect(received).toEqual([{ task_id: 't1', event: 'ok' }]);
   } finally {
+    rmSync(dir, { recursive: true, force: true });
     (globalThis as { WebSocket: unknown }).WebSocket = original;
   }
 });

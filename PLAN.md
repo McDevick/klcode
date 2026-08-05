@@ -255,7 +255,7 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 5.3 | Distribution polish | Done (`6ec8c2c`, `6453879`, `93f381a`) |
 | 5.4 | Process docs and reflection | Done (`30218d2`, `0bfbfb8`, `729b71d`) |
 | 5.5 | Final CI pass and deliverables | Done (`666231f`, `ff30fb1`) |
-| 5.6 | Application bootstrap and server composition | Pending (remaining task) |
+| 5.6 | Application bootstrap and server composition | Done (`e8d5834`) |
 
 Every task opens a `AGENT_LOG.md` entry before implementation and updates it in real time. Every completed task also updates this table and the relevant `- [ ]` checkboxes in this file.
 
@@ -5156,7 +5156,7 @@ The individual harness modules exist after earlier phases, but nothing composes 
 - Modify: `server/kl_server/api/routes.py`
 - Test: `server/tests/test_bootstrap.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from kl_server.bootstrap import build_app_dependencies
@@ -5185,12 +5185,12 @@ def test_bootstrap_registers_providers_tools_and_managers(tmp_path):
     assert deps.tool_registry.get("task_manage") is not None
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `python -m pytest server/tests/test_bootstrap.py -v`
 Expected: FAIL with missing `bootstrap` module.
 
-- [ ] **Step 3: Implement bootstrap**
+- [x] **Step 3: Implement bootstrap**
 
 Create `server/kl_server/bootstrap.py`:
 
@@ -5493,12 +5493,12 @@ token_path.write_text(auth_token, encoding="utf-8")
 app = create_app(deps=deps, auth_token=auth_token)
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `python -m pytest server/tests/test_bootstrap.py server/tests/test_ws.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/kl_server/bootstrap.py server/kl_server/main.py server/kl_server/api server/kl_server/tools/builtin server/tests/test_bootstrap.py
