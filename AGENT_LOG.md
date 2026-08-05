@@ -24,6 +24,7 @@
 - 人工干预：无。
 - 教训：clean worktree 必须先 `npm ci` 才能运行 CLI 测试；测试与 YAML 校验全部通过后再提交状态文档。任务 5.5 的主提交内容无法引用自身哈希，因此哈希记录在本日志与最终报告。
 - 补记：主提交 `666231f`（`docs: mark implementation plan complete`）。
+- 评审补记：spec reviewer subagent `019fcfc8-9273-7c01-92fb-7fc23455d0ef` 返回 Spec PASS，要求修正技能名、implementer ID，并建议把 5.5 哈希直接写入 PLAN 表；修复提交 `e637748`、`0508201` 后复评包 `729b71d..0508201` 干净。质量评审阶段 subagent 通道不可用，由 controller 本地完成：无 Critical/Important，Approved。
 
 ## 2026-08-05 Task 5.4：Process docs and reflection（已完成）
 
