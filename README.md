@@ -54,29 +54,67 @@ cd cli
 npm test
 ```
 
-### 启动服务端（daemon）
+### 使用虚拟环境（venv）
 
 > **必须用项目虚拟环境（venv），不要用系统 `python`**：系统 Python 可能未装依赖，或装有旧版本的 kl-server，会导致接口报错（如创建 session 返回 500）。
 
-什么是 venv：它是项目目录里的一个隔离 Python 环境，本项目的依赖（fastapi / uvicorn / aiosqlite 等）都已装在其中。**"用 venv"不需要激活，直接调用 venv 里的 `python.exe` 即可**。
+venv 是项目目录里的一个隔离 Python 环境，本项目的依赖（fastapi / uvicorn / aiosqlite 等）都已装在其中。本仓库开发 venv 位于 `.superpowers\sdd\PLAN\venv\`。
+
+#### 方式一：激活 venv 后使用（推荐）
+
+在 PowerShell 中激活（激活后**当前终端**的提示符会变成 `(venv) PS ...>`，之后 `python` 命令就指向 venv）：
 
 ```powershell
-# ✅ 推荐：直接调用 venv 的 python.exe（复制整行运行，无需激活）
-E:\projects\SimpleCodingAgent\.superpowers\sdd\PLAN\venv\Scripts\python.exe -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700
-
-# 可选：先激活 venv，之后当前终端里 `python` 就指向 venv（新开终端需重新激活）
 & E:\projects\SimpleCodingAgent\.superpowers\sdd\PLAN\venv\Scripts\Activate.ps1
-python -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700
-
-# 或已安装 server[dev] 后使用 console 入口：
-kl-server
 ```
 
-如果你的环境里还没有 venv，创建并安装依赖：
+如果报错 `...因为在此系统上禁止运行脚本...`，先放开执行策略（仅对当前用户生效，执行一次即可）：
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+然后**重新执行激活命令**。验证是否激活成功：
+
+```powershell
+Get-Command python
+# 路径应显示 ...\.superpowers\sdd\PLAN\venv\Scripts\python.exe 而不是系统 Python
+```
+
+激活后即可直接使用 `python` 启动服务端：
+
+```powershell
+python -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700
+```
+
+> 注意：激活只对**当前终端窗口**生效，新开终端需要重新激活；退出环境用 `deactivate`。
+
+#### 方式二：不激活，直接调用 venv 的 python.exe（最简单，无需任何前置）
+
+```powershell
+E:\projects\SimpleCodingAgent\.superpowers\sdd\PLAN\venv\Scripts\python.exe -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700
+```
+
+复制整行运行即可，不需要激活、不需要执行策略设置。
+
+#### 如果还没有 venv，创建并安装依赖
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -e "server[dev]"
+```
+
+### 启动服务端（daemon）
+
+venv 就绪后（方式一或方式二均可），启动服务端：
+
+```powershell
+# 方式二（不激活，直接调用 venv 的 python.exe）：
+E:\projects\SimpleCodingAgent\.superpowers\sdd\PLAN\venv\Scripts\python.exe -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700
+# 方式一（已激活 venv）：
+python -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700
+# 或已安装 server[dev] 后使用 console 入口：
+kl-server
 ```
 
 首次启动会自动创建 `~/.kl/daemon.token`，并在当前目录（workspace）生成 `.kl/`（`config.yaml`、`kl.db`、`audit.jsonl`、`memory.db`）。缺少 `config.yaml` 也能启动，默认 provider 为 `mock`。
