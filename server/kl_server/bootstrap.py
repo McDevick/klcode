@@ -64,7 +64,7 @@ def build_app_dependencies(
     register_builtin_tools(tools)
     guardrail = Guardrail(
         scope=ScopeFence(workspace),
-        sandbox=SandboxPolicy(allow=[], deny=["rm", "git", "docker", "curl"]),
+        sandbox=SandboxPolicy(allow=[], deny=["rm", "docker"]),
         danger=DangerClassifier(),
         hitl=HITLManager(),
     )

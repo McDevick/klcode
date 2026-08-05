@@ -138,3 +138,27 @@ async def test_task_requires_existing_session(tmp_path):
             await tasks.create(Task(id="orphan", session_id="missing", description="x"))
     finally:
         await db.close()
+
+
+@pytest.mark.asyncio
+async def test_session_manager_list_update_delete(tmp_path):
+    db = Database(tmp_path / "kl.db")
+    sessions = SessionManager(db)
+    try:
+        first = Session(id="s1", workspace=str(tmp_path), name="first")
+        second = Session(id="s2", workspace=str(tmp_path), name="second")
+        await sessions.create(first)
+        await sessions.create(second)
+
+        assert sorted(session.id for session in await sessions.list()) == ["s1", "s2"]
+
+        first.name = "renamed"
+        await sessions.update(first)
+        assert (await sessions.get("s1")).name == "renamed"
+
+        await sessions.delete("s1")
+        assert [session.id for session in await sessions.list()] == ["s2"]
+        with pytest.raises(KeyError):
+            await sessions.delete("s1")
+    finally:
+        await db.close()

@@ -27,12 +27,17 @@ def build_ws_router(auth_token: str | None = None, hitl=None) -> APIRouter:
 
     @router.websocket("/ws/tasks/{task_id}")
     async def task_events(websocket: WebSocket, task_id: str) -> None:
-        if auth_token is not None:
+        effective_token = (
+            auth_token
+            if auth_token is not None
+            else getattr(websocket.app.state, "auth_token", None)
+        )
+        if effective_token is not None:
             auth = websocket.headers.get("Authorization", "")
-            expected = f"Bearer {auth_token}"
+            expected = f"Bearer {effective_token}"
             query_token = websocket.query_params.get("token")
             valid_header = secrets.compare_digest(auth, expected)
-            valid_query = query_token is not None and secrets.compare_digest(query_token, auth_token)
+            valid_query = query_token is not None and secrets.compare_digest(query_token, effective_token)
             if not valid_header and not valid_query:
                 await websocket.close(code=1008)
                 return

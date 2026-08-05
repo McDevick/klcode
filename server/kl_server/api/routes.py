@@ -37,6 +37,22 @@ def build_router() -> APIRouter:
     next_session_id = 1
     next_task_id = 1
 
+    def session_dict(session: Session) -> dict:
+        return {
+            "id": session.id,
+            "workspace": session.workspace,
+            "name": session.name,
+            "status": session.status,
+        }
+
+    def task_dict(task: Task) -> dict:
+        return {
+            "id": task.id,
+            "session_id": task.session_id,
+            "description": task.description,
+            "status": task.status.value,
+        }
+
     router = APIRouter(prefix="/api/v1")
 
     @router.get("/ping")
@@ -44,7 +60,10 @@ def build_router() -> APIRouter:
         return {"status": "pong"}
 
     @router.get("/sessions")
-    def list_sessions():
+    async def list_sessions(request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is not None:
+            return [session_dict(session) for session in await deps.sessions.list()]
         return list(sessions.values())
 
     @router.post("/sessions")
@@ -60,24 +79,36 @@ def build_router() -> APIRouter:
         if deps is not None:
             await deps.sessions.create(session)
         next_session_id += 1
-        record = {
-            "id": session.id,
-            "workspace": session.workspace,
-            "name": session.name,
-            "status": session.status,
-        }
-        sessions[session.id] = record
+        record = session_dict(session)
+        if deps is None:
+            sessions[session.id] = record
         return record
 
     @router.get("/sessions/{session_id}")
-    def get_session(session_id: str):
+    async def get_session(session_id: str, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is not None:
+            try:
+                session = await deps.sessions.get(session_id)
+            except KeyError:
+                raise HTTPException(status_code=404, detail="session not found")
+            return session_dict(session)
         session = sessions.get(session_id)
         if session is None:
             raise HTTPException(status_code=404, detail="session not found")
         return session
 
     @router.patch("/sessions/{session_id}")
-    def rename_session(session_id: str, payload: RenameSessionPayload):
+    async def rename_session(session_id: str, payload: RenameSessionPayload, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is not None:
+            try:
+                session = await deps.sessions.get(session_id)
+            except KeyError:
+                raise HTTPException(status_code=404, detail="session not found")
+            session.name = payload.name
+            await deps.sessions.update(session)
+            return session_dict(session)
         session = sessions.get(session_id)
         if session is None:
             raise HTTPException(status_code=404, detail="session not found")
@@ -85,7 +116,16 @@ def build_router() -> APIRouter:
         return session
 
     @router.post("/sessions/{session_id}/close")
-    def close_session(session_id: str):
+    async def close_session(session_id: str, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is not None:
+            try:
+                session = await deps.sessions.get(session_id)
+            except KeyError:
+                raise HTTPException(status_code=404, detail="session not found")
+            session.status = "closed"
+            await deps.sessions.update(session)
+            return session_dict(session)
         session = sessions.get(session_id)
         if session is None:
             raise HTTPException(status_code=404, detail="session not found")
@@ -93,7 +133,14 @@ def build_router() -> APIRouter:
         return session
 
     @router.delete("/sessions/{session_id}")
-    def delete_session(session_id: str):
+    async def delete_session(session_id: str, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is not None:
+            try:
+                await deps.sessions.delete(session_id)
+            except KeyError:
+                raise HTTPException(status_code=404, detail="session not found")
+            return Response(status_code=204)
         if sessions.pop(session_id, None) is None:
             raise HTTPException(status_code=404, detail="session not found")
         return Response(status_code=204)
@@ -111,17 +158,20 @@ def build_router() -> APIRouter:
         if deps is not None:
             await deps.tasks.create(task)
         next_task_id += 1
-        record = {
-            "id": task.id,
-            "session_id": task.session_id,
-            "description": task.description,
-            "status": task.status.value,
-        }
-        tasks[task.id] = record
+        record = task_dict(task)
+        if deps is None:
+            tasks[task.id] = record
         return record
 
     @router.get("/tasks/{task_id}")
-    def get_task(task_id: str):
+    async def get_task(task_id: str, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is not None:
+            try:
+                task = await deps.tasks.get(task_id)
+            except KeyError:
+                raise HTTPException(status_code=404, detail="task not found")
+            return task_dict(task)
         task = tasks.get(task_id)
         if task is None:
             raise HTTPException(status_code=404, detail="task not found")

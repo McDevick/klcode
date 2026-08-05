@@ -39,17 +39,40 @@ def test_bootstrap_registers_providers_tools_and_managers(tmp_path):
 def test_bootstrap_wires_api_routes_to_deps(tmp_path):
     class FakeSessions:
         def __init__(self):
-            self.created = None
+            self.store = {}
 
         async def create(self, session):
-            self.created = session
+            self.store[session.id] = session
+
+        async def list(self):
+            return list(self.store.values())
+
+        async def get(self, session_id):
+            if session_id not in self.store:
+                raise KeyError(session_id)
+            return self.store[session_id]
+
+        async def update(self, session):
+            if session.id not in self.store:
+                raise KeyError(session.id)
+            self.store[session.id] = session
+
+        async def delete(self, session_id):
+            if session_id not in self.store:
+                raise KeyError(session_id)
+            del self.store[session_id]
 
     class FakeTasks:
         def __init__(self):
-            self.created = None
+            self.store = {}
 
         async def create(self, task):
-            self.created = task
+            self.store[task.id] = task
+
+        async def get(self, task_id):
+            if task_id not in self.store:
+                raise KeyError(task_id)
+            return self.store[task_id]
 
     deps = SimpleNamespace(sessions=FakeSessions(), tasks=FakeTasks())
     client = TestClient(create_app(deps=deps))
@@ -61,13 +84,49 @@ def test_bootstrap_wires_api_routes_to_deps(tmp_path):
     assert created.status_code == 200
     session = created.json()
     assert session["id"]
-    assert deps.sessions.created.id == session["id"]
-    assert deps.sessions.created.workspace == str(tmp_path)
+    assert deps.sessions.store[session["id"]].workspace == str(tmp_path)
+
+    listed = client.get("/api/v1/sessions")
+    assert listed.json() == [session]
+
+    fetched = client.get(f"/api/v1/sessions/{session['id']}")
+    assert fetched.json() == session
+
+    renamed = client.patch(f"/api/v1/sessions/{session['id']}", json={"name": "renamed"})
+    assert renamed.json()["name"] == "renamed"
+    assert deps.sessions.store[session["id"]].name == "renamed"
+
+    closed = client.post(f"/api/v1/sessions/{session['id']}/close")
+    assert closed.json()["status"] == "closed"
+    assert deps.sessions.store[session["id"]].status == "closed"
 
     task = client.post(
         "/api/v1/tasks",
         json={"session_id": session["id"], "description": "compose server"},
     )
     assert task.status_code == 200
-    assert deps.tasks.created.session_id == session["id"]
-    assert deps.tasks.created.description == "compose server"
+    assert deps.tasks.store[task.json()["id"]].description == "compose server"
+    fetched_task = client.get(f"/api/v1/tasks/{task.json()['id']}")
+    assert fetched_task.json() == task.json()
+
+    deleted = client.delete(f"/api/v1/sessions/{session['id']}")
+    assert deleted.status_code == 204
+    assert client.get(f"/api/v1/sessions/{session['id']}").status_code == 404
+
+
+def test_bootstrap_sandbox_allows_git_and_curl(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("", encoding="utf-8")
+    deps = build_app_dependencies(
+        config_path=config_path,
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+    sandbox = deps.executor.guardrail.sandbox
+
+    assert sandbox.allow_command("git status") is True
+    assert sandbox.allow_command("curl -I https://example.com") is True
+    assert sandbox.allow_command("rm -rf .") is False
+    assert sandbox.allow_command("docker ps") is False
