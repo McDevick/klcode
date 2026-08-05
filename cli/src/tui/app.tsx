@@ -18,14 +18,33 @@ interface ApprovalRequest {
   level: string;
 }
 
+type EventKind = 'info' | 'success' | 'error' | 'warning';
+
+interface UiEvent {
+  text: string;
+  kind: EventKind;
+}
+
+const EVENT_COLORS: Record<EventKind, string> = {
+  info: 'white',
+  success: 'green',
+  error: 'red',
+  warning: 'yellow',
+};
+
 export function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
-  const [events, setEvents] = useState<string[]>([]);
+  const [taskStatus, setTaskStatus] = useState('idle');
+  const [events, setEvents] = useState<UiEvent[]>([]);
   const [approval, setApproval] = useState<ApprovalRequest | null>(null);
   const [showConfig, setShowConfig] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const inputRef = useRef('');
+
+  const pushEvent = (text: string, kind: EventKind = 'info') => {
+    setEvents((current) => [...current, { text, kind }]);
+  };
 
   useEffect(() => {
     const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
@@ -33,10 +52,10 @@ export function App() {
       .createSession({ workspace: process.cwd() })
       .then((session) => {
         setSessionId(session.id);
-        setEvents((current) => [...current, `session ${session.id} ready`]);
+        pushEvent(`session ${session.id} ready`, 'success');
       })
       .catch((error: unknown) => {
-        setEvents((current) => [...current, `session error: ${String(error)}`]);
+        pushEvent(`session error: ${String(error)}`, 'error');
       });
   }, []);
 
@@ -50,13 +69,26 @@ export function App() {
           command: JSON.stringify(event.args),
           level: String(event.level),
         });
+        pushEvent(
+          `approval required (${String(event.level)}): ${String(event.tool)} ${JSON.stringify(event.args)}`,
+          'warning',
+        );
         return;
       }
       if (event.event === 'task_end') {
-        setEvents((current) => [...current, `task ${taskId} ended: ${String(event.status)}`]);
+        const status = String(event.status);
+        setTaskStatus(status);
+        pushEvent(
+          `task ${taskId} ended: ${status}`,
+          status === 'succeeded' ? 'success' : status === 'failed' ? 'error' : 'warning',
+        );
         return;
       }
-      setEvents((current) => [...current, String(event.event)]);
+      if (event.event === 'error') {
+        pushEvent(String(event.error ?? 'error'), 'error');
+        return;
+      }
+      pushEvent(String(event.event));
     });
     return () => {
       socket.close?.();
@@ -75,25 +107,19 @@ export function App() {
         process.exit(0);
       }
       if (commandName === '/help') {
-        setEvents((current) => [
-          ...current,
-          commands.help(),
-          '/status /abort /pause /continue /exit',
-        ]);
+        pushEvent(commands.help());
+        pushEvent('/status /abort /pause /continue /exit');
         return;
       }
       if (commandName === '/status') {
-        setEvents((current) => [
-          ...current,
-          `session: ${sessionId ?? 'none'}`,
-          `task: ${taskId ?? 'none'}`,
-          `approval: ${approval !== null ? 'pending' : 'none'}`,
-        ]);
+        pushEvent(
+          `session: ${sessionId ?? 'none'}  task: ${taskId ?? 'none'}  status: ${taskStatus}  approval: ${approval !== null ? 'pending' : 'none'}`,
+        );
         return;
       }
       if (commandName === '/abort' || commandName === '/pause' || commandName === '/continue') {
         if (taskId === null) {
-          setEvents((current) => [...current, `${commandName}: no task`]);
+          pushEvent(`${commandName}: no task`, 'warning');
           return;
         }
         const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
@@ -105,10 +131,11 @@ export function App() {
               : client.continueTask(taskId);
         void action
           .then((result) => {
-            setEvents((current) => [...current, `task ${result.status}`]);
+            setTaskStatus(result.status);
+            pushEvent(`task ${result.status}`);
           })
           .catch((error: unknown) => {
-            setEvents((current) => [...current, `task error: ${String(error)}`]);
+            pushEvent(`task error: ${String(error)}`, 'error');
           });
         return;
       }
@@ -116,18 +143,18 @@ export function App() {
         const command = commands.resolve(commandName);
         void Promise.resolve(command.run(args))
           .then((result: string) => {
-            setEvents((current) => [...current, result]);
+            pushEvent(result);
           })
           .catch((error: unknown) => {
-            setEvents((current) => [...current, `command error: ${String(error)}`]);
+            pushEvent(`command error: ${String(error)}`, 'error');
           });
       } catch {
-        setEvents((current) => [...current, `unknown command: ${commandName}`]);
+        pushEvent(`unknown command: ${commandName}`, 'warning');
       }
       return;
     }
     if (sessionId === null) {
-      setEvents((current) => [...current, 'task error: no session']);
+      pushEvent('task error: no session', 'error');
       return;
     }
     const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
@@ -135,14 +162,16 @@ export function App() {
       .createTask(value, sessionId)
       .then((task) => {
         setTaskId(task.id);
-        setEvents((current) => [...current, `task ${task.id} created`]);
+        setTaskStatus('pending');
+        pushEvent(`task ${task.id} created`);
         return client.runTask(task.id);
       })
       .then(() => {
-        setEvents((current) => [...current, 'task running']);
+        setTaskStatus('running');
+        pushEvent('task running');
       })
       .catch((error: unknown) => {
-        setEvents((current) => [...current, `task error: ${String(error)}`]);
+        pushEvent(`task error: ${String(error)}`, 'error');
       });
   };
 
@@ -184,15 +213,39 @@ export function App() {
     setInputValue(inputRef.current);
   });
 
+  const statusColor =
+    taskStatus === 'failed'
+      ? 'red'
+      : taskStatus === 'succeeded' || taskStatus === 'canceled'
+        ? 'green'
+        : taskStatus === 'running'
+          ? 'cyan'
+          : 'white';
+
   return (
     <Box flexDirection="column">
-      <Text>KL Code</Text>
-      <TaskInput value={inputValue} />
-      <Text>{events.join('\n')}</Text>
-      {showConfig ? <ConfigWizard /> : null}
+      <Box borderStyle="single" borderColor="cyan" paddingX={1}>
+        <Text bold color="cyan">
+          KL Code
+        </Text>
+        <Text> session: {sessionId ?? 'none'}</Text>
+        <Text> task: {taskId ?? 'none'}</Text>
+        <Text color={statusColor}> status: {taskStatus}</Text>
+      </Box>
+      <Box flexGrow={1} flexDirection="column" paddingX={1}>
+        {events.map((event, index) => (
+          <Text key={index} color={EVENT_COLORS[event.kind]}>
+            {event.text}
+          </Text>
+        ))}
+      </Box>
       {approval ? (
         <ApprovalPanel tool={approval.tool} command={approval.command} level={approval.level} />
-      ) : null}
+      ) : showConfig ? (
+        <ConfigWizard />
+      ) : (
+        <TaskInput value={inputValue} />
+      )}
     </Box>
   );
 }
