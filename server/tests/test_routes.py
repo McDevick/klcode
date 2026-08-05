@@ -1,10 +1,23 @@
 from fastapi.testclient import TestClient
 
 from kl_server.api.app import create_app
+from kl_server.bootstrap import build_app_dependencies
+from kl_server.config.credentials import InMemoryCredentialStore
 
 
 def make_client():
     return TestClient(create_app())
+
+
+def make_deps_client(tmp_path):
+    deps = build_app_dependencies(
+        config_path=tmp_path / "config.yaml",
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+    return TestClient(create_app(deps=deps))
 
 
 def create_session(client, workspace="C:\\work", name=None):
@@ -100,6 +113,33 @@ def test_missing_task_returns_not_found():
     response = client.get("/api/v1/tasks/missing")
 
     assert response.status_code == 404
+
+
+def test_task_create_with_missing_session_returns_404_with_deps(tmp_path):
+    client = make_deps_client(tmp_path)
+
+    response = client.post(
+        "/api/v1/tasks",
+        json={"session_id": "missing", "description": "orphan task"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_task_create_with_existing_session_succeeds_with_deps(tmp_path):
+    client = make_deps_client(tmp_path)
+
+    session = client.post(
+        "/api/v1/sessions",
+        json={"workspace": str(tmp_path), "name": "main"},
+    ).json()
+    response = client.post(
+        "/api/v1/tasks",
+        json={"session_id": session["id"], "description": "valid task"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["session_id"] == session["id"]
 
 
 def test_config_check_reports_mock_provider():

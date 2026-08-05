@@ -1,7 +1,9 @@
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 
-from kl_server.models.task import Session, Task
+from kl_server.models.task import Session, Task, TaskStatus
 
 
 class CreateSessionPayload(BaseModel):
@@ -156,6 +158,10 @@ def build_router() -> APIRouter:
             description=payload.description,
         )
         if deps is not None:
+            try:
+                await deps.sessions.get(payload.session_id)
+            except KeyError:
+                raise HTTPException(status_code=404, detail="session not found")
             await deps.tasks.create(task)
         next_task_id += 1
         record = task_dict(task)
@@ -176,6 +182,32 @@ def build_router() -> APIRouter:
         if task is None:
             raise HTTPException(status_code=404, detail="task not found")
         return task
+
+    @router.post("/tasks/{task_id}/run", status_code=202)
+    async def run_task(task_id: str, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is None:
+            raise HTTPException(
+                status_code=501,
+                detail="task execution requires a configured server",
+            )
+        try:
+            task = await deps.tasks.get(task_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="task not found")
+        try:
+            session = await deps.sessions.get(task.session_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="session not found")
+        task.status = TaskStatus.RUNNING
+        await deps.tasks.update(task)
+        loop = deps.loop
+        hub = getattr(request.app.state, "approval_hub", None)
+        if hub is not None and getattr(loop, "on_approval", None) is None:
+            loop.on_approval = lambda tid, info: hub.request(tid, info)
+        bus = getattr(request.app.state, "event_bus", None)
+        asyncio.create_task(_execute_task(deps, session, task, bus))
+        return {"status": "running"}
 
     @router.post("/config/check")
     def config_check(request: Request):
@@ -221,3 +253,29 @@ def build_router() -> APIRouter:
         return {"configured": False}
 
     return router
+
+
+async def _execute_task(deps, session, task, bus) -> None:
+    """Run a task through the composed agent loop and publish the outcome.
+
+    Runs in the background (spawned by ``run_task``); lifecycle events are
+    streamed to the event bus by the loop's forwarded logger.
+    """
+    try:
+        result = await deps.loop.run(session, task.description, task_id=task.id)
+    except Exception as exc:
+        task.status = TaskStatus.FAILED
+        await deps.tasks.update(task)
+        if bus is not None:
+            await bus.broadcast(
+                task.id,
+                {"event": "task_end", "status": "failed", "error": str(exc)[:500]},
+            )
+        return
+    task.status = TaskStatus.SUCCEEDED if result == "DONE" else TaskStatus.FAILED
+    await deps.tasks.update(task)
+    if bus is not None:
+        await bus.broadcast(
+            task.id,
+            {"event": "task_end", "status": task.status.value, "result": result},
+        )

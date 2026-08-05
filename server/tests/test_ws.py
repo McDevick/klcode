@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 from kl_server.api.app import create_app
+from kl_server.api.task_events import ApprovalHub, TaskEventBus
 from kl_server.core.guardrail import HITLManager
 
 
@@ -144,3 +145,21 @@ def test_task_websocket_requires_hitl_for_decision_messages():
         websocket.send_json({"event": "approve", "action_id": "a1"})
         data = websocket.receive_json()
         assert data["error"] == "hitl is not configured"
+
+
+def test_task_websocket_decision_notifies_approval_hub(monkeypatch):
+    bus = TaskEventBus()
+    hub = ApprovalHub(bus=bus)
+    resolved: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        hub, "resolve", lambda action_id, decision: resolved.append((action_id, decision))
+    )
+    hitl = HITLManager()
+    hitl.request("a1", "run_command", "x")
+    client = TestClient(create_app(hitl=hitl, bus=bus, hub=hub))
+
+    with client.websocket_connect("/ws/tasks/t1") as websocket:
+        websocket.send_json({"event": "approve", "action_id": "a1"})
+        websocket.receive_json()
+
+    assert resolved == [("a1", "approve")]

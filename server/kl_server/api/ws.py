@@ -1,29 +1,30 @@
-import asyncio
 import json
 import secrets
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from kl_server.api.task_events import ApprovalHub, TaskEventBus
 
-def build_ws_router(auth_token: str | None = None, hitl=None) -> APIRouter:
-    connections: dict[str, set[WebSocket]] = {}
-    lock = asyncio.Lock()
+
+def _effective_hitl(websocket: WebSocket, hitl) -> object | None:
+    if hitl is not None:
+        return hitl
+    deps = getattr(websocket.app.state, "deps", None)
+    if deps is not None:
+        executor = getattr(deps, "executor", None)
+        guardrail = getattr(executor, "guardrail", None) if executor is not None else None
+        return getattr(guardrail, "hitl", None)
+    return None
+
+
+def build_ws_router(
+    auth_token: str | None = None,
+    hitl=None,
+    bus: TaskEventBus | None = None,
+    hub: ApprovalHub | None = None,
+) -> APIRouter:
+    bus = bus or TaskEventBus()
     router = APIRouter()
-
-    async def broadcast(task_id: str, payload: dict) -> None:
-        async with lock:
-            sockets = set(connections.get(task_id, ()))
-        dead: list[WebSocket] = []
-        for websocket in sockets:
-            try:
-                await websocket.send_json({"task_id": task_id, **payload})
-            except Exception:
-                dead.append(websocket)
-        if dead:
-            async with lock:
-                sockets = connections.setdefault(task_id, set())
-                for websocket in dead:
-                    sockets.discard(websocket)
 
     @router.websocket("/ws/tasks/{task_id}")
     async def task_events(websocket: WebSocket, task_id: str) -> None:
@@ -42,8 +43,7 @@ def build_ws_router(auth_token: str | None = None, hitl=None) -> APIRouter:
                 await websocket.close(code=1008)
                 return
         await websocket.accept()
-        async with lock:
-            connections.setdefault(task_id, set()).add(websocket)
+        await bus.register(task_id, websocket)
         try:
             while True:
                 raw = await websocket.receive_text()
@@ -64,7 +64,8 @@ def build_ws_router(auth_token: str | None = None, hitl=None) -> APIRouter:
                             {"task_id": task_id, "error": "action_id is required", "event": decision}
                         )
                         continue
-                    if hitl is None:
+                    effective_hitl = _effective_hitl(websocket, hitl)
+                    if effective_hitl is None:
                         await websocket.send_json(
                             {
                                 "task_id": task_id,
@@ -76,11 +77,11 @@ def build_ws_router(auth_token: str | None = None, hitl=None) -> APIRouter:
                         continue
                     try:
                         if decision == "approve":
-                            state = hitl.approve(action_id)
+                            state = effective_hitl.approve(action_id)
                         elif decision == "reject":
-                            state = hitl.reject(action_id)
+                            state = effective_hitl.reject(action_id)
                         else:
-                            state = hitl.abort(action_id)
+                            state = effective_hitl.abort(action_id)
                     except ValueError as exc:
                         await websocket.send_json(
                             {
@@ -91,7 +92,9 @@ def build_ws_router(auth_token: str | None = None, hitl=None) -> APIRouter:
                             }
                         )
                         continue
-                    await broadcast(
+                    if hub is not None:
+                        hub.resolve(action_id, decision)
+                    await bus.broadcast(
                         task_id,
                         {
                             "event": "approval_result",
@@ -101,15 +104,10 @@ def build_ws_router(auth_token: str | None = None, hitl=None) -> APIRouter:
                         },
                     )
                     continue
-                await broadcast(task_id, payload)
+                await bus.broadcast(task_id, payload)
         except (WebSocketDisconnect, RuntimeError):
             pass
         finally:
-            async with lock:
-                sockets = connections.get(task_id)
-                if sockets is not None:
-                    sockets.discard(websocket)
-                    if not sockets:
-                        connections.pop(task_id, None)
+            await bus.unregister(task_id, websocket)
 
     return router

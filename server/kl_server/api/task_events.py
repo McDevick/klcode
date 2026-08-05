@@ -1,0 +1,109 @@
+"""Task event bus and approval hub bridging task execution to WebSocket clients."""
+
+import asyncio
+import logging
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+
+class TaskEventBus:
+    """Fan-out task events to subscribed WebSocket connections."""
+
+    def __init__(self) -> None:
+        self._connections: dict[str, set[Any]] = {}
+        self._lock = asyncio.Lock()
+
+    async def register(self, task_id: str, websocket: Any) -> None:
+        async with self._lock:
+            self._connections.setdefault(task_id, set()).add(websocket)
+
+    async def unregister(self, task_id: str, websocket: Any) -> None:
+        async with self._lock:
+            sockets = self._connections.get(task_id)
+            if sockets is None:
+                return
+            sockets.discard(websocket)
+            if not sockets:
+                self._connections.pop(task_id, None)
+
+    async def broadcast(self, task_id: str, payload: dict) -> None:
+        async with self._lock:
+            sockets = set(self._connections.get(task_id, ()))
+        dead: list[Any] = []
+        for websocket in sockets:
+            try:
+                await websocket.send_json({"task_id": task_id, **payload})
+            except Exception:
+                dead.append(websocket)
+        if dead:
+            async with self._lock:
+                sockets = self._connections.setdefault(task_id, set())
+                for websocket in dead:
+                    sockets.discard(websocket)
+
+    def emit_sync(self, task_id: str, payload: dict) -> None:
+        """Fire-and-forget broadcast from synchronous code (e.g. a logger).
+
+        Safe only when called inside a running event loop.
+        """
+        loop = asyncio.get_running_loop()
+        loop.create_task(self.broadcast(task_id, payload))
+
+
+class WsForwardingLogger:
+    """Wrap an EventLogger and forward every write to the event bus.
+
+    The agent loop writes lifecycle events through its ``logger``; wrapping it
+    lets task execution stream those events to WebSocket subscribers.
+    """
+
+    def __init__(self, inner, bus: TaskEventBus) -> None:
+        self._inner = inner
+        self._bus = bus
+
+    def write(self, event: str, payload: dict, task_id: str = "") -> None:
+        self._inner.write(event, payload, task_id)
+        self._bus.emit_sync(task_id, {"event": event, "payload": payload})
+
+
+class ApprovalHub:
+    """Coordinates HITL approval requests with waiting decision futures.
+
+    A task run publishes an approval request over the event bus, then awaits a
+    decision that WebSocket clients resolve via ``resolve()``. Unanswered
+    requests time out and default to ``reject``.
+    """
+
+    def __init__(self, bus: TaskEventBus, timeout: float = 120.0) -> None:
+        self.bus = bus
+        self.timeout = timeout
+        self._waiters: dict[str, asyncio.Future] = {}
+
+    async def request(self, task_id: str, info: dict) -> str:
+        action_id = info["action_id"]
+        await self.bus.broadcast(
+            task_id,
+            {
+                "event": "approval_request",
+                "action_id": action_id,
+                "tool": info.get("tool", ""),
+                "args": info.get("args", {}),
+                "level": info.get("level", ""),
+            },
+        )
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future = loop.create_future()
+        self._waiters[action_id] = future
+        try:
+            return await asyncio.wait_for(future, self.timeout)
+        except asyncio.TimeoutError:
+            logger.warning("approval request %s timed out; rejecting", action_id)
+            return "reject"
+        finally:
+            self._waiters.pop(action_id, None)
+
+    def resolve(self, action_id: str, decision: str) -> None:
+        future = self._waiters.get(action_id)
+        if future is not None and not future.done():
+            future.set_result(decision)
