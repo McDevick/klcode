@@ -14,6 +14,23 @@ class LoopSettings:
     max_iterations: int = 10
 
 
+# Instructs a real (non-mock) LLM about the action protocol the loop drives.
+# The agent loop only accepts "DONE" or a JSON action object; without this
+# prompt a real model replies with free text and the loop bounces it back as
+# invalid_action until max_iterations.
+SYSTEM_PROMPT = (
+    "You are an autonomous coding agent operating in a local workspace. "
+    "You accomplish the task by calling tools from the tool catalog listed "
+    "in the context message below.\n"
+    "RESPONSE FORMAT (strict):\n"
+    "- To take an action, reply with ONLY one JSON object of the form "
+    '{"tool": "<tool_name>", "args": {<argument name>: <value>, ...}}.\n'
+    "- When the task is fully complete, reply with exactly DONE.\n"
+    "Any other free text is treated as an error and sent back to you. "
+    "Use one of the two formats above, nothing else."
+)
+
+
 class AgentLoop:
     def __init__(
         self,
@@ -44,11 +61,12 @@ class AgentLoop:
             self.logger.write("loop_start", {"task": task[:500]}, task_id)
         if self.hooks:
             self.hooks.run("task_start", {"task": task[:500]})
+        system_message = {"role": "system", "content": SYSTEM_PROMPT}
         for iteration in range(self.settings.max_iterations):
             if self.logger:
                 self.logger.write("llm_call", {"iteration": iteration}, task_id)
             try:
-                request_messages = history
+                request_messages = [system_message, *history]
                 if self.context is not None:
                     memory_entries = (
                         await self.memory.find([session.id, task_id])
@@ -74,9 +92,17 @@ class AgentLoop:
                             else ""
                         ),
                     )
-                    request_messages = [{"role": "user", "content": assembled.text}]
+                    request_messages = [
+                        system_message,
+                        {"role": "user", "content": assembled.text},
+                    ]
+                # Sessions default to the mock model name; forward the provider's
+                # configured default model so real providers receive a valid id.
+                model = session.model
+                if not model or model == "mock-model":
+                    model = getattr(self.provider, "model", None) or model
                 response = await self.provider.complete(
-                    ProviderRequest(messages=request_messages, model=session.model)
+                    ProviderRequest(messages=request_messages, model=model)
                 )
             except Exception as exc:
                 if self.logger:
