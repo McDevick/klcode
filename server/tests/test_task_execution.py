@@ -13,14 +13,18 @@ from kl_server.providers.base import ProviderResponse
 from kl_server.providers.mock import MockProvider
 
 
-def make_deps(tmp_path):
-    return build_app_dependencies(
+def make_deps(tmp_path, provider=None):
+    deps = build_app_dependencies(
         config_path=tmp_path / "config.yaml",
         db_path=tmp_path / "kl.db",
         workspace=str(tmp_path),
         log_path=tmp_path / "audit.jsonl",
         credential_store=InMemoryCredentialStore(),
     )
+    if provider is not None:
+        deps.provider_registry.register("test", provider)
+        deps.config.default_provider = "test"
+    return deps
 
 
 def create_session_and_task(client, tmp_path, description="do it"):
@@ -43,12 +47,14 @@ def wait_for_terminal_status(client, task_id, timeout=5.0):
 
 
 def test_run_task_executes_with_mock_provider_and_updates_status(tmp_path):
-    deps = make_deps(tmp_path)
-    deps.loop.provider = MockProvider(
-        responses=[
-            json.dumps({"tool": "run_command", "args": {"command": "echo ok"}}),
-            "DONE",
-        ]
+    deps = make_deps(
+        tmp_path,
+        MockProvider(
+            responses=[
+                json.dumps({"tool": "run_command", "args": {"command": "echo ok"}}),
+                "DONE",
+            ]
+        ),
     )
     with TestClient(create_app(deps=deps)) as client:
         _, task = create_session_and_task(client, tmp_path)
@@ -61,12 +67,14 @@ def test_run_task_executes_with_mock_provider_and_updates_status(tmp_path):
 
 
 def test_run_task_streams_events_to_ws_subscribers(tmp_path):
-    deps = make_deps(tmp_path)
-    deps.loop.provider = MockProvider(
-        responses=[
-            json.dumps({"tool": "run_command", "args": {"command": "echo ok"}}),
-            "DONE",
-        ]
+    deps = make_deps(
+        tmp_path,
+        MockProvider(
+            responses=[
+                json.dumps({"tool": "run_command", "args": {"command": "echo ok"}}),
+                "DONE",
+            ]
+        ),
     )
     with TestClient(create_app(deps=deps)) as client:
         _, task = create_session_and_task(client, tmp_path)
@@ -89,12 +97,14 @@ def test_run_task_streams_events_to_ws_subscribers(tmp_path):
 def test_run_task_approval_flow_resolves_via_websocket(tmp_path):
     target = tmp_path / "target.txt"
     target.write_text("remove me", encoding="utf-8")
-    deps = make_deps(tmp_path)
-    deps.loop.provider = MockProvider(
-        responses=[
-            json.dumps({"tool": "delete_file", "args": {"path": "target.txt"}}),
-            "DONE",
-        ]
+    deps = make_deps(
+        tmp_path,
+        MockProvider(
+            responses=[
+                json.dumps({"tool": "delete_file", "args": {"path": "target.txt"}}),
+                "DONE",
+            ]
+        ),
     )
     with TestClient(create_app(deps=deps)) as client:
         _, task = create_session_and_task(client, tmp_path)
@@ -143,8 +153,7 @@ class SlowProvider:
 
 
 def test_abort_running_task_cancels_execution_and_marks_canceled(tmp_path):
-    deps = make_deps(tmp_path)
-    deps.loop.provider = SlowProvider()
+    deps = make_deps(tmp_path, SlowProvider())
     with TestClient(create_app(deps=deps)) as client:
         _, task = create_session_and_task(client, tmp_path)
 
@@ -165,8 +174,7 @@ def test_abort_running_task_cancels_execution_and_marks_canceled(tmp_path):
 
 
 def test_pause_and_continue_update_task_status(tmp_path):
-    deps = make_deps(tmp_path)
-    deps.loop.provider = SlowProvider()
+    deps = make_deps(tmp_path, SlowProvider())
     with TestClient(create_app(deps=deps)) as client:
         _, task = create_session_and_task(client, tmp_path)
 
