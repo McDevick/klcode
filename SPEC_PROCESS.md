@@ -351,3 +351,40 @@
 - 本地 `dev` 已 merge 远端结果，合并提交：`6bcd2a2`。
 - 本地复验：server `1 passed`，cli `1 passed`。
 - 已补 `AGENT_LOG.md`，并更新 PLAN Task 0.1/0.2 状态。
+
+---
+
+## 10. [2026-08-05] Phase 5 执行过程记录
+
+> 本节记录 Phase 5 实现阶段（Task 5.1-5.4）的过程证据，内容与既有设计阶段分开，保留原始记录。
+
+### 10.1 执行决策（采纳）
+
+- **Stacked worktree 执行**：5.1 从 `dev` 分支；5.2 叠在 5.1 上；5.3 叠在 5.2 上；5.4 叠在 5.3 上。原因是 `AGENT_LOG.md` 是共享跟踪文件，每个 task 都要更新；串行 stacking 避免并行分支对同一文件改写的冲突，也让每个分支的 diff 仍可按 task 审查。
+- **每 task 使用独立 implementer subagent**：5.1-5.3 的 implementer ID 分别为 `019fcf4a-04ad-7d91-a954-7a89ad4a7981`、`019fcf5d-cd8f-7291-87af-a15e3094d315`、`019fcf7b-3d54-7a00-80da-b35dde94866b`，均记录在 AGENT_LOG 对应条目；Task 5.4 为 `019fcfa3-0e6e-7a80-bd84-725fbb941fff`，提交后由控制会话复核验证命令。
+- **TDD / verification-first**：5.1 先以 `ModuleNotFoundError` 为红，再补 demo 与测试到绿；5.2 对 README 中每个命令做真实执行核验；5.3 以 `python -m build`、`npm pack --dry-run` 先暴露失败，再完成构建与打包配置。
+- **两阶段评审与质量修复循环**：Task 5.2 初版 README 写了 `pytest ... --pyargs`，与 Makefile 命令不一致；质量修复提交 `5703874` 统一为 `python -m pytest server/tests -q`。该例说明文档类任务也需要把“可复现命令”作为验收。
+- **Spec 合规复核与范围控制**：Task 5.4 对照 PLAN 复核 5.1-5.3 提交，确认没有实现未授权功能；`make dev`、`kl tui`、完整服务端 bootstrap（Task 5.6）均以 roadmap/pending 处理，README 不虚构命令可用。
+- **真实分发约束优先于“看起来完整”的元数据**：无 LICENSE 时不虚构 license；无 `py.typed` 时不声明 package-data；CLI 保持 `private: true` 但显式 `publishConfig.access`；setuptools 拒绝根目录外 README 后改为包内 `server/README.md`；`npm pack` 生成的 `dist/` 由根 `.gitignore` 忽略。
+
+### 10.2 被采纳与被拒绝的决策
+
+被采纳：
+
+- `AGENT_LOG` 更新作为每个 task 的独立提交，随分支 stacking 传递，避免回写远端共享历史。
+- 文档只描述当前可执行行为；未接线的命令明确标为 roadmap。
+- 分发元数据以实际构建产物为准，不虚构缺失文件。
+- `server/README.md` 作为包级 readme；根 README 仍负责项目级说明。
+- `npm` 包通过 `prepack` 自动构建 `dist/main.js`，`files` 只发布构建产物。
+
+被拒绝或未采纳：
+
+- 未在 Task 5.2/5.3 顺手实现 `make dev` 或 `kl tui`；这些属于 Task 5.6 或后续范围，直接进入会扩大单 task 半径。
+- 未把 `publishConfig.access: "public"` 解释为授权关闭 `private`；仓库未提供 LICENSE，因此不补 license 字段。
+- 未为了通过 README 示例而修改 Makefile 命令；而是修正 README 使其与既有契约一致。
+
+### 10.3 Phase 5 观察到的 SPEC/PLAN 修订
+
+- PLAN Task 5.2 只列 README 与计划索引，实际质量修复还产生了 `5703874`（README 测试命令一致性），未改动 SPEC 文件。
+- PLAN Task 5.3 实际变更文件为 `server/pyproject.toml`、`server/kl_server/main.py`（新增最小 `main()`）、`server/README.md`（新增）、`cli/package.json`、`cli/package-lock.json`；根 `.gitignore` 新增 `dist/` 为控制器卫生修复，单独提交 `93f381a`。实现按构建约束补充的 `server/README.md` 和 `dist/` 忽略规则作为偏差写入 AGENT_LOG，不静默扩大任务。
+- PLAN 中 Task 5.6（应用 bootstrap）仍为 pending；README 将配置读写、服务端完整组装、TUI 标为 roadmap。这延续了第 8.2 节“模块存在但未装配”的剩余风险。

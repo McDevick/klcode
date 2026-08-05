@@ -3,11 +3,158 @@
 > 本文件按任务执行全程实时记录关键节点，不在任务完成后统一补写。
 > 每条记录包含：时间戳、task 编号、触发的 Superpowers 技能、关键 prompt/context、subagent 输出或 commit hash、人工干预、教训。
 
+## 2026-08-05 Review fix F2-F7（已完成）
+
+- 范围：针对 PR #46 review 的 MEDIUM/Advisory 问题修复。
+- 触发的技能：`test-driven-development`、`verification-before-completion`
+- Implementer：controller 本地修复（subagent 通道不可用）
+- 分支/Worktree：`worktree-task-5.6-bootstrap` / `.claude/worktrees/task-5.6-bootstrap`
+- 修复：
+  - F2：CLI events 无 token 测试显式传入不存在的 tokenPath，不再受 `~/.kl/daemon.token` 影响。
+  - F3：`/health` 不要求 Bearer token。
+  - F4：`kl_server.main` 导入不再建 `.kl`/写 token/访问 keyring；deps 与 token 延迟到 FastAPI lifespan 启动。
+  - F4 补充：provider 缺少 key 时不再阻止启动，降级使用 mock provider，并在 /config/check 返回 degraded 与 error。
+  - F5：session/task 读、改、删路径接入真实 manager；SessionManager 增加 list/update/delete。
+  - F6：demos 不再硬编码 `server/`，通过 `examples/_demo_import.py` 动态定位 `kl_server` 包。
+  - F7：bootstrap SandboxPolicy 不再 blanket deny git/curl，保留 rm/docker deny。
+- 验证：CLI 45 passed；server focused 50 passed + test_main 3 passed；全量 server 323 passed, 1 skipped；`git diff --check` 干净。
+- 主提交：`61cf307`。
+
+## 2026-08-05 Task 5.6：Application bootstrap and server composition（已完成）
+
+- 时间戳：2026-08-05 10:49（开工）。
+- 范围：Phase 5 最后一项，组合现有模块为可运行 FastAPI server。
+- 触发的技能：`subagent-driven-development`（尝试派发）、`using-git-worktrees`、`test-driven-development`、`verification-before-completion`
+- Implementer：controller 本地 TDD 兜底；fresh implementer subagent 通道不可用，`multi_agent_v1__spawn_agent` 返回 `unsupported call`。按 Superpowers 文档补充 `[features] multi_agent = true` 后本会话仍未生效，故未伪造 subagent 记录。
+- 分支：`worktree-task-5.6-bootstrap`，stacked 于 `worktree-task-5.5-ci` tip `a4d73d6`
+- Worktree：`.claude/worktrees/task-5.6-bootstrap`
+- TDD 红：`server/tests/test_bootstrap.py` 收集失败，`ModuleNotFoundError: No module named 'kl_server.bootstrap'`
+- TDD 绿：聚焦 `test_bootstrap.py` + `test_ws.py` → `13 passed`，输出无警告；全量 `pytest server/tests -q` → `318 passed, 1 skipped`
+- 文件变更：
+  - 新建 `server/kl_server/bootstrap.py`：`build_app_dependencies()` 组装 config、Database、SessionManager、TaskManager、credential store、provider registry、tool registry、guardrail、ToolExecutor、EventLogger、MemoryStore、ContextAssembler、HookManager、SkillLoader、McpAdapter、PluginLoader、AgentLoop。
+  - 修改 `server/kl_server/api/app.py`：`create_app(..., deps=None)` 暴露 `app.state.deps`。
+  - 修改 `server/kl_server/api/routes.py`：session/task 创建在 `deps` 存在时写入真实 `SessionManager`/`TaskManager`，无 deps 时保持原有内存 fallback。
+  - 修改 `server/kl_server/main.py`：通过 `build_app_dependencies()` 构造 deps 并传入 `create_app()`。
+  - 新建 `server/tests/test_bootstrap.py`：provider/tool/manager 注册断言 + API deps 接线断言。
+  - `tools/builtin/__init__.py` 已有 `register_builtin_tools`，未重复修改。
+- 偏差：
+  - PLAN 示例测试未显式提供凭据，但当前 `build_provider_registry()` 对配置了 `credential_ref` 的 provider 要求凭据已存在；测试改为传入 `InMemoryCredentialStore`，避免依赖操作系统钥匙串。
+  - `AppDependencies` 使用 PLAN 测试要求的 `provider_registry`/`tool_registry` 字段名，而非示例中的 `providers`/`tools`。
+  - API 接线测试使用最小 fake manager，避免 httpx ASGI + aiosqlite 产生 `DeprecationWarning`；真实 manager 持久化由既有 storage 测试覆盖。
+- 验证：`git diff --check` 干净；实现提交后 `git status --short` 无未跟踪文件。
+- 人工干预：subagent 通道不可用，controller 按 TDD 本地实现并记录。
+- 主提交：`e8d5834`（`feat: compose harness modules into runnable server`）。
+- 评审补记：spec reviewer 与 quality reviewer 派发均因 subagent 通道不可用由 controller 本地完成；Spec PASS，Quality Approved，无 Critical/Important，Minor 见 `.superpowers/sdd/PLAN/task-5.6-report.md`。
+
+## 2026-08-05 Task 5.5：Final CI pass and deliverables（已完成）
+
+- 时间戳：2026-08-05 10:14（开工），提交时间见本条补记。
+- 范围：Phase 5 最终 CI 验证与交付物收口。
+- 触发的技能：`subagent-driven-development`、`using-git-worktrees`、`verification-before-completion`
+- Implementer：implementer subagent `019fcfb2-b277-7413-840e-adeb619a7fda`
+- 分支：`worktree-task-5.5-ci`，stacked 于 `worktree-task-5.4-process`
+- Worktree：`.claude/worktrees/task-5.5-ci`
+- 文件变更：
+  - 更新 `PLAN.md`：追踪表标记 5.1-5.5 完成、5.6 保持 Pending（remaining task），并将 5.1-5.5 阶段勾选项更新为 `[x]`；5.6 勾选项保持不变。
+  - 更新 `AGENT_LOG.md`：本条 Task 5.5 记录。
+- 验证证据：
+  - Server：`PYTHONPATH=<worktree>/server` + venv pytest → `316 passed, 1 skipped`。
+  - CLI：`npm test` → `9 files, 45 passed`；首次运行时 clean worktree 缺 `vitest`，先执行 `npm ci` 后通过，未改 CLI 测试或源码。
+  - YAML：venv python 加载 `.github/workflows/ci.yml` 与 `.gitlab-ci.yml` → 退出码 0，无异常。
+  - `git diff dev..HEAD --check`：干净。
+  - `git status --short`：无意外未跟踪文件。
+- PLAN 更新：5.1-5.4 已用真实提交哈希标记 Done；5.5 标记 Done，主提交哈希见补记；5.6 保持 Pending，注明为剩余任务。
+- 人工干预：无。
+- 教训：clean worktree 必须先 `npm ci` 才能运行 CLI 测试；测试与 YAML 校验全部通过后再提交状态文档。任务 5.5 的主提交内容无法引用自身哈希，因此哈希记录在本日志与最终报告。
+- 补记：主提交 `666231f`（`docs: mark implementation plan complete`）。
+- 评审补记：spec reviewer subagent `019fcfc8-9273-7c01-92fb-7fc23455d0ef` 返回 Spec PASS，要求修正技能名、implementer ID，并建议把 5.5 哈希直接写入 PLAN 表；修复提交 `e637748`、`0508201` 后复评包 `729b71d..0508201` 干净。质量评审阶段 subagent 通道不可用，由 controller 本地完成：无 Critical/Important，Approved。
+
+## 2026-08-05 Task 5.4：Process docs and reflection（已完成）
+
+- 时间戳：2026-08-05 09:59（开工），提交时间见本条补记。
+- 范围：Phase 5 过程文档与反思报告。
+- 触发的技能：`subagent-driven-development`、`using-git-worktrees`、`verification-before-completion`
+- Implementer：implementer subagent `019fcfa3-0e6e-7a80-bd84-725fbb941fff`
+- 分支：`worktree-task-5.4-process`，stacked 于 `worktree-task-5.3-dist`
+- Worktree：`.claude/worktrees/task-5.4-process`
+- 文件变更：
+  - 更新 `SPEC_PROCESS.md`：新增 Phase 5 执行决策、被采纳/拒绝决策、SPEC/PLAN 修订观察。
+  - 更新 `AGENT_LOG.md`：本条记录，并补记 5.1-5.3 的提交哈希。
+  - 新建 `REFLECTION.md`：1500-2500 中文字符反思报告。
+- 验证证据：
+  - 占位符扫描：无匹配。
+  - `(Get-Content REFLECTION.md -Raw).Length`：位于 1500-2500。
+  - `git diff dev..HEAD --check`：干净。
+  - `git status`：仅三个过程文件变更。
+- 人工干预：质量评审要求补充 implementer ID 与 Task 5.3 文件清单；按 controller 提供的 ID 修正记录。
+- 核账：AGENT_LOG 已覆盖 Task 0.1-0.4、1.1-1.14、2.1-2.10、3.1-3.10、4.1-4.11、5.1-5.4。
+- 教训：过程文档也必须用验证命令收口；字符数、占位符、diff 范围都应作为可执行检查项，不能只靠“看起来完整”。
+- 补记：主提交 `30218d2`（`docs: add process logs and reflection`），2026-08-05 10:01；质量评审修复补充 implementer ID 并修正 Task 5.3 文件清单。
+
+## 2026-08-05 Task 5.3：Distribution polish（已完成）
+
+- 范围：Phase 5 分发元数据与可复现构建。
+- 触发的技能：`subagent-driven-development`、`using-git-worktrees`、`test-driven-development`（verification-before-completion）
+- Implementer：implementer subagent `019fcf7b-3d54-7a00-80da-b35dde94866b`
+- 分支：`worktree-task-5.3-dist`，stacked 于 `worktree-task-5.2-docs`
+- Worktree：`.claude/worktrees/task-5.3-dist`
+- TDD 红：
+  - 基线 `python -m build server` 失败：`No module named build`，venv 未安装构建前端。
+  - 基线 `npm pack --dry-run` 虽退出 0，但 tarball 没有 bin 产物，且包含 `src/`、`test/`、`tsconfig.json`，不符合分发预期。
+  - CLI 基线没有 `dist/main.js`，无法声明可执行 bin。
+- TDD 绿：
+  - `pip install -e "server[dev]"` 成功安装 `build`；`python -m build server` 成功产出 `kl_server-0.1.0.tar.gz` 与 `kl_server-0.1.0-py3-none-any.whl`。
+  - `npm run build` 成功产出 `cli/dist/main.js`（117.4 kB）；`node dist/main.js --help` 正常显示 `init|run|server|config`。
+  - `npm pack --dry-run` 退出 0，prepack 自动构建，tarball 仅含 `dist/main.js` 与 `package.json`。
+  - Server：`PYTHONPATH=<worktree>/server` + venv pytest → `316 passed, 1 skipped`。
+  - CLI：`npm test` → `9 files, 45 passed`。
+- 文件变更：
+  - 修改 `server/pyproject.toml`：为全部运行时依赖补下限；dev extras 增加 `build`；build-system 增加 `wheel`；新增 description/readme/classifiers/project.urls/console script/include-package-data。
+  - 修改 `server/kl_server/main.py`：新增最小 `main()`，供 `kl-server` console entry 调用 `uvicorn.run(app, host="127.0.0.1", port=8700)`。
+  - 新建 `server/README.md`：作为 PyPI/包级 readme 元数据。
+  - 修改 `cli/package.json`：新增 `kl` bin、`files=["dist"]`、`prepack`/`build`（esbuild ESM bundle + shebang）、`publishConfig`、`repository`、直接声明 `esbuild` devDependency。
+  - 修改 `cli/package-lock.json`：同步 root bin 与 `esbuild` devDependency。
+- 元数据决策：
+  - 仓库无 LICENSE 文件，因此不虚构 license 字段；无 `py.typed`，因此不添加不存在的 package-data，仅设置 `include-package-data = true`。
+  - server 依赖下限采用 `fastapi>=0.110`、`uvicorn>=0.29`、`pydantic>=2.0`、`pydantic-settings>=2.0`、`aiosqlite>=0.20`、`keyring>=25`、`cryptography>=42`、`httpx>=0.27`、`PyYAML>=6.0`，并保留 `mcp>=2.0.0,<3.0.0`。
+  - CLI 保留 `private: true`，同时补充 `publishConfig.access: "public"`；未擅自关闭 private。
+- 偏差：
+  - 尝试 `readme = "../README.md"` 时 setuptools 明确拒绝访问项目根目录外文件，因此新增 `server/README.md` 并把 readme 指向它。
+  - 验证 server console entry 时 `kl_server.main` 在用户主目录生成了 `~/.kl/daemon.token`，导致 CLI `events.test.ts` 首轮 44/45；清理该验证残留后重跑为 45 passed。未改动 CLI 测试或源码。
+  - 按任务范围未注册 `tui` 子命令，仍属 roadmap。
+- 教训：`kl_server.main` 模块导入会创建 daemon token，属于可观察副作用；CLI 事件测试假定默认 token 路径不存在，分发验证前后要清理或隔离该状态。setuptools 的 readme 不能引用项目根目录之外的相对路径，单包发布时应在包目录内维护 README。
+- 控制器补充（质量复核）：`npm pack --dry-run` 的 prepack 会在工作树重新生成 `cli/dist/`；为保持 git status 干净，根 `.gitignore` 新增 `dist/`，该卫生修复单独提交。
+- 补记（Task 5.4 核账）：实现提交 `6ec8c2c`、日志提交 `6453879`、卫生修复 `93f381a`；提交时间 09:24-09:52，无用户干预。
+
+## 2026-08-05 Task 5.2：README 与安装文档（已完成）
+
+- 范围：Phase 5 的冷启动文档与计划索引。
+- 触发的技能：`subagent-driven-development`、`using-git-worktrees`、`test-driven-development`（verification-before-completion）
+- Implementer：implementer subagent `019fcf5d-cd8f-7291-87af-a15e3094d315`
+- 分支：`worktree-task-5.2-docs`，stacked 于 `worktree-task-5.1-demos`
+- Worktree：`.claude/worktrees/task-5.2-docs`
+- 验证命令与结果：
+  - 服务端：venv python `pytest server/tests -q --pyargs`（设 `PYTHONPATH=<worktree>/server`）→ `316 passed, 1 skipped`
+  - CLI：`cd cli && npm ci && npm test` → `9 files, 45 passed`
+  - `make dev`：本机无 `make`；核对 Makefile 确认为占位守卫，输出 `make dev is not available until server main and cli tui entrypoints exist` 并以退出码 1 结束，README 如实登记为 roadmap。
+  - `kl init`（等价 `npx tsx src/main.ts init` 运行，守护进程未启动）：以退出码 1 报 `fetch failed` / `connect ECONNREFUSED 127.0.0.1:8700`，README 前置条件注明“先 `kl server start`”。
+  - `kl tui`（`npx tsx src/main.ts tui`）：`cli/src/main.ts` 无 `tui` 子命令，实测返回 `error: unknown command 'tui'` 且退出码 1，README 记为 roadmap。
+- 文件变更：
+  - 修改 `README.md`：补充项目简介后的环境要求、安装、运行、分发命令、目录结构、安全边界、关键配置、已知限制。
+  - 新建 `docs/superpowers/plans/README.md`：说明主计划在根 `PLAN.md`，控制器台账 `.superpowers/sdd/PLAN/progress.md` 为本地/git-ignored，任务记录在根 `AGENT_LOG.md`。
+  - 修改 `AGENT_LOG.md`：本条记录。
+- 重要发现：
+  - `kl tui` 目前未接线，`cli` 也没有 `bin`/构建产物，README 把 `kl` 计划程序名与当前 dev 运行方式（`npx tsx src/main.ts`）分开写明，避免虚构可执行命令。
+  - `kl init` 在守护进程未启动时直接抛 `TypeError: fetch failed`（ECONNREFUSED），不产生友好提示；README 以明确的“先 `kl server start`”前置条件覆盖。
+  - 配置 YAML 的读写尚未接入服务端运行流程（属 Task 5.6 bootstrap），README 只承诺模块级 API 与测试契约。
+- 教训：文档必须与当前可执行行为一致；对尚未实现的命令（`make dev`、`kl tui`、`kl` 可执行文件）一律标注 roadmap 与前置条件，不通过改代码来“凑成功”。
+- 补记（Task 5.4 核账）：实现提交 `e8b62c5`、README 命令一致性修复 `5703874`、日志提交 `bdf4b0b`；提交时间 08:51-09:08，无用户干预。
+
 ## 2026-08-05 Task 5.1：Mock-LLM demos（已完成）
 
 - 范围：Phase 5 的 mock-LLM 机制 demo 脚本与回归测试。
 - 触发的技能：`subagent-driven-development`、`test-driven-development`、`using-git-worktrees`
-- Implementer：implementer subagent（本会话）
+- Implementer：implementer subagent `019fcf4a-04ad-7d91-a954-7a89ad4a7981`
 - 分支：`worktree-task-5.1-demos`，基于 `dev`（commit `6492c23`）
 - Worktree：`.claude/worktrees/task-5.1-demos`
 - TDD 红：`ModuleNotFoundError: No module named 'examples'`（demo 模块尚不存在，收集阶段报错）
@@ -26,6 +173,7 @@
 - 验证：四个 demo 均无网络、确定性输出；完整 server 套件 `316 passed, 1 skipped`（新增 4 个）；`git diff --check` 干净。
 - Commit：`62e903e`（demos + test_examples）
 - 教训：反馈时间线通过记录 provider 的 `request.messages` 快照重建；tool error 演示按 executor 实际行为打印 `ToolResult(ok=False)`，保持与真实行为一致。
+- 补记（Task 5.4 核账）：日志提交 `5834c28`；提交时间 08:27，无用户干预。
 
 ## 2026-08-04 Phase 4 全量验证（已完成）
 

@@ -9,9 +9,9 @@ from kl_server.api.app import create_app
 from kl_server.core.auth import load_or_create_daemon_token
 
 
-def test_health_rejects_without_token():
+def test_health_allows_without_token():
     client = TestClient(create_app(auth_token="s3cret"))
-    assert client.get("/health").status_code == 401
+    assert client.get("/health").status_code == 200
 
 
 def test_health_allows_with_token():
@@ -25,10 +25,10 @@ def test_no_token_means_no_auth():
     assert client.get("/health").status_code == 200
 
 
-def test_health_rejects_wrong_token():
+def test_health_allows_wrong_token():
     client = TestClient(create_app(auth_token="s3cret"))
     response = client.get("/health", headers={"Authorization": "Bearer wrong"})
-    assert response.status_code == 401
+    assert response.status_code == 200
 
 
 def test_websocket_rejects_without_token():
@@ -59,7 +59,7 @@ def test_multiple_apps_have_isolated_tokens():
     client_a = TestClient(create_app(auth_token="token-a"))
     client_b = TestClient(create_app(auth_token="token-b"))
     assert client_a.get("/health", headers={"Authorization": "Bearer token-a"}).status_code == 200
-    assert client_a.get("/health", headers={"Authorization": "Bearer token-b"}).status_code == 401
+    assert client_a.get("/health", headers={"Authorization": "Bearer token-b"}).status_code == 200
     assert client_b.get("/health", headers={"Authorization": "Bearer token-b"}).status_code == 200
 
 

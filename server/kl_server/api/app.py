@@ -1,4 +1,5 @@
 import secrets
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -7,14 +8,30 @@ from kl_server.api.routes import build_router
 from kl_server.api.ws import build_ws_router
 
 
-def create_app(auth_token: str | None = None, hitl=None) -> FastAPI:
-    app = FastAPI()
+def create_app(
+    auth_token: str | None = None,
+    hitl=None,
+    deps=None,
+    runtime_factory=None,
+) -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        if runtime_factory is not None:
+            runtime_deps, runtime_token = runtime_factory()
+            app.state.deps = runtime_deps
+            app.state.auth_token = runtime_token
+        yield
+
+    app = FastAPI(lifespan=lifespan)
+    app.state.deps = deps
+    app.state.auth_token = auth_token
 
     @app.middleware("http")
     async def auth_middleware(request, call_next):
-        if auth_token:
+        token = getattr(app.state, "auth_token", None)
+        if token and request.url.path != "/health":
             header = request.headers.get("Authorization", "")
-            if not secrets.compare_digest(header, f"Bearer {auth_token}"):
+            if not secrets.compare_digest(header, f"Bearer {token}"):
                 return JSONResponse(status_code=401, content={"detail": "unauthorized"})
         return await call_next(request)
 

@@ -1,5 +1,7 @@
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
+
+from kl_server.models.task import Session, Task
 
 
 class CreateSessionPayload(BaseModel):
@@ -35,6 +37,22 @@ def build_router() -> APIRouter:
     next_session_id = 1
     next_task_id = 1
 
+    def session_dict(session: Session) -> dict:
+        return {
+            "id": session.id,
+            "workspace": session.workspace,
+            "name": session.name,
+            "status": session.status,
+        }
+
+    def task_dict(task: Task) -> dict:
+        return {
+            "id": task.id,
+            "session_id": task.session_id,
+            "description": task.description,
+            "status": task.status.value,
+        }
+
     router = APIRouter(prefix="/api/v1")
 
     @router.get("/ping")
@@ -42,31 +60,55 @@ def build_router() -> APIRouter:
         return {"status": "pong"}
 
     @router.get("/sessions")
-    def list_sessions():
+    async def list_sessions(request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is not None:
+            return [session_dict(session) for session in await deps.sessions.list()]
         return list(sessions.values())
 
     @router.post("/sessions")
-    def create_session(payload: CreateSessionPayload):
+    async def create_session(payload: CreateSessionPayload, request: Request):
         nonlocal next_session_id
-        session = {
-            "id": f"s{next_session_id}",
-            "workspace": payload.workspace,
-            "name": payload.name,
-            "status": "active",
-        }
+        deps = getattr(request.app.state, "deps", None)
+        session_id = f"s{next_session_id}"
+        session = Session(
+            id=session_id,
+            workspace=payload.workspace,
+            name=payload.name,
+        )
+        if deps is not None:
+            await deps.sessions.create(session)
         next_session_id += 1
-        sessions[session["id"]] = session
-        return session
+        record = session_dict(session)
+        if deps is None:
+            sessions[session.id] = record
+        return record
 
     @router.get("/sessions/{session_id}")
-    def get_session(session_id: str):
+    async def get_session(session_id: str, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is not None:
+            try:
+                session = await deps.sessions.get(session_id)
+            except KeyError:
+                raise HTTPException(status_code=404, detail="session not found")
+            return session_dict(session)
         session = sessions.get(session_id)
         if session is None:
             raise HTTPException(status_code=404, detail="session not found")
         return session
 
     @router.patch("/sessions/{session_id}")
-    def rename_session(session_id: str, payload: RenameSessionPayload):
+    async def rename_session(session_id: str, payload: RenameSessionPayload, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is not None:
+            try:
+                session = await deps.sessions.get(session_id)
+            except KeyError:
+                raise HTTPException(status_code=404, detail="session not found")
+            session.name = payload.name
+            await deps.sessions.update(session)
+            return session_dict(session)
         session = sessions.get(session_id)
         if session is None:
             raise HTTPException(status_code=404, detail="session not found")
@@ -74,7 +116,16 @@ def build_router() -> APIRouter:
         return session
 
     @router.post("/sessions/{session_id}/close")
-    def close_session(session_id: str):
+    async def close_session(session_id: str, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is not None:
+            try:
+                session = await deps.sessions.get(session_id)
+            except KeyError:
+                raise HTTPException(status_code=404, detail="session not found")
+            session.status = "closed"
+            await deps.sessions.update(session)
+            return session_dict(session)
         session = sessions.get(session_id)
         if session is None:
             raise HTTPException(status_code=404, detail="session not found")
@@ -82,33 +133,59 @@ def build_router() -> APIRouter:
         return session
 
     @router.delete("/sessions/{session_id}")
-    def delete_session(session_id: str):
+    async def delete_session(session_id: str, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is not None:
+            try:
+                await deps.sessions.delete(session_id)
+            except KeyError:
+                raise HTTPException(status_code=404, detail="session not found")
+            return Response(status_code=204)
         if sessions.pop(session_id, None) is None:
             raise HTTPException(status_code=404, detail="session not found")
         return Response(status_code=204)
 
     @router.post("/tasks")
-    def create_task(payload: CreateTaskPayload):
+    async def create_task(payload: CreateTaskPayload, request: Request):
         nonlocal next_task_id
-        task = {
-            "id": f"t{next_task_id}",
-            "session_id": payload.session_id,
-            "description": payload.description,
-            "status": "pending",
-        }
+        deps = getattr(request.app.state, "deps", None)
+        task_id = f"t{next_task_id}"
+        task = Task(
+            id=task_id,
+            session_id=payload.session_id,
+            description=payload.description,
+        )
+        if deps is not None:
+            await deps.tasks.create(task)
         next_task_id += 1
-        tasks[task["id"]] = task
-        return task
+        record = task_dict(task)
+        if deps is None:
+            tasks[task.id] = record
+        return record
 
     @router.get("/tasks/{task_id}")
-    def get_task(task_id: str):
+    async def get_task(task_id: str, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is not None:
+            try:
+                task = await deps.tasks.get(task_id)
+            except KeyError:
+                raise HTTPException(status_code=404, detail="task not found")
+            return task_dict(task)
         task = tasks.get(task_id)
         if task is None:
             raise HTTPException(status_code=404, detail="task not found")
         return task
 
     @router.post("/config/check")
-    def config_check():
+    def config_check(request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is not None and getattr(deps, "config_error", None):
+            return {
+                "status": "degraded",
+                "providers": ["mock"],
+                "error": deps.config_error,
+            }
         return {"status": "ok", "providers": ["mock"]}
 
     @router.get("/providers")
