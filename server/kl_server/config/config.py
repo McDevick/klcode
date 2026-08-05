@@ -16,3 +16,4 @@ class AppConfig(BaseModel):
 
     providers: dict[str, ProviderConfig] = {}
     default_provider: str = "mock"
+    default_model: str = ""  # 全局默认模型；空则用各 provider 自身的 default_model
