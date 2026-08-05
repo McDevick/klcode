@@ -8,22 +8,31 @@ export function InputFooter({
   menuOpen,
   menuIndex,
   commands,
+  modelName,
 }: {
   value: string;
   menuOpen: boolean;
   menuIndex: number;
   commands: SlashCommand[];
+  modelName: string;
 }) {
   const [cursorVisible, setCursorVisible] = useState(true);
+  const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
     const timer = setInterval(() => setCursorVisible((current) => !current), 500);
     return () => clearInterval(timer);
   }, []);
 
-  const lines = value.split('\n');
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
-  // 命令面板：固定高度窗口 + 竖向滚动条；命令超出窗口时滚动，选中项始终在窗口内
+  const lines = value.split('\n');
+  const timeStr = now.toLocaleTimeString('en-GB', { hour12: false });
+
+  // 命令面板：固定高度窗口 + 竖向滚动条；显示在输入框下侧（状态栏上方）
   const MAX_VISIBLE = 8;
   const windowStart = Math.max(
     0,
@@ -40,7 +49,7 @@ export function InputFooter({
       {menuOpen ? (
         <Box
           position="absolute"
-          bottom={1}
+          bottom={lines.length + 2}
           borderStyle="round"
           borderColor={theme.surfaceAlt}
           backgroundColor={theme.surface}
@@ -76,22 +85,27 @@ export function InputFooter({
           ) : null}
         </Box>
       ) : null}
+      <Box
+        paddingX={1}
+        borderStyle="single"
+        borderColor={theme.border}
+        borderTop
+        borderBottom
+        borderLeft={false}
+        borderRight={false}
+      >
+        <Text color={theme.teal}>&gt; </Text>
+        {lines.map((line, index) => (
+          <Text key={index}>
+            {line}
+            {index === lines.length - 1 && cursorVisible ? '▍' : ''}
+          </Text>
+        ))}
+      </Box>
       <Box paddingX={1}>
-        <Box
-          backgroundColor={theme.surface}
-          borderStyle="round"
-          borderColor={theme.surfaceAlt}
-          paddingX={1}
-          flexDirection="column"
-        >
-          <Text color={theme.teal}>&gt; </Text>
-          {lines.map((line, index) => (
-            <Text key={index}>
-              {line}
-              {index === lines.length - 1 && cursorVisible ? '▍' : ''}
-            </Text>
-          ))}
-        </Box>
+        <Text color={theme.blue}>model: {modelName}</Text>
+        <Box flexGrow={1} />
+        <Text dimColor>{timeStr}</Text>
       </Box>
     </Box>
   );

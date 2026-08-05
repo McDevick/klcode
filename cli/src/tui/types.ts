@@ -7,8 +7,7 @@ export interface ToolCall {
 export interface RunningTask {
   taskId: string;
   startedAt: number;
-  tokensUsed: number;
-  maxTokens: number;
+  steps: number;
   toolCalls: ToolCall[];
 }
 

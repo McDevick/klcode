@@ -34,7 +34,17 @@ test('server start spawns uvicorn with resolved python and writes pid file', asy
   expect(pythonResolver).toHaveBeenCalled();
   expect(spawnMock).toHaveBeenCalledWith(
     'python',
-    ['-m', 'uvicorn', 'kl_server.main:app', '--host', '127.0.0.1', '--port', '8700'],
+    expect.arrayContaining([
+      '-m',
+      'uvicorn',
+      'kl_server.main:app',
+      '--host',
+      '127.0.0.1',
+      '--port',
+      '8700',
+      '--timeout-graceful-shutdown',
+      '3',
+    ]),
     expect.objectContaining({
       env: expect.objectContaining({
         PYTHONPATH: expect.stringContaining('server'),

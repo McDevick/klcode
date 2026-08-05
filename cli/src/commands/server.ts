@@ -147,7 +147,19 @@ export const ServerCommand = {
           : process.env;
         const child = spawnImpl(
           python,
-          ['-m', 'uvicorn', 'kl_server.main:app', '--host', '127.0.0.1', '--port', '8700'],
+          [
+            '-m',
+            'uvicorn',
+            'kl_server.main:app',
+            '--host',
+            '127.0.0.1',
+            '--port',
+            '8700',
+            // Ctrl+C 时优雅关闭有上限：默认 None 会无限等待活动连接（如挂着的
+            // WebSocket），导致进程成僵尸并占住 8700 端口
+            '--timeout-graceful-shutdown',
+            '3',
+          ],
           {
             cwd: process.cwd(),
             stdio: 'ignore',

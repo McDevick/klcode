@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text, useInput, useStdin } from 'ink';
 import { Header } from './components/header';
 import { Messages } from './components/messages';
 import { InputFooter } from './components/input-footer';
+import { ConfigWizard } from './components/config-wizard';
 import { CommandRegistry } from '../commands/registry';
 import { SessionCommand } from '../commands/session';
 import { ApiClient, DEFAULT_BASE_URL } from '../api/client';
@@ -27,18 +28,16 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { name: '/exit', desc: '退出 TUI' },
 ];
 
-const MAX_TOKENS = 8000;
-const TOKENS_PER_EVENT = 120;
-
 export function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [taskStatus, setTaskStatus] = useState('idle');
   const [isOnline, setIsOnline] = useState(false);
-  const [conversationName, setConversationName] = useState('KL Code 会话');
+  const [modelName, setModelName] = useState('loading…');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [running, setRunning] = useState<RunningTask | null>(null);
   const [approval, setApproval] = useState<ApprovalRequest | null>(null);
+  const [configWizardOpen, setConfigWizardOpen] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [menuIndex, setMenuIndex] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -50,18 +49,71 @@ export function App() {
     setOffset(0);
   };
 
+  // 终端滚轮 → 内部滚动（鼠标追踪由 main.ts 启用）。滚轮上滚（SGR 按钮 64）
+  // 查看历史，下滚（65）回到最新；方向键/PageUp/PageDown 同样可用。
+  // 配置向导打开时不滚动对话区（避免对话被滚出视野）。
+  // 步长自适应：消息少时逐条滚（避免一次滚过头导致对话"消失"），多时大步滚。
+  const { stdin } = useStdin();
+  useEffect(() => {
+    const onData = (chunk: Buffer) => {
+      const text = chunk.toString('utf8');
+      const match = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/.exec(text);
+      if (match === null) return;
+      if (configWizardOpen) return;
+      const step = Math.max(1, Math.min(3, Math.ceil(messages.length / 10)));
+      const button = Number(match[1]);
+      if (button === 64) {
+        setOffset((current) => current + step);
+      } else if (button === 65) {
+        setOffset((current) => Math.max(0, current - step));
+      }
+    };
+    stdin.on('data', onData);
+    return () => {
+      stdin.off('data', onData);
+    };
+  }, [configWizardOpen, messages.length]);
+
   useEffect(() => {
     const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
+    const workspace = process.cwd();
+    // 优先复用同工作区、active、无任务的空会话，避免每次启动都新建
     client
-      .createSession({ workspace: process.cwd() })
-      .then((session) => {
-        setSessionId(session.id);
-        setIsOnline(true);
-        pushMessage('agent', `会话 ${session.id} 已就绪`, 'done');
+      .listSessions()
+      .then((sessions) => {
+        const reusable = sessions.find(
+          (session) =>
+            session.workspace === workspace &&
+            session.status === 'active' &&
+            (session.task_count ?? 0) === 0,
+        );
+        if (reusable !== undefined) {
+          setSessionId(reusable.id);
+          setIsOnline(true);
+          pushMessage('agent', `复用会话 ${reusable.id}`, 'done');
+          return;
+        }
+        return client.createSession({ workspace }).then((session) => {
+          setSessionId(session.id);
+          setIsOnline(true);
+          pushMessage('agent', `会话 ${session.id} 已就绪`, 'done');
+        });
       })
       .catch((error: unknown) => {
         setIsOnline(false);
         pushMessage('agent', `会话创建失败: ${String(error)}`, 'error');
+      });
+  }, []);
+
+  useEffect(() => {
+    const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
+    client
+      .getModelConfig()
+      .then((state) => {
+        setModelName(state.model);
+      })
+      .catch(() => {
+        setModelName('unknown');
       });
   }, []);
 
@@ -87,16 +139,34 @@ export function App() {
         const status = String(event.status);
         setTaskStatus(status);
         setRunning(null);
+        if (status === 'failed') {
+          // 显示具体失败原因（provider 错误 / 超轮次 / 审批中止等）
+          const detail = String(event.error ?? event.result ?? '未提供具体原因');
+          pushMessage('agent', `任务失败: ${detail}`, 'error');
+          return;
+        }
         pushMessage(
           'agent',
           `任务完成: ${status}`,
-          status === 'succeeded' ? 'done' : status === 'failed' ? 'error' : 'info',
+          status === 'succeeded' ? 'done' : 'info',
         );
+        // 模型通过 "DONE: <answer>" 给出的最终回答
+        const result = String(event.result ?? '');
+        if (result.startsWith('DONE: ')) {
+          pushMessage('agent', result.slice('DONE: '.length), 'text');
+        }
         return;
       }
       if (event.event === 'error') {
         setRunning(null);
         pushMessage('agent', `错误: ${String(event.error ?? 'unknown')}`, 'error');
+        return;
+      }
+      if (event.event === 'agent_message') {
+        const payload = (event.payload ?? {}) as { text?: string };
+        if (payload.text) {
+          pushMessage('agent', payload.text, 'text');
+        }
         return;
       }
       setRunning((current) => {
@@ -113,7 +183,7 @@ export function App() {
             },
           ];
         }
-        return { ...current, tokensUsed: current.tokensUsed + TOKENS_PER_EVENT, toolCalls };
+        return { ...current, steps: current.steps + 1, toolCalls };
       });
     });
     return () => {
@@ -145,7 +215,7 @@ export function App() {
       return;
     }
     if (commandName === '/config') {
-      pushMessage('agent', '配置请使用 CLI 命令：kl config provider add / kl config key set', 'info');
+      setConfigWizardOpen(true);
       return;
     }
     if (commandName === '/model') {
@@ -236,18 +306,16 @@ export function App() {
       .then((task) => {
         setTaskId(task.id);
         setTaskStatus('pending');
-        setConversationName(trimmed.slice(0, 20));
+        setRunning({
+          taskId: task.id,
+          startedAt: Date.now(),
+          steps: 0,
+          toolCalls: [],
+        });
         return client.runTask(task.id).then(() => task.id);
       })
       .then((id) => {
         setTaskStatus('running');
-        setRunning({
-          taskId: id,
-          startedAt: Date.now(),
-          tokensUsed: 0,
-          maxTokens: MAX_TOKENS,
-          toolCalls: [],
-        });
       })
       .catch((error: unknown) => {
         pushMessage('agent', `任务提交失败: ${String(error)}`, 'error');
@@ -267,6 +335,13 @@ export function App() {
   const menuOpen = inputValue.startsWith('/') && !inputValue.includes(' ') && filteredCommands.length > 0;
 
   useInput((input, key) => {
+    // 鼠标追踪的点击/移动事件残留（如 [<0;37;12M）不进入输入框
+    if (/^\[<\d+;\d+;\d+[Mm]$/.test(input)) {
+      return;
+    }
+    if (configWizardOpen) {
+      return; // 配置向导组件内部处理输入
+    }
     if (approval !== null) {
       if (input === 'a') {
         handleApproval('approve');
@@ -343,8 +418,14 @@ export function App() {
 
   return (
     <Box flexDirection="column" height="100%" backgroundColor={theme.background}>
-      <Header conversationName={conversationName} isOnline={isOnline} />
+      <Header workspace={process.cwd()} isOnline={isOnline} />
       <Messages messages={messages} running={running} offset={offset} />
+      {configWizardOpen ? (
+        <ConfigWizard
+          onClose={() => setConfigWizardOpen(false)}
+          onMessage={(content, kind) => pushMessage('agent', content, kind)}
+        />
+      ) : null}
       {approval !== null ? (
         <Box paddingX={1}>
           <Box
@@ -365,6 +446,7 @@ export function App() {
           menuOpen={menuOpen}
           menuIndex={Math.min(menuIndex, filteredCommands.length - 1)}
           commands={filteredCommands}
+          modelName={modelName}
         />
       )}
     </Box>

@@ -219,7 +219,8 @@ test('session command creates session', async () => {
   });
   vi.stubGlobal('fetch', fetchMock);
   const result = await SessionCommand.run(['new', 'E:/repo']);
-  expect(JSON.parse(result)).toEqual({ id: 's1' });
+  expect(result).toContain('会话已创建');
+  expect(result).toContain('s1');
   expect(fetchMock).toHaveBeenCalledWith(
     'http://127.0.0.1:8700/api/v1/sessions',
     expect.objectContaining({ method: 'POST' }),
@@ -277,7 +278,7 @@ test('session command handles 204 delete response', async () => {
     }),
   );
   const result = await SessionCommand.run(['delete', 's1']);
-  expect(result).toBe('deleted');
+  expect(result).toBe('会话 s1 已删除');
   vi.unstubAllGlobals();
 });
 

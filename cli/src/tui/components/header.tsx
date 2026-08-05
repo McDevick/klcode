@@ -3,27 +3,29 @@ import { Box, Text } from 'ink';
 import { theme } from '../theme';
 
 export function Header({
-  conversationName,
+  workspace,
   isOnline,
 }: {
-  conversationName: string;
+  workspace: string;
   isOnline: boolean;
 }) {
   return (
     <Box
-      height={2}
+      flexShrink={0}
       paddingX={1}
-      backgroundColor={theme.surface}
       borderStyle="single"
-      borderColor={theme.surfaceAlt}
-      borderTop={false}
+      borderColor={theme.border}
+      borderTop
+      borderBottom
       borderLeft={false}
       borderRight={false}
     >
-      <Text>📝 {conversationName}</Text>
-      <Box flexGrow={1} />
-      <Text dimColor>klcode</Text>
+      <Text bold color={theme.text}>
+        KLCODE
+      </Text>
       <Text color={isOnline ? theme.green : theme.red}> ●</Text>
+      <Box flexGrow={1} />
+      <Text dimColor>{workspace}</Text>
     </Box>
   );
 }

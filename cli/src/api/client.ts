@@ -90,7 +90,9 @@ export class ApiClient {
     return (await response.json()) as T;
   }
 
-  listSessions(): Promise<Array<{ id: string }>> {
+  listSessions(): Promise<
+    Array<{ id: string; workspace?: string; name?: string; status?: string; task_count?: number }>
+  > {
     return this.request('/api/v1/sessions');
   }
 

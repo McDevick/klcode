@@ -84,7 +84,7 @@ Get-Command python
 激活后即可直接使用 `python` 启动服务端：
 
 ```powershell
-python -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700
+python -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700 --timeout-graceful-shutdown 3
 ```
 
 > 注意：激活只对**当前终端窗口**生效，新开终端需要重新激活；退出环境用 `deactivate`。
@@ -92,7 +92,7 @@ python -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700
 #### 方式二：不激活，直接调用 venv 的 python.exe（最简单，无需任何前置）
 
 ```powershell
-E:\projects\SimpleCodingAgent\.superpowers\sdd\PLAN\venv\Scripts\python.exe -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700
+E:\projects\SimpleCodingAgent\.superpowers\sdd\PLAN\venv\Scripts\python.exe -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700 --timeout-graceful-shutdown 3
 ```
 
 复制整行运行即可，不需要激活、不需要执行策略设置。
@@ -110,9 +110,9 @@ venv 就绪后（方式一或方式二均可），启动服务端：
 
 ```powershell
 # 方式二（不激活，直接调用 venv 的 python.exe）：
-E:\projects\SimpleCodingAgent\.superpowers\sdd\PLAN\venv\Scripts\python.exe -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700
+E:\projects\SimpleCodingAgent\.superpowers\sdd\PLAN\venv\Scripts\python.exe -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700 --timeout-graceful-shutdown 3
 # 方式一（已激活 venv）：
-python -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700
+python -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700 --timeout-graceful-shutdown 3
 # 或已安装 server[dev] 后使用 console 入口：
 kl-server
 ```
@@ -146,7 +146,7 @@ npm link        # 之后可用 kl <命令>
 
 已接线的子命令：
 
-- `kl server start|stop|status`：管理本地守护进程。`start` 自动探测可用的 python（`python`/`python3`/`py`，要求能导入 uvicorn/fastapi/kl_server），用探测到的 python 以 `-m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700` 拉起服务，PID 写入 `~/.kl/daemon.pid`；无可用 python 时返回明确错误提示。
+- `kl server start|stop|status`：管理本地守护进程。`start` 自动探测可用的 python（`python`/`python3`/`py`，要求能导入 uvicorn/fastapi/kl_server），用探测到的 python 以 `-m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700 --timeout-graceful-shutdown 3` 拉起服务，PID 写入 `~/.kl/daemon.pid`；无可用 python 时返回明确错误提示。
 - `kl init`：查询初始化状态。需要守护进程已运行，否则连接被拒而失败；请先启动 daemon。
 - `kl run <task>`：提交一次性任务。自动创建 session（workspace 为当前目录）后提交，任务在服务端后台执行。
 - `kl config <area> <action> ...`：管理 provider 与 key（如 `kl config provider list`、`kl config key show <ref>`）。`kl config key set` 写入服务端凭据库（keyring/内存回退）；`kl config provider add` 注册 provider 并写回 `.kl/config.yaml`（重启后仍生效）。

@@ -51,6 +51,15 @@ export function buildProgram(): Command {
     .command('tui')
     .description('launch the interactive TUI')
     .action(() => {
+      // 备用屏幕缓冲区（alt screen）：终端滚动条不滚动 TUI 的重绘历史。
+      // 对话滚动由 TUI 内部处理（滚轮/方向键/PageUp/Down，见 App）。
+      // 启用鼠标追踪（SGR）以接收滚轮事件；复制请按住 Shift 拖动选择。
+      process.stdout.write('[?1049h');
+      process.stdout.write('[?1000h[?1006h');
+      process.on('exit', () => {
+        process.stdout.write('[?1000l[?1006l');
+        process.stdout.write('[?1049l');
+      });
       render(React.createElement(App));
     });
 
