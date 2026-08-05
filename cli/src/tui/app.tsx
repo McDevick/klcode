@@ -71,6 +71,47 @@ export function App() {
     setShowConfig(false);
     if (value.startsWith('/')) {
       const [commandName, ...args] = value.trim().split(/\s+/);
+      if (commandName === '/exit') {
+        process.exit(0);
+      }
+      if (commandName === '/help') {
+        setEvents((current) => [
+          ...current,
+          commands.help(),
+          '/status /abort /pause /continue /exit',
+        ]);
+        return;
+      }
+      if (commandName === '/status') {
+        setEvents((current) => [
+          ...current,
+          `session: ${sessionId ?? 'none'}`,
+          `task: ${taskId ?? 'none'}`,
+          `approval: ${approval !== null ? 'pending' : 'none'}`,
+        ]);
+        return;
+      }
+      if (commandName === '/abort' || commandName === '/pause' || commandName === '/continue') {
+        if (taskId === null) {
+          setEvents((current) => [...current, `${commandName}: no task`]);
+          return;
+        }
+        const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
+        const action =
+          commandName === '/abort'
+            ? client.abortTask(taskId)
+            : commandName === '/pause'
+              ? client.pauseTask(taskId)
+              : client.continueTask(taskId);
+        void action
+          .then((result) => {
+            setEvents((current) => [...current, `task ${result.status}`]);
+          })
+          .catch((error: unknown) => {
+            setEvents((current) => [...current, `task error: ${String(error)}`]);
+          });
+        return;
+      }
       try {
         const command = commands.resolve(commandName);
         void Promise.resolve(command.run(args))

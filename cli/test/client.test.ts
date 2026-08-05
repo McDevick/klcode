@@ -57,6 +57,41 @@ test('client runs a task via the run endpoint', async () => {
   }
 });
 
+test('client controls task lifecycle via abort pause continue endpoints', async () => {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ status: 'ok' }),
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    const client = new ApiClient({ baseUrl: 'http://127.0.0.1:8700' });
+
+    await client.abortTask('t1');
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'http://127.0.0.1:8700/api/v1/tasks/t1/abort',
+      expect.objectContaining({ method: 'POST' }),
+    );
+
+    await client.pauseTask('t1');
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      'http://127.0.0.1:8700/api/v1/tasks/t1/pause',
+      expect.objectContaining({ method: 'POST' }),
+    );
+
+    await client.continueTask('t1');
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      'http://127.0.0.1:8700/api/v1/tasks/t1/continue',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 test('client omits authorization when token file is missing', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'kl-client-no-token-'));
   const tokenPath = join(dir, 'missing-token');

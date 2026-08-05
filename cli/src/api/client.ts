@@ -126,6 +126,24 @@ export class ApiClient {
     });
   }
 
+  abortTask(taskId: string): Promise<{ status: string }> {
+    return this.request(`/api/v1/tasks/${encodeURIComponent(taskId)}/abort`, {
+      method: 'POST',
+    });
+  }
+
+  pauseTask(taskId: string): Promise<{ status: string }> {
+    return this.request(`/api/v1/tasks/${encodeURIComponent(taskId)}/pause`, {
+      method: 'POST',
+    });
+  }
+
+  continueTask(taskId: string): Promise<{ status: string }> {
+    return this.request(`/api/v1/tasks/${encodeURIComponent(taskId)}/continue`, {
+      method: 'POST',
+    });
+  }
+
   createTask(description: string, sessionId = 'default'): Promise<TaskResult> {
     return this.request('/api/v1/tasks', {
       method: 'POST',

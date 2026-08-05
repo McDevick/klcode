@@ -1,9 +1,28 @@
 import asyncio
+from pathlib import Path
 
+import yaml
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 
+from kl_server.config.config import ProviderConfig
 from kl_server.models.task import Session, Task, TaskStatus
+from kl_server.providers.openai_compatible import OpenAICompatibleProvider
+
+
+def _persist_config(deps) -> None:
+    """Write the current AppConfig back to the config YAML file."""
+    config_path = getattr(deps, "config_path", None)
+    if not config_path:
+        return
+    Path(config_path).write_text(
+        yaml.safe_dump(deps.config.model_dump(), allow_unicode=True),
+        encoding="utf-8",
+    )
+
+
+# Task ids of currently executing background tasks, so they can be cancelled.
+_running_tasks: dict[str, asyncio.Task] = {}
 
 
 class CreateSessionPayload(BaseModel):
@@ -209,6 +228,56 @@ def build_router() -> APIRouter:
         asyncio.create_task(_execute_task(deps, session, task, bus))
         return {"status": "running"}
 
+    @router.post("/tasks/{task_id}/abort")
+    async def abort_task(task_id: str, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is None:
+            raise HTTPException(
+                status_code=501,
+                detail="task execution requires a configured server",
+            )
+        try:
+            await deps.tasks.get(task_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="task not found")
+        running = _running_tasks.get(task_id)
+        if running is not None and not running.done():
+            running.cancel()
+        await deps.tasks.abort(task_id)
+        return {"status": "canceled"}
+
+    @router.post("/tasks/{task_id}/pause")
+    async def pause_task(task_id: str, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is None:
+            raise HTTPException(
+                status_code=501,
+                detail="task execution requires a configured server",
+            )
+        try:
+            await deps.tasks.pause(task_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="task not found")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"status": "paused"}
+
+    @router.post("/tasks/{task_id}/continue")
+    async def continue_task(task_id: str, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is None:
+            raise HTTPException(
+                status_code=501,
+                detail="task execution requires a configured server",
+            )
+        try:
+            await deps.tasks.resume(task_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="task not found")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"status": "running"}
+
     @router.post("/config/check")
     def config_check(request: Request):
         deps = getattr(request.app.state, "deps", None)
@@ -221,11 +290,43 @@ def build_router() -> APIRouter:
         return {"status": "ok", "providers": ["mock"]}
 
     @router.get("/providers")
-    def list_providers():
+    def list_providers(request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is not None:
+            listed = [{"name": "mock", "type": "mock"}]
+            listed.extend(
+                {
+                    "name": name,
+                    "type": provider_config.type,
+                    "base_url": provider_config.base_url,
+                    "default_model": provider_config.default_model,
+                }
+                for name, provider_config in deps.config.providers.items()
+            )
+            return listed
         return [{"name": "mock", "type": "mock"}] + providers
 
     @router.post("/providers")
-    def add_provider(payload: ProviderPayload):
+    async def add_provider(payload: ProviderPayload, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is not None:
+            provider_config = ProviderConfig(
+                name=payload.name,
+                type=payload.type,
+                base_url=payload.base_url,
+                default_model=payload.default_model,
+            )
+            deps.config.providers[payload.name] = provider_config
+            _persist_config(deps)
+            deps.provider_registry.register(
+                payload.name,
+                OpenAICompatibleProvider(
+                    base_url=payload.base_url,
+                    api_key=deps.credentials.get(payload.name),
+                    model=payload.default_model,
+                ),
+            )
+            return payload
         provider = payload.model_dump()
         providers.append(provider)
         return provider
@@ -235,20 +336,34 @@ def build_router() -> APIRouter:
         return [{"name": "mock-model"}]
 
     @router.get("/keys")
-    def list_keys():
+    def list_keys(request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is not None:
+            return {"configured": sorted(deps.credentials.safe_snapshot())}
         return {"configured": sorted(keys)}
 
     @router.post("/keys/{ref}")
-    def set_key(ref: str, payload: KeyPayload):
+    def set_key(ref: str, payload: KeyPayload, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is not None:
+            deps.credentials.set(ref, payload.secret)
+            return {"configured": True}
         keys.add(ref)
         return {"configured": True}
 
     @router.get("/keys/{ref}")
-    def key_status(ref: str):
+    def key_status(ref: str, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is not None:
+            return {"configured": deps.credentials.has(ref)}
         return {"configured": ref in keys}
 
     @router.delete("/keys/{ref}")
-    def clear_key(ref: str):
+    def clear_key(ref: str, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is not None:
+            deps.credentials.clear(ref)
+            return {"configured": False}
         keys.discard(ref)
         return {"configured": False}
 
@@ -261,6 +376,7 @@ async def _execute_task(deps, session, task, bus) -> None:
     Runs in the background (spawned by ``run_task``); lifecycle events are
     streamed to the event bus by the loop's forwarded logger.
     """
+    _running_tasks[task.id] = asyncio.current_task()
     try:
         result = await deps.loop.run(session, task.description, task_id=task.id)
     except Exception as exc:
@@ -272,6 +388,8 @@ async def _execute_task(deps, session, task, bus) -> None:
                 {"event": "task_end", "status": "failed", "error": str(exc)[:500]},
             )
         return
+    finally:
+        _running_tasks.pop(task.id, None)
     task.status = TaskStatus.SUCCEEDED if result == "DONE" else TaskStatus.FAILED
     await deps.tasks.update(task)
     if bus is not None:

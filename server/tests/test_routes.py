@@ -209,6 +209,63 @@ def test_key_routes_only_return_configured_status_and_never_secret():
     assert client.get("/api/v1/keys/openai").json() == {"configured": False}
 
 
+def test_key_routes_persist_to_credential_store_with_deps(tmp_path):
+    client = make_deps_client(tmp_path)
+    deps = client.app.state.deps
+
+    configured = client.post("/api/v1/keys/openai", json={"secret": "sk-real-secret"})
+    assert configured.status_code == 200
+    assert configured.json() == {"configured": True}
+    assert deps.credentials.has("openai") is True
+
+    assert client.get("/api/v1/keys/openai").json() == {"configured": True}
+    assert "openai" in client.get("/api/v1/keys").json()["configured"]
+
+    cleared = client.delete("/api/v1/keys/openai")
+    assert cleared.status_code == 200
+    assert deps.credentials.has("openai") is False
+
+
+def test_provider_add_persists_config_and_registers_with_deps(tmp_path):
+    client = make_deps_client(tmp_path)
+    deps = client.app.state.deps
+    provider = {
+        "name": "acme",
+        "type": "openai-compatible",
+        "base_url": "http://127.0.0.1:9999/v1",
+        "default_model": "gpt-test",
+    }
+
+    added = client.post("/api/v1/providers", json=provider)
+
+    assert added.status_code == 200
+    assert added.json()["name"] == "acme"
+    assert deps.provider_registry.get("acme") is not None
+    assert "acme" in deps.config.providers
+    assert deps.config.providers["acme"].base_url == "http://127.0.0.1:9999/v1"
+
+    listed = client.get("/api/v1/providers")
+    assert any(item["name"] == "acme" for item in listed.json())
+
+
+def test_provider_add_writes_config_yaml_with_deps(tmp_path):
+    client = make_deps_client(tmp_path)
+    provider = {
+        "name": "acme",
+        "type": "openai-compatible",
+        "base_url": "http://127.0.0.1:9999/v1",
+        "default_model": "gpt-test",
+    }
+
+    client.post("/api/v1/providers", json=provider)
+
+    config_path = tmp_path / "config.yaml"
+    assert config_path.exists()
+    content = config_path.read_text(encoding="utf-8")
+    assert "acme" in content
+    assert "http://127.0.0.1:9999/v1" in content
+
+
 def test_route_state_is_isolated_per_app_instance():
     client_a = make_client()
     client_b = make_client()

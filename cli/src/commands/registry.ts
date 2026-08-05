@@ -32,7 +32,12 @@ export class CommandRegistry {
   }
 
   help(): string {
-    return this.commands.map((c) => `/${c.name}`).join('\n');
+    return this.commands
+      .map((command) => {
+        const names = [command.name, ...command.aliases];
+        return names.map((name) => `/${name}`).join(', ');
+      })
+      .join('\n');
   }
 }
 

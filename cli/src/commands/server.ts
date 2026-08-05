@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
@@ -28,6 +28,23 @@ export interface ServerCommandOptions {
   pidPath?: string;
   spawnImpl?: ServerSpawnImpl;
   killImpl?: (pid: number) => boolean;
+  pythonResolver?: () => Promise<string | null>;
+}
+
+const PYTHON_CANDIDATES = ['python', 'python3', 'py'];
+
+async function defaultPythonResolver(): Promise<string | null> {
+  for (const candidate of PYTHON_CANDIDATES) {
+    try {
+      execFileSync(candidate, ['-c', 'import uvicorn, fastapi, kl_server'], {
+        stdio: 'pipe',
+      });
+      return candidate;
+    } catch {
+      // try the next candidate
+    }
+  }
+  return null;
 }
 
 function defaultPidPath(): string {
@@ -65,6 +82,11 @@ export const ServerCommand = {
         if (existingPid !== undefined) {
           return `server already running (pid ${existingPid})`;
         }
+        const resolvePython = options.pythonResolver ?? defaultPythonResolver;
+        const python = await resolvePython();
+        if (python === null) {
+          return 'server start failed: no usable python found (needs uvicorn, fastapi and kl_server; use the project venv python)';
+        }
         const spawnImpl = (options.spawnImpl ?? spawn) as ServerSpawnImpl;
         const serverRoots = [join(process.cwd(), 'server'), join(process.cwd(), '..', 'server')].filter(
           existsSync,
@@ -77,7 +99,7 @@ export const ServerCommand = {
             }
           : process.env;
         const child = spawnImpl(
-          'python',
+          python,
           ['-m', 'uvicorn', 'kl_server.main:app', '--host', '127.0.0.1', '--port', '8700'],
           {
             cwd: process.cwd(),

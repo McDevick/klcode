@@ -40,6 +40,20 @@ function stubWebSocket() {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+async function waitFor(
+  condition: () => boolean,
+  timeout = 2000,
+  interval = 20,
+): Promise<void> {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if (condition()) {
+      return;
+    }
+    await sleep(interval);
+  }
+}
+
 test('task input renders prompt', () => {
   const { lastFrame } = render(<TaskInput onSubmit={() => {}} />);
   expect(lastFrame()).toContain('task>');
@@ -73,7 +87,7 @@ test('app creates a session on start and submits tasks to the backend', async ()
     await sleep(30);
     stdin.write('hello');
     stdin.write('\r');
-    await sleep(50);
+    await waitFor(() => (lastFrame() ?? '').includes('task t1 created'));
 
     expect(lastFrame()).toContain('task t1 created');
     expect(lastFrame()).toContain('task running');
@@ -92,6 +106,7 @@ test('app creates a session on start and submits tasks to the backend', async ()
       'http://127.0.0.1:8700/api/v1/tasks/t1/run',
       expect.objectContaining({ method: 'POST' }),
     );
+    await waitFor(() => FakeWebSocket.instances.length > 0);
     expect(FakeWebSocket.instances.length).toBeGreaterThan(0);
   } finally {
     unmount();
@@ -121,7 +136,7 @@ test('app shows approval panel from websocket event and sends decision', async (
     await sleep(30);
     stdin.write('hello');
     stdin.write('\r');
-    await sleep(50);
+    await waitFor(() => FakeWebSocket.instances.length > 0);
 
     const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
     socket.onmessage?.({
@@ -143,6 +158,128 @@ test('app shows approval panel from websocket event and sends decision', async (
     const decisionSocket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
     expect(decisionSocket.sent.some((data) => data.includes('"approve"'))).toBe(true);
   } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app shows help for slash commands', async () => {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ id: 's1', workspace: process.cwd(), name: 'default', status: 'active' }),
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await sleep(30);
+    stdin.write('/help');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('/sessions'));
+    expect(lastFrame()).toContain('/sessions');
+    expect(lastFrame()).toContain('/status');
+    expect(lastFrame()).toContain('/exit');
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app shows session and task status from /status', async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 's1', workspace: process.cwd(), name: 'default', status: 'active' }),
+    })
+    .mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 't1', session_id: 's1', description: 'hello', status: 'pending' }),
+    })
+    .mockResolvedValueOnce({ ok: true, status: 202, json: async () => ({ status: 'running' }) });
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await sleep(30);
+    stdin.write('hello');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('task running'));
+    stdin.write('/status');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('task: t1'));
+    expect(lastFrame()).toContain('session: s1');
+    expect(lastFrame()).toContain('task: t1');
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app aborts the current task via the api', async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 's1', workspace: process.cwd(), name: 'default', status: 'active' }),
+    })
+    .mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 't1', session_id: 's1', description: 'hello', status: 'pending' }),
+    })
+    .mockResolvedValueOnce({ ok: true, status: 202, json: async () => ({ status: 'running' }) })
+    .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ status: 'canceled' }) });
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await sleep(30);
+    stdin.write('hello');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('task running'));
+    stdin.write('/abort');
+    stdin.write('\r');
+    await waitFor(() => fetchMock.mock.calls.length >= 4);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      'http://127.0.0.1:8700/api/v1/tasks/t1/abort',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    await waitFor(() => (lastFrame() ?? '').includes('canceled'));
+    expect(lastFrame()).toContain('canceled');
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app exits on /exit', async () => {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ id: 's1', workspace: process.cwd(), name: 'default', status: 'active' }),
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+  const { stdin, unmount } = render(<App />);
+  try {
+    await sleep(30);
+    stdin.write('/exit');
+    stdin.write('\r');
+    await sleep(30);
+    expect(exitSpy).toHaveBeenCalledWith(0);
+  } finally {
+    exitSpy.mockRestore();
     unmount();
     vi.unstubAllGlobals();
     restore();

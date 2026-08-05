@@ -44,6 +44,7 @@ class AppDependencies:
     mcp: McpAdapter
     plugins: PluginLoader
     config_error: str | None = None
+    config_path: str | None = None
 
 
 def build_app_dependencies(
@@ -116,4 +117,5 @@ def build_app_dependencies(
         mcp=mcp,
         plugins=plugins,
         config_error=config_error,
+        config_path=str(Path(config_path)),
     )

@@ -1,5 +1,6 @@
 """Integration tests for task execution over the API and WebSocket bridge."""
 
+import asyncio
 import json
 import time
 
@@ -8,6 +9,7 @@ from fastapi.testclient import TestClient
 from kl_server.api.app import create_app
 from kl_server.bootstrap import build_app_dependencies
 from kl_server.config.credentials import InMemoryCredentialStore
+from kl_server.providers.base import ProviderResponse
 from kl_server.providers.mock import MockProvider
 
 
@@ -130,3 +132,57 @@ def test_run_task_missing_task_returns_404(tmp_path):
     response = client.post("/api/v1/tasks/missing/run")
 
     assert response.status_code == 404
+
+
+class SlowProvider:
+    """Provider that blocks until cancelled; used to observe a running task."""
+
+    async def complete(self, request):
+        await asyncio.sleep(30)
+        return ProviderResponse(text="DONE")
+
+
+def test_abort_running_task_cancels_execution_and_marks_canceled(tmp_path):
+    deps = make_deps(tmp_path)
+    deps.loop.provider = SlowProvider()
+    with TestClient(create_app(deps=deps)) as client:
+        _, task = create_session_and_task(client, tmp_path)
+
+        assert client.post(f"/api/v1/tasks/{task['id']}/run").status_code == 202
+        deadline = time.time() + 5
+        status = None
+        while time.time() < deadline:
+            status = client.get(f"/api/v1/tasks/{task['id']}").json()["status"]
+            if status == "running":
+                break
+            time.sleep(0.05)
+        assert status == "running"
+
+        response = client.post(f"/api/v1/tasks/{task['id']}/abort")
+        assert response.status_code == 200
+        assert response.json()["status"] == "canceled"
+        assert wait_for_terminal_status(client, task["id"]) == "canceled"
+
+
+def test_pause_and_continue_update_task_status(tmp_path):
+    deps = make_deps(tmp_path)
+    deps.loop.provider = SlowProvider()
+    with TestClient(create_app(deps=deps)) as client:
+        _, task = create_session_and_task(client, tmp_path)
+
+        assert client.post(f"/api/v1/tasks/{task['id']}/run").status_code == 202
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            status = client.get(f"/api/v1/tasks/{task['id']}").json()["status"]
+            if status == "running":
+                break
+            time.sleep(0.05)
+        assert status == "running"
+
+        assert client.post(f"/api/v1/tasks/{task['id']}/pause").status_code == 200
+        assert client.get(f"/api/v1/tasks/{task['id']}").json()["status"] == "paused"
+
+        assert client.post(f"/api/v1/tasks/{task['id']}/continue").status_code == 200
+        assert client.get(f"/api/v1/tasks/{task['id']}").json()["status"] == "running"
+
+        assert client.post(f"/api/v1/tasks/{task['id']}/abort").status_code == 200

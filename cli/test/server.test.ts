@@ -18,14 +18,20 @@ afterEach(() => {
   }
 });
 
-test('server start spawns uvicorn and writes pid file', async () => {
+test('server start spawns uvicorn with resolved python and writes pid file', async () => {
   const dir = makeTempDir();
   const pidPath = join(dir, 'daemon.pid');
   const spawnMock = vi.fn().mockReturnValue({ pid: 4242, unref: vi.fn() });
+  const pythonResolver = vi.fn().mockResolvedValue('python');
 
-  const output = await ServerCommand.run(['start'], { pidPath, spawnImpl: spawnMock });
+  const output = await ServerCommand.run(['start'], {
+    pidPath,
+    spawnImpl: spawnMock,
+    pythonResolver,
+  });
 
   expect(output).toContain('started');
+  expect(pythonResolver).toHaveBeenCalled();
   expect(spawnMock).toHaveBeenCalledWith(
     'python',
     ['-m', 'uvicorn', 'kl_server.main:app', '--host', '127.0.0.1', '--port', '8700'],
@@ -36,6 +42,38 @@ test('server start spawns uvicorn and writes pid file', async () => {
     }),
   );
   expect(readFileSync(pidPath, 'utf8')).toBe('4242');
+});
+
+test('server start uses the python returned by the resolver', async () => {
+  const dir = makeTempDir();
+  const pidPath = join(dir, 'daemon.pid');
+  const spawnMock = vi.fn().mockReturnValue({ pid: 7, unref: vi.fn() });
+  const pythonResolver = vi.fn().mockResolvedValue('python3');
+
+  const output = await ServerCommand.run(['start'], {
+    pidPath,
+    spawnImpl: spawnMock,
+    pythonResolver,
+  });
+
+  expect(output).toContain('started');
+  expect(spawnMock).toHaveBeenCalledWith(
+    'python3',
+    expect.arrayContaining(['-m', 'uvicorn']),
+    expect.anything(),
+  );
+});
+
+test('server start reports a clear failure when no python resolves', async () => {
+  const dir = makeTempDir();
+  const pidPath = join(dir, 'daemon.pid');
+  const pythonResolver = vi.fn().mockResolvedValue(null);
+
+  const output = await ServerCommand.run(['start'], { pidPath, pythonResolver });
+
+  expect(output).toContain('failed');
+  expect(output).toContain('python');
+  expect(existsSync(pidPath)).toBe(false);
 });
 
 test('server stop kills pid and removes pid file', async () => {
