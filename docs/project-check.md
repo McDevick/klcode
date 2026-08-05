@@ -3,7 +3,7 @@
 > 日期：2026-08-05
 > 检查方式：代码审读 + 真实运行验证（server/CLI 端到端冒烟 + 全量测试）
 > 检查基准：`SPEC.md` §9 验收标准、`PLAN.md` Phase 5 任务、用户核心期望（TUI 交互可用、后端稳定运行）
-> 更新：2026-08-05 修复 U-1/U-2/U-3/U-6 后复查（详见 §7 修复记录）
+> 更新：2026-08-05 修复 U-1/U-2/U-3/U-6 后复查；再修复 U-4/U-5、TUI 斜杠指令（详见 §7 修复记录）
 
 ---
 
@@ -121,12 +121,11 @@
 
 ---
 
-## 6. 剩余事项（建议顺序）
+## 6. 剩余事项
 
-1. **U-4**：`kl server start` 改用可靠 python 解析（当前依赖系统 python，缺依赖时拉不起服务）
-2. **U-5**：`kl config` provider/key 写回 `.kl/config.yaml` + 凭据库（当前仅内存态）
-3. **U-7**：REFLECTION.md 补写至 1500–2500 汉字（用户亲自写）
-4. TUI 补充 `/pause /continue /abort /status /help` 等斜杠指令（SPEC §3.10 roadmap）
+1. **U-7**：REFLECTION.md 补写至 1500–2500 汉字（用户亲自写）
+2. TUI `/pause /continue` 为状态标记级实现（TaskManager 状态机）；运行中任务的真正暂停/恢复（AgentLoop 挂起）为后续深化
+3. `/provider /model /key /tools /hooks /skills /mcp` 等完整配置类斜杠指令（当前可用 CLI `kl config` 完成同等操作）
 
 ---
 
@@ -138,7 +137,10 @@
 | U-3 | `create_task` 校验 session 存在，缺失返回 404 | `test_task_create_with_missing_session_returns_404_with_deps` |
 | U-2 | `tui` 子命令 + 后端执行/事件/审批链路 + App 连真实后端 | server `336 passed`；CLI `45 passed`（tui 7 个）；`POST /tasks/{id}/run` 端到端含审批流测试 4 个 |
 | U-6 | README 全面更新 | — |
+| U-4 | `kl server start` 探测可用 python（`python`/`python3`/`py`，检查 uvicorn+fastapi+kl_server），无可用时返回清晰错误 | server.test.ts +3 |
+| U-5 | `kl config key set` 写入真实凭据库；`kl config provider add` 更新 registry + 写回 `.kl/config.yaml` | test_routes.py +3、CLI 端到端验证 |
+| TUI 指令 | `/status`（session/task/approval 状态）、`/help`（含别名）、`/exit`、`/abort`（取消运行任务）、`/pause`、`/continue`；后端新增 `POST /tasks/{id}/abort|pause|continue` | test_task_execution.py +2（abort 取消运行任务、pause/continue 状态机）、client.test.ts +1、tui.test.tsx +4 |
 
-新增测试：`test_task_events.py`（bus/hub 5 个）、`test_task_execution.py`（执行/事件/审批 4 个）、`test_ws.py` +1（hub 通知）、`test_routes.py` +2（缺 session 404）、`test_main.py`（原有 3 个）+ CLI `run.test.ts` 2 个、`client.test.ts` +1、`main.test.ts` +1、`tui.test.tsx` 重构后 7 个。
+新增测试：`test_task_events.py`（bus/hub 5 个）、`test_task_execution.py`（执行/事件/审批/abort/pause/continue 6 个）、`test_ws.py` +1（hub 通知）、`test_routes.py` +5（缺 session 404、key/provider 持久化）、`test_main.py`（原有 3 个）+ CLI `server.test.ts` +3（python 解析）、`run.test.ts` 2 个、`client.test.ts` +2、`main.test.ts` +1、`tui.test.tsx` 重构后 11 个。
 
 技术备注：App 输入改为顶层单一 `useInput` + `useRef` 同步缓冲 —— 规避 ink 7.1.1 中「同一渲染批次 useInput 组件 active 切换/挂载导致 readable listener 丢失」的竞态，以及 React state 异步更新导致 `\r` 提交读到旧值的问题。

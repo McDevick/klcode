@@ -3,6 +3,22 @@
 > 本文件按任务执行全程实时记录关键节点，不在任务完成后统一补写。
 > 每条记录包含：时间戳、task 编号、触发的 Superpowers 技能、关键 prompt/context、subagent 输出或 commit hash、人工干预、教训。
 
+## 2026-08-05 Project check fix U-4/U-5 + TUI slash commands（已完成）
+
+- 时间戳：2026-08-05 13:00（开工）。
+- 范围：继续修复 check 文档遗留项：U-4（`kl server start` python 解析）、U-5（config/key 持久化）、TUI 斜杠指令。
+- 触发的技能：`test-driven-development`、`verification-before-completion`
+- Implementer：controller 本地 TDD 实现
+- 分支：`dev`
+- 修复：
+  - **U-4**：`kl server start` 自动探测可用 python（`python`/`python3`/`py`，`-c "import uvicorn, fastapi, kl_server"` 探测），无可用时返回明确错误；`pythonResolver` 可注入便于测试。
+  - **U-5**：`/keys/*` 写入真实凭据库（`deps.credentials`，keyring/内存回退）；`/providers` POST 注册 provider registry + 更新 AppConfig + 写回 `.kl/config.yaml`（bootstrap 增加 `config_path`）；`/providers` GET 从真实配置读。
+  - **TUI 指令**：后端新增 `POST /tasks/{id}/abort|pause|continue`（abort 取消运行中的 asyncio 任务，`_running_tasks` 注册表；pause/continue 走 TaskManager 状态机）；CLI `ApiClient` 增加对应方法；App 增加 `/status`（session/task/approval）、`/help`（含别名）、`/exit`、`/abort`、`/pause`、`/continue`；`CommandRegistry.help()` 现含别名。
+- TDD 红绿：server.test.ts +3、test_routes.py +3、test_task_execution.py +2、client.test.ts +1、tui.test.tsx +4（/help /status /abort /exit）。
+- 验证：server `341 passed, 1 skipped`；CLI `52 passed`；`npm run build` 通过；`git diff --check` 干净。
+- 教训：TUI 组件测试存在 ink-testing-library 渲染时序问题，固定 `sleep` 断言在完整测试运行时不稳，改用 `waitFor` 轮询断言；`/help` 最初只列 `name` 不含别名导致 `/sessions` 查询失败，帮助输出应包含别名。
+- 遗留：U-7（REFLECTION 字数，用户亲自写）；TUI `/pause` 为状态标记级；配置类斜杠指令可用 `kl config` 等价操作。
+
 ## 2026-08-05 Project check fix U-1/U-2/U-3/U-6（已完成）
 
 - 时间戳：2026-08-05 12:00（开工）。

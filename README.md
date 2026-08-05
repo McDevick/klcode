@@ -94,10 +94,10 @@ npm link        # 之后可用 kl <命令>
 
 已接线的子命令：
 
-- `kl server start|stop|status`：管理本地守护进程。`start` 通过 `python -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700` 拉起服务，PID 写入 `~/.kl/daemon.pid`。注意 `start` 调用的是系统 `python`，若系统 Python 未装 fastapi/uvicorn 会失败，此时请用项目 venv 手动启动（见上文"启动服务端"）。
+- `kl server start|stop|status`：管理本地守护进程。`start` 自动探测可用的 python（`python`/`python3`/`py`，要求能导入 uvicorn/fastapi/kl_server），用探测到的 python 以 `-m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700` 拉起服务，PID 写入 `~/.kl/daemon.pid`；无可用 python 时返回明确错误提示。
 - `kl init`：查询初始化状态。需要守护进程已运行，否则连接被拒而失败；请先启动 daemon。
-- `kl run <task>`：提交一次性任务。**已知限制**：当前默认使用 session `default`，若服务端数据库尚无该 session 会返回 500；需先用 API 创建 session（详见 `docs/project-check.md` U-1）。
-- `kl config <area> <action> ...`：管理 provider 与 key（如 `kl config provider list`、`kl config key show <ref>`）。当前 provider/key 仅写入服务端内存态，重启即丢失，不影响 bootstrap 从 `config.yaml` 构建的真实 provider registry（见 `docs/project-check.md` U-5）。
+- `kl run <task>`：提交一次性任务。自动创建 session（workspace 为当前目录）后提交，任务在服务端后台执行。
+- `kl config <area> <action> ...`：管理 provider 与 key（如 `kl config provider list`、`kl config key show <ref>`）。`kl config key set` 写入服务端凭据库（keyring/内存回退）；`kl config provider add` 注册 provider 并写回 `.kl/config.yaml`（重启后仍生效）。
 - `kl tui`：**尚未接线**，`cli/src/main.ts` 中没有 `tui` 子命令，属于 roadmap。
 
 ## 分发命令
@@ -150,9 +150,8 @@ make dev       # roadmap 占位，默认退出码 1
 ## 已知限制
 
 - `kl tui` 尚未接线（组件已实现），`make dev` 仍为占位守卫，均按 roadmap 处理。
-- `kl run` 默认使用 session `default`，若服务端数据库尚无该 session 会返回 500；需先用 API 创建 session（见 `docs/project-check.md` U-1）。
-- 服务端对引用不存在 session 的 task 创建返回 500，应返回 4xx（见 `docs/project-check.md` U-3）。
-- `kl server start` 依赖系统 `python`；系统 Python 缺 fastapi/uvicorn 等依赖时拉不起服务，请用项目 venv 手动启动。
-- `kl config` 的 provider/key 仅保存在服务端内存态，重启丢失，未写回 `.kl/config.yaml`（见 `docs/project-check.md` U-5）。
 - `kl init` 依赖守护进程已运行，否则连接被拒（`ECONNREFUSED 127.0.0.1:8700`）而失败。
+- `kl server start` 探测 python 需要能导入 uvicorn/fastapi/kl_server；若本机只有缺依赖的系统 python，请用项目 venv 手动启动。
+- TUI 的 `/pause`、`/continue` 为任务状态标记（TaskManager 状态机）；运行中任务的真正挂起/恢复尚未实现。
+- 服务端凭据库在 keyring 不可用时回退为内存存储（不持久化），初始化时会提示。
 - WebUI、subagent 分派、远程部署与 Docker **不在** `SPEC.md`/`PLAN.md` 授权范围内，仓库不会承诺这些能力。
