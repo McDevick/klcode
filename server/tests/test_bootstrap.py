@@ -130,3 +130,32 @@ def test_bootstrap_sandbox_allows_git_and_curl(tmp_path):
     assert sandbox.allow_command("curl -I https://example.com") is True
     assert sandbox.allow_command("rm -rf .") is False
     assert sandbox.allow_command("docker ps") is False
+
+
+def test_bootstrap_starts_with_missing_provider_credential(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "providers:\n"
+        "  openai:\n"
+        "    type: openai-compatible\n"
+        "    base_url: https://example.com/v1\n"
+        "    default_model: gpt-test\n"
+        "    credential_ref: openai\n",
+        encoding="utf-8",
+    )
+    deps = build_app_dependencies(
+        config_path=config_path,
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+
+    assert deps.provider_registry.get("mock") is not None
+    assert deps.config_error == "credential not found: openai"
+
+    client = TestClient(create_app(deps=deps))
+    response = client.post("/api/v1/config/check")
+    assert response.status_code == 200
+    assert response.json()["status"] == "degraded"
+    assert response.json()["error"] == "credential not found: openai"

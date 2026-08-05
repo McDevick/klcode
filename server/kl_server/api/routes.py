@@ -178,7 +178,14 @@ def build_router() -> APIRouter:
         return task
 
     @router.post("/config/check")
-    def config_check():
+    def config_check(request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is not None and getattr(deps, "config_error", None):
+            return {
+                "status": "degraded",
+                "providers": ["mock"],
+                "error": deps.config_error,
+            }
         return {"status": "ok", "providers": ["mock"]}
 
     @router.get("/providers")

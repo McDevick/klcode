@@ -13,6 +13,7 @@
   - F2：CLI events 无 token 测试显式传入不存在的 tokenPath，不再受 `~/.kl/daemon.token` 影响。
   - F3：`/health` 不要求 Bearer token。
   - F4：`kl_server.main` 导入不再建 `.kl`/写 token/访问 keyring；deps 与 token 延迟到 FastAPI lifespan 启动。
+  - F4 补充：provider 缺少 key 时不再阻止启动，降级使用 mock provider，并在 /config/check 返回 degraded 与 error。
   - F5：session/task 读、改、删路径接入真实 manager；SessionManager 增加 list/update/delete。
   - F6：demos 不再硬编码 `server/`，通过 `examples/_demo_import.py` 动态定位 `kl_server` 包。
   - F7：bootstrap SandboxPolicy 不再 blanket deny git/curl，保留 rm/docker deny。

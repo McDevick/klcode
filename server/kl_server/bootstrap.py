@@ -43,6 +43,7 @@ class AppDependencies:
     skills: SkillLoader
     mcp: McpAdapter
     plugins: PluginLoader
+    config_error: str | None = None
 
 
 def build_app_dependencies(
@@ -59,7 +60,12 @@ def build_app_dependencies(
     sessions = SessionManager(db)
     tasks = TaskManager(db)
     credentials = credential_store or create_credential_store()
-    providers = build_provider_registry(config, credentials)
+    config_error = None
+    try:
+        providers = build_provider_registry(config, credentials)
+    except ValueError as exc:
+        providers = ProviderRegistry()
+        config_error = str(exc)
     tools = ToolRegistry()
     register_builtin_tools(tools)
     guardrail = Guardrail(
@@ -78,7 +84,10 @@ def build_app_dependencies(
     plugins = PluginLoader(str(Path(workspace) / ".kl" / "tools"))
     register_user_tools(tools, plugins)
     tools.register(McpTool(mcp))
-    provider = providers.get(config.default_provider)
+    try:
+        provider = providers.get(config.default_provider)
+    except KeyError:
+        provider = providers.get("mock")
     loop = AgentLoop(
         provider=provider,
         tools=executor,
@@ -106,4 +115,5 @@ def build_app_dependencies(
         skills=skills,
         mcp=mcp,
         plugins=plugins,
+        config_error=config_error,
     )
