@@ -1,29 +1,49 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "kl-server"
 version = "0.1.0"
+description = "KL Code server"
+readme = "README.md"
 requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Software Development",
+]
 dependencies = [
-    "fastapi",
-    "uvicorn",
-    "pydantic",
-    "pydantic-settings",
-    "aiosqlite",
-    "keyring",
-    "cryptography",
-    "httpx",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "aiosqlite>=0.20",
+    "keyring>=25",
+    "cryptography>=42",
+    "httpx>=0.27",
     "mcp>=2.0.0,<3.0.0",
-    "PyYAML",
+    "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]
 dev = [
+    "build",
     "pytest",
     "pytest-asyncio",
 ]
+
+[project.scripts]
+kl-server = "kl_server.main:main"
+
+[project.urls]
+Source = "https://github.com/McDevick/klcode"
+
+[tool.setuptools]
+include-package-data = true
 
 [tool.setuptools.packages.find]
 include = ["kl_server*"]
