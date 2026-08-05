@@ -167,14 +167,21 @@ test('slash menu opens on / and arrow selection fills the input', async () => {
   try {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('/');
-    // 菜单完整显示所有命令（文档流，不受视口裁剪）
-    await waitFor(() => (lastFrame() ?? '').includes('列出历史会话'));
-    expect(lastFrame()).toContain('列出历史会话');
-    expect(lastFrame()).toContain('退出 TUI');
-    expect(lastFrame()).toContain('显示帮助');
+    // 浮层菜单出现（测试视口较矮，断言窗口内靠底的可见项）
+    await waitFor(() => (lastFrame() ?? '').includes('打开配置向导'));
+    expect(lastFrame()).toContain('打开配置向导');
 
-    // ArrowDown 移动选中（index 0 -> 1 = /session），Enter 填入输入框
-    stdin.write('[B');
+    // 滚动窗口：ArrowDown 一路到 /exit（index 8）后菜单滚动显示底部命令
+    for (let i = 0; i < 8; i += 1) {
+      stdin.write('[B');
+    }
+    await sleep(30);
+    expect(lastFrame()).toContain('退出 TUI');
+
+    // ArrowDown 回到 index 1（/session），Enter 填入输入框
+    for (let i = 0; i < 7; i += 1) {
+      stdin.write('[A');
+    }
     await sleep(30);
     stdin.write('\r');
     await sleep(30);
