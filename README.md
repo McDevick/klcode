@@ -56,16 +56,27 @@ npm test
 
 ### 启动服务端（daemon）
 
-服务端 bootstrap（Task 5.6）已完成，可直接启动：
+> **必须用项目虚拟环境（venv），不要用系统 `python`**：系统 Python 可能未装依赖，或装有旧版本的 kl-server，会导致接口报错（如创建 session 返回 500）。
+
+什么是 venv：它是项目目录里的一个隔离 Python 环境，本项目的依赖（fastapi / uvicorn / aiosqlite 等）都已装在其中。**"用 venv"不需要激活，直接调用 venv 里的 `python.exe` 即可**。
 
 ```powershell
-# 使用项目 venv 启动（本仓库开发 venv 路径）：
+# ✅ 推荐：直接调用 venv 的 python.exe（复制整行运行，无需激活）
 E:\projects\SimpleCodingAgent\.superpowers\sdd\PLAN\venv\Scripts\python.exe -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700
-# 或激活 venv 后：
+
+# 可选：先激活 venv，之后当前终端里 `python` 就指向 venv（新开终端需重新激活）
 & E:\projects\SimpleCodingAgent\.superpowers\sdd\PLAN\venv\Scripts\Activate.ps1
 python -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700
+
 # 或已安装 server[dev] 后使用 console 入口：
 kl-server
+```
+
+如果你的环境里还没有 venv，创建并安装依赖：
+
+```powershell
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -e "server[dev]"
 ```
 
 首次启动会自动创建 `~/.kl/daemon.token`，并在当前目录（workspace）生成 `.kl/`（`config.yaml`、`kl.db`、`audit.jsonl`、`memory.db`）。缺少 `config.yaml` 也能启动，默认 provider 为 `mock`。
