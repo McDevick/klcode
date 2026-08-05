@@ -3,6 +3,39 @@
 > 本文件按任务执行全程实时记录关键节点，不在任务完成后统一补写。
 > 每条记录包含：时间戳、task 编号、触发的 Superpowers 技能、关键 prompt/context、subagent 输出或 commit hash、人工干预、教训。
 
+## 2026-08-05 Task 5.3：Distribution polish（已完成）
+
+- 范围：Phase 5 分发元数据与可复现构建。
+- 触发的技能：`subagent-driven-development`、`using-git-worktrees`、`test-driven-development`（verification-first）
+- Implementer：implementer subagent（本会话）
+- 分支：`worktree-task-5.3-dist`，stacked 于 `worktree-task-5.2-docs`
+- Worktree：`.claude/worktrees/task-5.3-dist`
+- TDD 红：
+  - 基线 `python -m build server` 失败：`No module named build`，venv 未安装构建前端。
+  - 基线 `npm pack --dry-run` 虽退出 0，但 tarball 没有 bin 产物，且包含 `src/`、`test/`、`tsconfig.json`，不符合分发预期。
+  - CLI 基线没有 `dist/main.js`，无法声明可执行 bin。
+- TDD 绿：
+  - `pip install -e "server[dev]"` 成功安装 `build`；`python -m build server` 成功产出 `kl_server-0.1.0.tar.gz` 与 `kl_server-0.1.0-py3-none-any.whl`。
+  - `npm run build` 成功产出 `cli/dist/main.js`（117.4 kB）；`node dist/main.js --help` 正常显示 `init|run|server|config`。
+  - `npm pack --dry-run` 退出 0，prepack 自动构建，tarball 仅含 `dist/main.js` 与 `package.json`。
+  - Server：`PYTHONPATH=<worktree>/server` + venv pytest → `316 passed, 1 skipped`。
+  - CLI：`npm test` → `9 files, 45 passed`。
+- 文件变更：
+  - 修改 `server/pyproject.toml`：为全部运行时依赖补下限；dev extras 增加 `build`；build-system 增加 `wheel`；新增 description/readme/classifiers/project.urls/console script/include-package-data。
+  - 修改 `server/kl_server/main.py`：新增最小 `main()`，供 `kl-server` console entry 调用 `uvicorn.run(app, host="127.0.0.1", port=8700)`。
+  - 新建 `server/README.md`：作为 PyPI/包级 readme 元数据。
+  - 修改 `cli/package.json`：新增 `kl` bin、`files=["dist"]`、`prepack`/`build`（esbuild ESM bundle + shebang）、`publishConfig`、`repository`、直接声明 `esbuild` devDependency。
+  - 修改 `cli/package-lock.json`：同步 root bin 与 `esbuild` devDependency。
+- 元数据决策：
+  - 仓库无 LICENSE 文件，因此不虚构 license 字段；无 `py.typed`，因此不添加不存在的 package-data，仅设置 `include-package-data = true`。
+  - server 依赖下限采用 `fastapi>=0.110`、`uvicorn>=0.29`、`pydantic>=2.0`、`pydantic-settings>=2.0`、`aiosqlite>=0.20`、`keyring>=25`、`cryptography>=42`、`httpx>=0.27`、`PyYAML>=6.0`，并保留 `mcp>=2.0.0,<3.0.0`。
+  - CLI 保留 `private: true`，同时补充 `publishConfig.access: "public"`；未擅自关闭 private。
+- 偏差：
+  - 尝试 `readme = "../README.md"` 时 setuptools 明确拒绝访问项目根目录外文件，因此新增 `server/README.md` 并把 readme 指向它。
+  - 验证 server console entry 时 `kl_server.main` 在用户主目录生成了 `~/.kl/daemon.token`，导致 CLI `events.test.ts` 首轮 44/45；清理该验证残留后重跑为 45 passed。未改动 CLI 测试或源码。
+  - 按任务范围未注册 `tui` 子命令，仍属 roadmap。
+- 教训：`kl_server.main` 模块导入会创建 daemon token，属于可观察副作用；CLI 事件测试假定默认 token 路径不存在，分发验证前后要清理或隔离该状态。setuptools 的 readme 不能引用项目根目录之外的相对路径，单包发布时应在包目录内维护 README。
+
 ## 2026-08-05 Task 5.2：README 与安装文档（已完成）
 
 - 范围：Phase 5 的冷启动文档与计划索引。
