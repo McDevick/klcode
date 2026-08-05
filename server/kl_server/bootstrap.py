@@ -98,6 +98,9 @@ def build_app_dependencies(
         memory=memory,
         hooks=hooks,
         skills=skills,
+        provider_registry=providers,
+        default_provider=lambda: config.default_provider,
+        default_model=lambda: config.default_model,
     )
     return AppDependencies(
         config=config,

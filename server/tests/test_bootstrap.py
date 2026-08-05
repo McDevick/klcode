@@ -162,3 +162,31 @@ def test_bootstrap_starts_with_missing_provider_credential(tmp_path):
     assert response.status_code == 200
     assert response.json()["status"] == "degraded"
     assert response.json()["error"] == "credential not found: openai"
+
+
+def test_bootstrap_loop_uses_runtime_default_resolvers(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "default_provider: openai\n"
+        "default_model: gpt-test\n"
+        "providers:\n"
+        "  openai:\n"
+        "    type: openai-compatible\n"
+        "    base_url: https://example.com/v1\n"
+        "    default_model: gpt-test\n"
+        "    credential_ref: openai\n",
+        encoding="utf-8",
+    )
+    credentials = InMemoryCredentialStore()
+    credentials.set("openai", "test-key")
+    deps = build_app_dependencies(
+        config_path=config_path,
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=credentials,
+    )
+
+    assert deps.loop.provider_registry is deps.provider_registry
+    assert deps.loop.default_provider() == "openai"
+    assert deps.loop.default_model() == "gpt-test"
