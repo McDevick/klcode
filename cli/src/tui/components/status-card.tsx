@@ -14,14 +14,13 @@ export function StatusCard({ running }: { running: RunningTask }) {
   }, [running.startedAt]);
 
   return (
-    <Box borderStyle="double" borderColor="yellow" flexDirection="column" paddingX={1}>
+    <Box flexDirection="column" paddingX={1}>
       <Box>
         <Spinner type="dots" />
-        <Text> 正在执行推理...</Text>
-      </Box>
-      <Box justifyContent="flex-end">
-        <Text>
-          ⏱️ 耗时: {elapsed}s 🪙 Tokens: {running.tokensUsed}/{running.maxTokens}
+        <Text color="cyan"> 正在执行推理...</Text>
+        <Text dimColor>
+          {' '}
+          [{elapsed}s] [{running.tokensUsed}/{running.maxTokens} tokens]
         </Text>
       </Box>
       {running.toolCalls.length > 0 ? (
@@ -29,7 +28,7 @@ export function StatusCard({ running }: { running: RunningTask }) {
           {running.toolCalls.map((tool, index) => (
             <Box key={`${tool.name}-${index}`} flexDirection="column">
               <Text color="cyan">▸ {tool.name}</Text>
-              <Text dimColor>  args: {tool.args}</Text>
+              <Text dimColor>  {tool.args}</Text>
               <Text color="green">  → {tool.summary}</Text>
             </Box>
           ))}

@@ -25,34 +25,22 @@ export function InputFooter({
   return (
     <Box flexDirection="column" flexShrink={0}>
       {menuOpen ? (
-        <Box
-          position="absolute"
-          bottom={5}
-          borderStyle="round"
-          borderColor="gray"
-          backgroundColor="#313244"
-          flexDirection="column"
-          paddingX={1}
-        >
+        <Box position="absolute" bottom={1} flexDirection="column" paddingX={1}>
           {commands.map((command, index) => (
-            <Box key={command.name} backgroundColor={index === menuIndex ? 'cyan' : undefined}>
-              <Text color={index === menuIndex ? 'black' : 'cyan'}>{command.name}</Text>
-              <Text color={index === menuIndex ? 'black' : 'gray'}>  {command.desc}</Text>
-            </Box>
+            <Text key={command.name} color={index === menuIndex ? 'cyan' : 'gray'}>
+              {index === menuIndex ? '▸ ' : '  '}
+              {command.name}
+              <Text dimColor>  {command.desc}</Text>
+            </Text>
           ))}
         </Box>
       ) : null}
-      <Box
-        height={5}
-        borderStyle="round"
-        borderColor="gray"
-        paddingX={1}
-        flexDirection="column"
-      >
+      <Box paddingX={1}>
+        <Text color="gray">&gt; </Text>
         {lines.map((line, index) => (
           <Text key={index}>
             {line}
-            {index === lines.length - 1 && cursorVisible ? '|' : ''}
+            {index === lines.length - 1 && cursorVisible ? '▍' : ''}
           </Text>
         ))}
       </Box>

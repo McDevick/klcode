@@ -301,11 +301,11 @@ export function App() {
       <Header conversationName={conversationName} isOnline={isOnline} />
       <Messages messages={messages} running={running} offset={offset} />
       {approval !== null ? (
-        <Box height={3} borderStyle="round" borderColor="yellow" paddingX={1}>
+        <Box paddingX={1}>
           <Text color="yellow">
             ⚠ 审批请求（{approval.level}）: {approval.tool} {approval.command}
           </Text>
-          <Text> [a]pprove [r]eject [x]abort</Text>
+          <Text dimColor> [a]pprove [r]eject [x]abort</Text>
         </Box>
       ) : (
         <InputFooter

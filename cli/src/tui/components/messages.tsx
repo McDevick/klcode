@@ -6,10 +6,9 @@ import { MarkdownRenderer } from './markdown';
 
 export function UserBubble({ content }: { content: string }) {
   return (
-    <Box justifyContent="flex-end" paddingX={1}>
-      <Box backgroundColor="green" color="black" paddingX={1} borderStyle="round">
-        <Text>{content}</Text>
-      </Box>
+    <Box paddingX={1}>
+      <Text color="green">❯ </Text>
+      <Text>{content}</Text>
     </Box>
   );
 }
@@ -37,10 +36,8 @@ export function AgentBubble({ content, kind }: { content: string; kind: ChatMess
     );
   }
   return (
-    <Box justifyContent="flex-start" paddingX={1}>
-      <Box backgroundColor="#45475A" color="white" paddingX={1} borderStyle="round">
-        <MarkdownRenderer text={content} />
-      </Box>
+    <Box paddingX={1} flexDirection="column">
+      <MarkdownRenderer text={content} />
     </Box>
   );
 }
