@@ -8,6 +8,7 @@ import { SessionCommand } from '../commands/session';
 import { ApiClient, DEFAULT_BASE_URL } from '../api/client';
 import { connectTaskEvents } from '../api/events';
 import { sendApprovalDecision, type ApprovalDecision } from './screens/approval';
+import { theme } from './theme';
 import type { ApprovalRequest, ChatMessage, RunningTask, SlashCommand, ToolCall } from './types';
 
 const commands = new CommandRegistry();
@@ -310,15 +311,22 @@ export function App() {
   });
 
   return (
-    <Box flexDirection="column" height="100%">
+    <Box flexDirection="column" height="100%" backgroundColor={theme.background}>
       <Header conversationName={conversationName} isOnline={isOnline} />
       <Messages messages={messages} running={running} offset={offset} />
       {approval !== null ? (
         <Box paddingX={1}>
-          <Text color="yellow">
-            ⚠ 审批请求（{approval.level}）: {approval.tool} {approval.command}
-          </Text>
-          <Text dimColor> [a]pprove [r]eject [x]abort</Text>
+          <Box
+            backgroundColor={theme.surface}
+            borderStyle="round"
+            borderColor={theme.yellow}
+            paddingX={1}
+          >
+            <Text color={theme.yellow}>
+              ⚠ 审批请求（{approval.level}）: {approval.tool} {approval.command}
+            </Text>
+            <Text dimColor> [a]pprove [r]eject [x]abort</Text>
+          </Box>
         </Box>
       ) : (
         <InputFooter

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
 import type { SlashCommand } from '../types';
+import { theme } from '../theme';
 
 export function InputFooter({
   value,
@@ -41,17 +42,18 @@ export function InputFooter({
           position="absolute"
           bottom={1}
           borderStyle="round"
-          borderColor="gray"
-          backgroundColor="#1E1E2E"
+          borderColor={theme.surfaceAlt}
+          backgroundColor={theme.surface}
           flexDirection="row"
           paddingX={1}
         >
           <Box flexDirection="column">
             {visibleCommands.map((command, index) => {
               const absoluteIndex = windowStart + index;
+              const selected = absoluteIndex === menuIndex;
               return (
-                <Text key={command.name} color={absoluteIndex === menuIndex ? 'cyan' : 'gray'}>
-                  {absoluteIndex === menuIndex ? '▸ ' : '  '}
+                <Text key={command.name} color={selected ? theme.teal : theme.text}>
+                  {selected ? '▸ ' : '  '}
                   {command.name}
                   <Text dimColor>  {command.desc}</Text>
                 </Text>
@@ -66,7 +68,7 @@ export function InputFooter({
           {hasScroll ? (
             <Box flexDirection="column" paddingLeft={1}>
               {Array.from({ length: MAX_VISIBLE }).map((_, index) => (
-                <Text key={index} color={index === thumbTop ? 'cyan' : 'gray'}>
+                <Text key={index} color={index === thumbTop ? theme.teal : theme.textDim}>
                   {index === thumbTop ? '█' : '│'}
                 </Text>
               ))}
@@ -75,13 +77,21 @@ export function InputFooter({
         </Box>
       ) : null}
       <Box paddingX={1}>
-        <Text color="gray">&gt; </Text>
-        {lines.map((line, index) => (
-          <Text key={index}>
-            {line}
-            {index === lines.length - 1 && cursorVisible ? '▍' : ''}
-          </Text>
-        ))}
+        <Box
+          backgroundColor={theme.surface}
+          borderStyle="round"
+          borderColor={theme.surfaceAlt}
+          paddingX={1}
+          flexDirection="column"
+        >
+          <Text color={theme.teal}>&gt; </Text>
+          {lines.map((line, index) => (
+            <Text key={index}>
+              {line}
+              {index === lines.length - 1 && cursorVisible ? '▍' : ''}
+            </Text>
+          ))}
+        </Box>
       </Box>
     </Box>
   );

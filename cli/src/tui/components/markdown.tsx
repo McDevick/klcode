@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { marked, type Tokens } from 'marked';
+import { theme } from '../theme';
 
 function InlineContent({ tokens }: { tokens: Tokens.Generic[] }) {
   return (
@@ -22,13 +23,13 @@ function InlineContent({ tokens }: { tokens: Tokens.Generic[] }) {
             );
           case 'codespan':
             return (
-              <Text key={key} color="yellow">
+              <Text key={key} color={theme.yellow}>
                 {(token as Tokens.Codespan).text}
               </Text>
             );
           case 'link':
             return (
-              <Text key={key} color="blue" underline>
+              <Text key={key} color={theme.teal} underline>
                 {(token as Tokens.Link).text}
               </Text>
             );
@@ -46,7 +47,7 @@ function renderToken(token: Tokens.Generic, index: number) {
     case 'heading': {
       const heading = token as Tokens.Heading;
       return (
-        <Text key={key} bold color="cyan">
+        <Text key={key} bold color={theme.teal}>
           {heading.text}
         </Text>
       );
@@ -54,8 +55,8 @@ function renderToken(token: Tokens.Generic, index: number) {
     case 'code': {
       const code = token as Tokens.Code;
       return (
-        <Box key={key} flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
-          <Text color="green">{code.text}</Text>
+        <Box key={key} flexDirection="column" borderStyle="single" borderColor={theme.surfaceAlt} paddingX={1}>
+          <Text color={theme.green}>{code.text}</Text>
         </Box>
       );
     }
@@ -83,13 +84,13 @@ function renderToken(token: Tokens.Generic, index: number) {
     case 'blockquote': {
       const quote = token as Tokens.Blockquote;
       return (
-        <Text key={key} color="gray">
+        <Text key={key} color={theme.textDim}>
           ▍{quote.text}
         </Text>
       );
     }
     case 'hr':
-      return <Text key={key} color="gray">───</Text>;
+      return <Text key={key} color={theme.textDim}>───</Text>;
     case 'space':
       return null;
     default:

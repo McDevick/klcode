@@ -3,12 +3,20 @@ import { Box, Text } from 'ink';
 import type { ChatMessage, RunningTask } from '../types';
 import { StatusCard } from './status-card';
 import { MarkdownRenderer } from './markdown';
+import { theme } from '../theme';
 
 export function UserBubble({ content }: { content: string }) {
   return (
-    <Box paddingX={1}>
-      <Text color="green">❯ </Text>
-      <Text>{content}</Text>
+    <Box justifyContent="flex-end" paddingX={1}>
+      <Box
+        backgroundColor={theme.surface}
+        borderStyle="round"
+        borderColor={theme.green}
+        paddingX={1}
+      >
+        <Text color={theme.green}>❯ </Text>
+        <Text>{content}</Text>
+      </Box>
     </Box>
   );
 }
@@ -16,28 +24,51 @@ export function UserBubble({ content }: { content: string }) {
 export function AgentBubble({ content, kind }: { content: string; kind: ChatMessage['kind'] }) {
   if (kind === 'error') {
     return (
-      <Box paddingX={1}>
-        <Text color="red">✗ {content}</Text>
+      <Box justifyContent="flex-start" paddingX={1}>
+        <Box
+          backgroundColor={theme.surface}
+          borderStyle="round"
+          borderColor={theme.red}
+          paddingX={1}
+        >
+          <Text color={theme.red}>✗ </Text>
+          <Text>{content}</Text>
+        </Box>
       </Box>
     );
   }
   if (kind === 'info') {
     return (
       <Box paddingX={1}>
-        <Text color="gray">ℹ {content}</Text>
+        <Text color={theme.textDim}>ℹ {content}</Text>
       </Box>
     );
   }
   if (kind === 'done') {
     return (
-      <Box paddingX={1}>
-        <Text color="green">✓ {content}</Text>
+      <Box justifyContent="flex-start" paddingX={1}>
+        <Box
+          backgroundColor={theme.surface}
+          borderStyle="round"
+          borderColor={theme.green}
+          paddingX={1}
+        >
+          <Text color={theme.green}>✓ </Text>
+          <Text>{content}</Text>
+        </Box>
       </Box>
     );
   }
   return (
-    <Box paddingX={1} flexDirection="column">
-      <MarkdownRenderer text={content} />
+    <Box justifyContent="flex-start" paddingX={1}>
+      <Box
+        backgroundColor={theme.surface}
+        borderStyle="round"
+        borderColor={theme.surfaceAlt}
+        paddingX={1}
+      >
+        <MarkdownRenderer text={content} />
+      </Box>
     </Box>
   );
 }
