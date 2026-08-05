@@ -35,6 +35,7 @@
   - 验证 server console entry 时 `kl_server.main` 在用户主目录生成了 `~/.kl/daemon.token`，导致 CLI `events.test.ts` 首轮 44/45；清理该验证残留后重跑为 45 passed。未改动 CLI 测试或源码。
   - 按任务范围未注册 `tui` 子命令，仍属 roadmap。
 - 教训：`kl_server.main` 模块导入会创建 daemon token，属于可观察副作用；CLI 事件测试假定默认 token 路径不存在，分发验证前后要清理或隔离该状态。setuptools 的 readme 不能引用项目根目录之外的相对路径，单包发布时应在包目录内维护 README。
+- 控制器补充（质量复核）：`npm pack --dry-run` 的 prepack 会在工作树重新生成 `cli/dist/`；为保持 git status 干净，根 `.gitignore` 新增 `dist/`，该卫生修复单独提交。
 
 ## 2026-08-05 Task 5.2：README 与安装文档（已完成）
 
