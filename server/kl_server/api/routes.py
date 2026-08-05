@@ -5,7 +5,7 @@ import yaml
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 
-from kl_server.config.config import ProviderConfig
+from kl_server.config.config import AppConfig, ProviderConfig
 from kl_server.models.task import Session, Task, TaskStatus
 from kl_server.providers.openai_compatible import OpenAICompatibleProvider
 
@@ -48,6 +48,37 @@ class ProviderPayload(BaseModel):
 
 class KeyPayload(BaseModel):
     secret: str
+
+
+class ModelConfigPayload(BaseModel):
+    provider: str
+    model: str = ""
+
+
+def _model_available(config: AppConfig) -> list[dict]:
+    available = [{"provider": "mock", "model": "mock-model", "base_url": ""}]
+    for name, provider_config in config.providers.items():
+        available.append(
+            {
+                "provider": name,
+                "model": provider_config.default_model,
+                "base_url": provider_config.base_url,
+            }
+        )
+    return available
+
+
+def _model_state(config: AppConfig) -> dict:
+    available = _model_available(config)
+    provider = config.default_provider
+    model = config.default_model
+    if not model:
+        if provider == "mock":
+            model = "mock-model"
+        else:
+            provider_config = config.providers.get(provider)
+            model = provider_config.default_model if provider_config else ""
+    return {"provider": provider, "model": model, "available": available}
 
 
 def build_router() -> APIRouter:
@@ -301,13 +332,33 @@ def build_router() -> APIRouter:
     @router.post("/config/check")
     def config_check(request: Request):
         deps = getattr(request.app.state, "deps", None)
-        if deps is not None and getattr(deps, "config_error", None):
-            return {
-                "status": "degraded",
-                "providers": ["mock"],
-                "error": deps.config_error,
-            }
+        if deps is not None:
+            providers = ["mock"] + list(deps.config.providers.keys())
+            if getattr(deps, "config_error", None):
+                return {
+                    "status": "degraded",
+                    "providers": providers,
+                    "error": deps.config_error,
+                }
+            return {"status": "ok", "providers": providers}
         return {"status": "ok", "providers": ["mock"]}
+
+    @router.get("/config/model")
+    def get_model_config(request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        return _model_state(deps.config if deps is not None else AppConfig())
+
+    @router.post("/config/model")
+    def set_model_config(payload: ModelConfigPayload, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is None:
+            raise HTTPException(status_code=501, detail="requires a configured server")
+        if payload.provider != "mock" and payload.provider not in deps.config.providers:
+            raise HTTPException(status_code=404, detail="provider not found")
+        deps.config.default_provider = payload.provider
+        deps.config.default_model = payload.model
+        _persist_config(deps)
+        return _model_state(deps.config)
 
     @router.get("/providers")
     def list_providers(request: Request):
@@ -352,8 +403,9 @@ def build_router() -> APIRouter:
         return provider
 
     @router.get("/models")
-    def list_models():
-        return [{"name": "mock-model"}]
+    def list_models(request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        return _model_available(deps.config if deps is not None else AppConfig())
 
     @router.get("/keys")
     def list_keys(request: Request):

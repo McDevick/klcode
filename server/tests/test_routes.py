@@ -1,3 +1,4 @@
+import yaml
 from fastapi.testclient import TestClient
 
 from kl_server.api.app import create_app
@@ -180,7 +181,7 @@ def test_models_route_includes_mock_model():
     response = client.get("/api/v1/models")
 
     assert response.status_code == 200
-    assert any(item["name"] == "mock-model" for item in response.json())
+    assert any(item["model"] == "mock-model" for item in response.json())
 
 
 def test_key_routes_only_return_configured_status_and_never_secret():
@@ -340,3 +341,119 @@ def test_new_routes_are_protected_by_auth_middleware():
         headers={"Authorization": "Bearer s3cret"},
     )
     assert authorized.status_code == 200
+
+
+def test_config_model_get_returns_current_default(tmp_path):
+    client = make_deps_client(tmp_path)
+
+    response = client.get("/api/v1/config/model")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "mock"
+    assert body["model"] == "mock-model"
+    assert {"provider": "mock", "model": "mock-model", "base_url": ""} in body["available"]
+
+
+def test_config_model_set_switches_provider_and_persists(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "default_provider: mock\n"
+        "providers:\n"
+        "  deepseek:\n"
+        "    type: openai-compatible\n"
+        "    base_url: https://api.deepseek.com/v1\n"
+        "    default_model: deepseek-chat\n"
+        "    credential_ref: deepseek\n",
+        encoding="utf-8",
+    )
+    credentials = InMemoryCredentialStore()
+    credentials.set("deepseek", "sk-test")
+    deps = build_app_dependencies(
+        config_path=config_path,
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=credentials,
+    )
+    client = TestClient(create_app(deps=deps))
+
+    response = client.post(
+        "/api/v1/config/model",
+        json={"provider": "deepseek", "model": "deepseek-reasoner"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "deepseek"
+    assert body["model"] == "deepseek-reasoner"
+    persisted = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert persisted["default_provider"] == "deepseek"
+    assert persisted["default_model"] == "deepseek-reasoner"
+
+
+def test_config_model_set_clears_override_uses_provider_default(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "default_provider: mock\n"
+        "default_model: stale\n"
+        "providers:\n"
+        "  deepseek:\n"
+        "    type: openai-compatible\n"
+        "    base_url: https://api.deepseek.com/v1\n"
+        "    default_model: deepseek-chat\n"
+        "    credential_ref: deepseek\n",
+        encoding="utf-8",
+    )
+    credentials = InMemoryCredentialStore()
+    credentials.set("deepseek", "sk-test")
+    deps = build_app_dependencies(
+        config_path=config_path,
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=credentials,
+    )
+    client = TestClient(create_app(deps=deps))
+
+    response = client.post("/api/v1/config/model", json={"provider": "deepseek"})
+
+    assert response.status_code == 200
+    assert response.json()["model"] == "deepseek-chat"
+    persisted = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert persisted["default_provider"] == "deepseek"
+    assert persisted["default_model"] == ""
+
+
+def test_config_model_set_unknown_provider_returns_404(tmp_path):
+    client = make_deps_client(tmp_path)
+
+    response = client.post("/api/v1/config/model", json={"provider": "missing"})
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "provider not found"
+
+
+def test_config_check_reports_configured_providers(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "providers:\n"
+        "  deepseek:\n"
+        "    type: openai-compatible\n"
+        "    base_url: https://api.deepseek.com/v1\n"
+        "    default_model: deepseek-chat\n",
+        encoding="utf-8",
+    )
+    deps = build_app_dependencies(
+        config_path=config_path,
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+    client = TestClient(create_app(deps=deps))
+
+    response = client.post("/api/v1/config/check")
+
+    assert response.status_code == 200
+    assert "deepseek" in response.json()["providers"]
