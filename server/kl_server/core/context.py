@@ -1,5 +1,6 @@
 """Token-budgeted context assembly for the agent loop."""
 
+import json
 import logging
 from collections import OrderedDict
 from collections.abc import Callable
@@ -11,9 +12,22 @@ logger = logging.getLogger(__name__)
 
 
 class LLMSummarizer:
-    def __init__(self, provider, model: str):
+    """Summarize old history with the current provider.
+
+    ``provider`` and ``model`` may be either concrete values or zero-argument
+    callables resolved at call time, so runtime provider/model switches are
+    picked up by the next summary instead of staying pinned to boot values.
+    """
+
+    def __init__(self, provider, model: str | Callable[[], str]):
         self.provider = provider
         self.model = model
+
+    def _resolve_provider(self):
+        return self.provider() if callable(self.provider) else self.provider
+
+    def _resolve_model(self) -> str:
+        return self.model() if callable(self.model) else (self.model or "")
 
     async def summarize(self, segments: list[str], task_id: str) -> str:
         numbered_segments = "\n".join(
@@ -26,10 +40,10 @@ class LLMSummarizer:
         )
         request = ProviderRequest(
             messages=[{"role": "user", "content": prompt}],
-            model=self.model,
+            model=self._resolve_model(),
         )
         try:
-            response = await self.provider.complete(request)
+            response = await self._resolve_provider().complete(request)
         except Exception:
             logger.warning("LLM summarization failed for task %s", task_id, exc_info=True)
             raise
@@ -72,7 +86,9 @@ class ContextAssembler:
         for tool in tool_catalog:
             name = tool.get("name", "")
             description = tool.get("description", "")
-            lines.append(f"- {name}: {description}")
+            schema = tool.get("schema") or {}
+            args_text = json.dumps(schema, ensure_ascii=False, sort_keys=True)
+            lines.append(f"- {name}: {description} (args: {args_text})")
         return "\n".join(lines)
 
     async def build(

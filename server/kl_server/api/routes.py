@@ -3,9 +3,11 @@ from pathlib import Path
 
 import yaml
 from fastapi import APIRouter, HTTPException, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from kl_server.config.config import AppConfig, ProviderConfig
+from kl_server.core.guardrail import normalize_workspace_mode
+from kl_server.core.snapshot import SnapshotManager
 from kl_server.models.task import Session, Task, TaskStatus
 from kl_server.providers.openai_compatible import OpenAICompatibleProvider
 
@@ -37,6 +39,15 @@ class RenameSessionPayload(BaseModel):
 class CreateTaskPayload(BaseModel):
     session_id: str
     description: str
+    workspace_mode: str = "git"
+    branch: str | None = None
+
+    @field_validator("workspace_mode")
+    @classmethod
+    def _valid_workspace_mode(cls, value: str) -> str:
+        if value not in {"git", "managed", "unmanaged", "snapshot", "manual"}:
+            raise ValueError(f"unknown workspace mode: {value}")
+        return value
 
 
 class ProviderPayload(BaseModel):
@@ -103,6 +114,10 @@ def build_router() -> APIRouter:
             "session_id": task.session_id,
             "description": task.description,
             "status": task.status.value,
+            "workspace_mode": task.workspace_mode,
+            "branch": task.branch,
+            "snapshot_path": task.snapshot_path,
+            "summary": task.summary or "",
         }
 
     def next_seq(existing_ids: list[str], prefix: str) -> int:
@@ -128,7 +143,12 @@ def build_router() -> APIRouter:
     async def list_sessions(request: Request):
         deps = getattr(request.app.state, "deps", None)
         if deps is not None:
-            return [session_dict(session) for session in await deps.sessions.list()]
+            result = []
+            for session in await deps.sessions.list():
+                record = session_dict(session)
+                record["task_count"] = await deps.tasks.count_by_session(session.id)
+                result.append(record)
+            return result
         return list(sessions.values())
 
     @router.post("/sessions")
@@ -226,6 +246,8 @@ def build_router() -> APIRouter:
             id=task_id,
             session_id=payload.session_id,
             description=payload.description,
+            workspace_mode=payload.workspace_mode,
+            branch=payload.branch,
         )
         if deps is not None:
             try:
@@ -265,18 +287,27 @@ def build_router() -> APIRouter:
             task = await deps.tasks.get(task_id)
         except KeyError:
             raise HTTPException(status_code=404, detail="task not found")
+        if task.status in (TaskStatus.RUNNING, TaskStatus.AWAITING_APPROVAL):
+            raise HTTPException(
+                status_code=409,
+                detail=f"task already {task.status.value}",
+            )
         try:
             session = await deps.sessions.get(task.session_id)
         except KeyError:
             raise HTTPException(status_code=404, detail="session not found")
+        loop = deps.loop
+        # 重新 run 前清除可能残留的暂停门控（例如暂停后被 abort 的任务）。
+        loop.set_paused(task.id, False)
         task.status = TaskStatus.RUNNING
         await deps.tasks.update(task)
-        loop = deps.loop
         hub = getattr(request.app.state, "approval_hub", None)
         if hub is not None and getattr(loop, "on_approval", None) is None:
             loop.on_approval = lambda tid, info: hub.request(tid, info)
         bus = getattr(request.app.state, "event_bus", None)
-        asyncio.create_task(_execute_task(deps, session, task, bus))
+        # 先取得句柄再返回响应，保证紧随其后的 abort 一定能 cancel 到后台任务
+        # （否则 abort 可能落在协程尚未把自身写入 _running_tasks 的窗口里）。
+        _running_tasks[task.id] = asyncio.create_task(_execute_task(deps, session, task, bus))
         return {"status": "running"}
 
     @router.post("/tasks/{task_id}/abort")
@@ -288,13 +319,24 @@ def build_router() -> APIRouter:
                 detail="task execution requires a configured server",
             )
         try:
-            await deps.tasks.get(task_id)
+            task = await deps.tasks.get(task_id)
         except KeyError:
             raise HTTPException(status_code=404, detail="task not found")
-        running = _running_tasks.get(task_id)
+        if task.status in (TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.CANCELED):
+            raise HTTPException(
+                status_code=409,
+                detail=f"cannot abort task in {task.status.value}",
+            )
+        running = _running_tasks.pop(task_id, None)
         if running is not None and not running.done():
             running.cancel()
         await deps.tasks.abort(task_id)
+        bus = getattr(request.app.state, "event_bus", None)
+        if bus is not None:
+            await bus.broadcast(
+                task_id,
+                {"event": "task_end", "status": TaskStatus.CANCELED.value},
+            )
         return {"status": "canceled"}
 
     @router.post("/tasks/{task_id}/pause")
@@ -311,6 +353,7 @@ def build_router() -> APIRouter:
             raise HTTPException(status_code=404, detail="task not found")
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+        deps.loop.set_paused(task_id, True)
         return {"status": "paused"}
 
     @router.post("/tasks/{task_id}/continue")
@@ -327,6 +370,7 @@ def build_router() -> APIRouter:
             raise HTTPException(status_code=404, detail="task not found")
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+        deps.loop.set_paused(task_id, False)
         return {"status": "running"}
 
     @router.post("/config/check")
@@ -424,6 +468,14 @@ def build_router() -> APIRouter:
         deps = getattr(request.app.state, "deps", None)
         if deps is not None:
             deps.credentials.set(ref, payload.secret)
+            # 刷新已注册 provider 的 api_key：provider 注册时取的 key 可能为空
+            # （bootstrap 只从环境变量取），key set 后必须即时生效。
+            try:
+                provider = deps.provider_registry.get(ref)
+            except KeyError:
+                provider = None
+            if provider is not None and hasattr(provider, "api_key"):
+                provider.api_key = payload.secret
             return {"configured": True}
         keys.add(ref)
         return {"configured": True}
@@ -453,9 +505,23 @@ async def _execute_task(deps, session, task, bus) -> None:
     Runs in the background (spawned by ``run_task``); lifecycle events are
     streamed to the event bus by the loop's forwarded logger.
     """
-    _running_tasks[task.id] = asyncio.current_task()
     try:
-        result = await deps.loop.run(session, task.description, task_id=task.id)
+        # unmanaged 工作区没有 git 兜底，运行前做一次快照并记录路径；
+        # 快照只保留不自动回滚，失败也不阻断任务执行。
+        if normalize_workspace_mode(task.workspace_mode) == "unmanaged":
+            manager = SnapshotManager(session.workspace)
+            try:
+                snapshot = await asyncio.to_thread(manager.create)
+                task.snapshot_path = str(snapshot)
+                await deps.tasks.update(task)
+            except Exception:
+                task.snapshot_path = None
+        result = await deps.loop.run(
+            session,
+            task.description,
+            task_id=task.id,
+            workspace_mode=task.workspace_mode,
+        )
     except Exception as exc:
         task.status = TaskStatus.FAILED
         await deps.tasks.update(task)
@@ -467,7 +533,20 @@ async def _execute_task(deps, session, task, bus) -> None:
         return
     finally:
         _running_tasks.pop(task.id, None)
-    task.status = TaskStatus.SUCCEEDED if result == "DONE" else TaskStatus.FAILED
+    if result == "DONE" or result.startswith("DONE:"):
+        task.status = TaskStatus.SUCCEEDED
+    elif result == "NEEDS_APPROVAL":
+        task.status = TaskStatus.AWAITING_APPROVAL
+    elif result == "ABORTED":
+        task.status = TaskStatus.CANCELED
+    elif result == "MAX_ITERATIONS":
+        task.status = TaskStatus.FAILED
+        task.summary = "max_iterations reached"
+    else:
+        task.status = TaskStatus.FAILED
+    # 模型通过 "DONE: <answer>" 给出的最终回答存入任务摘要
+    if result.startswith("DONE: "):
+        task.summary = result[len("DONE: ") :]
     await deps.tasks.update(task)
     if bus is not None:
         await bus.broadcast(

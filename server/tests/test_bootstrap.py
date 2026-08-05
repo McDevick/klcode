@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from kl_server.api.app import create_app
 from kl_server.bootstrap import build_app_dependencies
 from kl_server.config.credentials import InMemoryCredentialStore
+from kl_server.core.context import LLMSummarizer
 
 
 def test_bootstrap_registers_providers_tools_and_managers(tmp_path):
@@ -77,6 +78,9 @@ def test_bootstrap_wires_api_routes_to_deps(tmp_path):
                 raise KeyError(task_id)
             return self.store[task_id]
 
+        async def count_by_session(self, session_id):
+            return sum(1 for task in self.store.values() if task.session_id == session_id)
+
     deps = SimpleNamespace(sessions=FakeSessions(), tasks=FakeTasks())
     client = TestClient(create_app(deps=deps))
 
@@ -90,7 +94,8 @@ def test_bootstrap_wires_api_routes_to_deps(tmp_path):
     assert deps.sessions.store[session["id"]].workspace == str(tmp_path)
 
     listed = client.get("/api/v1/sessions")
-    assert listed.json() == [session]
+    assert [item["id"] for item in listed.json()] == [session["id"]]
+    assert listed.json()[0]["task_count"] == 0
 
     fetched = client.get(f"/api/v1/sessions/{session['id']}")
     assert fetched.json() == session
@@ -190,3 +195,70 @@ def test_bootstrap_loop_uses_runtime_default_resolvers(tmp_path):
     assert deps.loop.provider_registry is deps.provider_registry
     assert deps.loop.default_provider() == "openai"
     assert deps.loop.default_model() == "gpt-test"
+
+
+def test_bootstrap_wires_llm_summarizer(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("", encoding="utf-8")
+    deps = build_app_dependencies(
+        config_path=config_path,
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+
+    assert deps.context.summarizer is not None
+    assert isinstance(deps.context.summarizer, LLMSummarizer)
+
+
+def test_bootstrap_wires_hooks_and_mcp_from_config(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "hooks:\n"
+        "  task_start:\n"
+        "    - type: command\n"
+        "      command: notify.sh\n"
+        "mcp:\n"
+        "  filesystem:\n"
+        "    command: npx\n"
+        "    args: ['-y', '@modelcontextprotocol/server-filesystem']\n",
+        encoding="utf-8",
+    )
+    deps = build_app_dependencies(
+        config_path=config_path,
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+
+    assert deps.hooks.hooks["task_start"][0]["command"] == "notify.sh"
+    assert deps.mcp.servers["filesystem"]["command"] == "npx"
+    assert deps.mcp.servers["filesystem"]["args"] == [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+    ]
+
+
+def test_bootstrap_provider_reads_api_key_from_config(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "providers:\n"
+        "  deepseek:\n"
+        "    type: openai-compatible\n"
+        "    base_url: https://api.deepseek.com\n"
+        "    default_model: deepseek-chat\n"
+        "    api_key: sk-from-yaml\n",
+        encoding="utf-8",
+    )
+    deps = build_app_dependencies(
+        config_path=config_path,
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+
+    provider = deps.provider_registry.get("deepseek")
+    assert provider.api_key == "sk-from-yaml"

@@ -82,6 +82,11 @@ class ApprovalHub:
 
     async def request(self, task_id: str, info: dict) -> str:
         action_id = info["action_id"]
+        # 先注册 waiter 再广播：客户端可能在收到 approval_request 事件后立刻
+        # resolve，若 resolve 先于 _waiters 注册则决策会丢失并等满超时。
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future = loop.create_future()
+        self._waiters[action_id] = future
         await self.bus.broadcast(
             task_id,
             {
@@ -92,9 +97,6 @@ class ApprovalHub:
                 "level": info.get("level", ""),
             },
         )
-        loop = asyncio.get_running_loop()
-        future: asyncio.Future = loop.create_future()
-        self._waiters[action_id] = future
         try:
             return await asyncio.wait_for(future, self.timeout)
         except asyncio.TimeoutError:

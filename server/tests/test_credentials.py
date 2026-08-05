@@ -268,16 +268,18 @@ def test_app_config_rejects_extra_fields():
         )
 
 
-def test_provider_config_rejects_secret_fields():
-    with pytest.raises(ValidationError):
-        ProviderConfig(
-            name="openai",
-            type="openai-compatible",
-            base_url="https://example.com/v1",
-            default_model="gpt-test",
-            credential_ref="openai",
-            api_key="sk-should-not-exist",
-        )
+def test_provider_config_accepts_api_key_field():
+    # 本地工具场景：允许把 key 直接写在 config.yaml（.kl/ 已 gitignore），
+    # 便于用户一劳永逸配置，无需依赖易失的 keyring/内存凭证。
+    provider = ProviderConfig(
+        name="openai",
+        type="openai-compatible",
+        base_url="https://example.com/v1",
+        default_model="gpt-test",
+        credential_ref="openai",
+        api_key="sk-from-config",
+    )
+    assert provider.api_key == "sk-from-config"
 
 
 def test_app_config_roundtrip():

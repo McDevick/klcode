@@ -23,4 +23,11 @@ app = create_app(runtime_factory=_build_runtime)
 def main() -> None:
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8700)
+    # timeout_graceful_shutdown: Ctrl+C 时优雅关闭有上限（默认 None 会无限等待
+    # 活动连接，例如挂着的 WebSocket，导致进程成僵尸并占住 8700 端口）。
+    uvicorn.run(
+        app,
+        host="127.0.0.1",
+        port=8700,
+        timeout_graceful_shutdown=3,
+    )

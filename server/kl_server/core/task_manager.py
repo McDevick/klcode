@@ -62,6 +62,15 @@ class TaskManager:
         rows = await cursor.fetchall()
         return [self._row_to_task(row) for row in rows]
 
+    async def count_by_session(self, session_id: str) -> int:
+        conn = await self.db.connect()
+        cursor = await conn.execute(
+            "SELECT COUNT(*) AS n FROM tasks WHERE session_id = ?",
+            (session_id,),
+        )
+        row = await cursor.fetchone()
+        return int(row["n"])
+
     @staticmethod
     def _row_to_task(row) -> Task:
         return Task(

@@ -31,6 +31,20 @@ async def test_summarizer_builds_provider_request():
 
 
 @pytest.mark.asyncio
+async def test_summarizer_resolves_callable_provider_and_model():
+    provider = MockProvider(responses=["summary", "summary"])
+    state = {"model": "model-a"}
+    summarizer = LLMSummarizer(lambda: provider, lambda: state["model"])
+
+    await summarizer.summarize(["old"], "t1")
+    assert provider.calls[0].model == "model-a"
+
+    state["model"] = "model-b"
+    await summarizer.summarize(["old"], "t1")
+    assert provider.calls[1].model == "model-b"
+
+
+@pytest.mark.asyncio
 async def test_assembler_uses_provider_summary_without_repeating_latest():
     provider = MockProvider(responses=["summary"])
     assembler = ContextAssembler(max_tokens=100)
@@ -274,6 +288,29 @@ async def test_context_includes_tool_catalog_after_rules():
     )
     assert result.text.index("rules") < result.text.index("Tool catalog:")
     assert result.contains_priority("- echo: Echoes input.")
+    assert result.used_tokens <= 100
+
+
+@pytest.mark.asyncio
+async def test_context_includes_tool_args_schema():
+    assembler = ContextAssembler(max_tokens=100)
+    result = await assembler.build(
+        tool_catalog=[
+            {
+                "name": "run_command",
+                "description": "Runs a command.",
+                "schema": {
+                    "type": "object",
+                    "properties": {"command": {"type": "string"}},
+                },
+            }
+        ],
+        rules="rules",
+        memory=[],
+        history=[],
+    )
+    assert result.contains_priority('"command"')
+    assert result.contains_priority('"type": "string"')
     assert result.used_tokens <= 100
 
 

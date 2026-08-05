@@ -134,8 +134,50 @@ class SpyAssembler:
 
 
 class FakeMemory:
+    def __init__(self):
+        self.added: list[tuple[str, str, list[str], str]] = []
+
     async def find(self, tags):
         return ["remembered decision"]
+
+    async def add(self, scope, kind, tags, content):
+        self.added.append((scope, kind, list(tags), content))
+
+
+class RecordingMemory:
+    def __init__(self):
+        self.added: list[tuple[str, str, list[str], str]] = []
+
+    async def find(self, tags):
+        return []
+
+    async def add(self, scope, kind, tags, content):
+        self.added.append((scope, kind, list(tags), content))
+
+
+@pytest.mark.asyncio
+async def test_loop_writes_task_and_tool_results_to_memory():
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+    provider = MockProvider(responses=['{"tool":"final","args":{}}', "DONE"])
+    memory = RecordingMemory()
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=3),
+        memory=memory,
+    )
+
+    await loop.run(Session(id="s1", workspace="."), "remember this task")
+
+    kinds = [record[1] for record in memory.added]
+    assert "task" in kinds
+    assert "tool_result" in kinds
+    task_record = next(record for record in memory.added if record[1] == "task")
+    assert task_record[0] == "s1"
+    assert "s1" in task_record[2]
+    tool_record = next(record for record in memory.added if record[1] == "tool_result")
+    assert "final" in tool_record[3]
 
 
 @pytest.mark.asyncio
@@ -469,3 +511,72 @@ async def test_loop_falls_back_to_injected_provider_when_registry_misses():
     await loop.run(Session(id="s1", workspace="."), "task")
 
     assert len(fallback.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_loop_accepts_done_with_final_answer():
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+    provider = MockProvider(responses=["DONE: 我完成了任务"])
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=2),
+    )
+
+    result = await loop.run(Session(id="s1", workspace="."), "task")
+
+    assert result == "DONE: 我完成了任务"
+    assert len(provider.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_loop_emits_agent_message_before_tool_action(tmp_path):
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+    provider = MockProvider(responses=['先看一下目录结构\n{"tool":"final","args":{}}', "DONE"])
+    logger = EventLogger(tmp_path / "audit.jsonl")
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=3),
+        logger=logger,
+    )
+
+    await loop.run(Session(id="s1", workspace="."), "task")
+
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "audit.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    ]
+    assert any(record["event"] == "agent_message" for record in records)
+    message = next(r for r in records if r["event"] == "agent_message")
+    assert message["payload"]["text"] == "先看一下目录结构"
+    assert len(provider.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_loop_parses_action_when_message_contains_braces(tmp_path):
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+    provider = MockProvider(
+        responses=['先检查 {project} 目录\n{"tool":"final","args":{}}', "DONE"]
+    )
+    logger = EventLogger(tmp_path / "audit.jsonl")
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=3),
+        logger=logger,
+    )
+
+    result = await loop.run(Session(id="s1", workspace="."), "task")
+
+    assert result == "DONE"
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "audit.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    ]
+    message = next(r for r in records if r["event"] == "agent_message")
+    assert message["payload"]["text"] == "先检查 {project} 目录"
+    assert len(provider.calls) == 2

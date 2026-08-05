@@ -5,7 +5,7 @@ from kl_server.config.config import AppConfig
 from kl_server.config.credentials import create_credential_store
 from kl_server.config.loader import load_app_config
 from kl_server.core.agent_loop import AgentLoop, LoopSettings
-from kl_server.core.context import ContextAssembler
+from kl_server.core.context import ContextAssembler, LLMSummarizer
 from kl_server.core.event_logger import EventLogger
 from kl_server.core.guardrail import DangerClassifier, Guardrail, HITLManager, ScopeFence
 from kl_server.core.sandbox import SandboxPolicy
@@ -78,21 +78,37 @@ def build_app_dependencies(
     executor = ToolExecutor(tools, guardrail=guardrail)
     logger = EventLogger(Path(log_path))
     memory = MemoryStore(db_path.parent / "memory.db")
-    context = ContextAssembler(max_tokens=8000)
-    hooks = HookManager({})
-    skills = SkillLoader(str(Path(workspace) / ".kl" / "skills"))
-    mcp = McpAdapter({})
-    plugins = PluginLoader(str(Path(workspace) / ".kl" / "tools"))
+    context = ContextAssembler(max_tokens=20000)
+    hooks = HookManager(config.hooks)
+    skills_root = Path(workspace) / ".kl" / "skills"
+    skills_root.mkdir(parents=True, exist_ok=True)
+    skills = SkillLoader(str(skills_root))
+    mcp = McpAdapter(config.mcp)
+    plugins_root = Path(workspace) / ".kl" / "tools"
+    plugins_root.mkdir(parents=True, exist_ok=True)
+    plugins = PluginLoader(str(plugins_root))
     register_user_tools(tools, plugins)
     tools.register(McpTool(mcp))
     try:
         provider = providers.get(config.default_provider)
     except KeyError:
         provider = providers.get("mock")
+    if provider is not None:
+        def _summarizer_provider():
+            try:
+                return providers.get(config.default_provider)
+            except KeyError:
+                return providers.get("mock")
+
+        def _summarizer_model() -> str:
+            resolved = _summarizer_provider()
+            return config.default_model or (getattr(resolved, "model", "") or "")
+
+        context.summarizer = LLMSummarizer(_summarizer_provider, _summarizer_model)
     loop = AgentLoop(
         provider=provider,
         tools=executor,
-        settings=LoopSettings(),
+        settings=LoopSettings(max_iterations=20),
         logger=logger,
         context=context,
         memory=memory,

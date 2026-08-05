@@ -143,6 +143,39 @@ def test_task_create_with_existing_session_succeeds_with_deps(tmp_path):
     assert response.json()["session_id"] == session["id"]
 
 
+def test_task_create_accepts_workspace_mode_and_branch(tmp_path):
+    client = make_deps_client(tmp_path)
+
+    session = client.post(
+        "/api/v1/sessions",
+        json={"workspace": str(tmp_path)},
+    ).json()
+    created = client.post(
+        "/api/v1/tasks",
+        json={
+            "session_id": session["id"],
+            "description": "unmanaged task",
+            "workspace_mode": "unmanaged",
+            "branch": "feature/foo",
+        },
+    )
+
+    assert created.status_code == 200
+    body = created.json()
+    assert body["workspace_mode"] == "unmanaged"
+    assert body["branch"] == "feature/foo"
+
+    invalid = client.post(
+        "/api/v1/tasks",
+        json={
+            "session_id": session["id"],
+            "description": "bad mode",
+            "workspace_mode": "bogus",
+        },
+    )
+    assert invalid.status_code == 422
+
+
 def test_config_check_reports_mock_provider():
     client = make_client()
 
@@ -485,3 +518,64 @@ def test_config_check_reports_configured_providers(tmp_path):
 
     assert response.status_code == 200
     assert "deepseek" in response.json()["providers"]
+
+
+def test_delete_session_with_tasks_succeeds(tmp_path):
+    client = make_deps_client(tmp_path)
+    session_id = create_session(client, str(tmp_path)).json()["id"]
+    created = client.post(
+        "/api/v1/tasks",
+        json={"session_id": session_id, "description": "fix"},
+    )
+    assert created.status_code == 200
+
+    deleted = client.delete(f"/api/v1/sessions/{session_id}")
+
+    assert deleted.status_code == 204
+    assert client.get(f"/api/v1/sessions/{session_id}").status_code == 404
+
+
+def test_list_sessions_includes_task_count(tmp_path):
+    client = make_deps_client(tmp_path)
+    session_id = create_session(client, str(tmp_path)).json()["id"]
+    client.post(
+        "/api/v1/tasks",
+        json={"session_id": session_id, "description": "one task"},
+    )
+    client.post(
+        "/api/v1/tasks",
+        json={"session_id": session_id, "description": "two task"},
+    )
+
+    listed = client.get("/api/v1/sessions")
+
+    assert listed.status_code == 200
+    record = next(item for item in listed.json() if item["id"] == session_id)
+    assert record["task_count"] == 2
+
+
+def test_set_key_refreshes_registered_provider_api_key(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "providers:\n"
+        "  deepseek:\n"
+        "    type: openai-compatible\n"
+        "    base_url: https://api.deepseek.com\n"
+        "    default_model: deepseek-chat\n",
+        encoding="utf-8",
+    )
+    deps = build_app_dependencies(
+        config_path=config_path,
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+    client = TestClient(create_app(deps=deps))
+    provider = deps.provider_registry.get("deepseek")
+    assert provider.api_key is None  # 注册时无 credential_ref → 无 key
+
+    response = client.post("/api/v1/keys/deepseek", json={"secret": "sk-new"})
+
+    assert response.status_code == 200
+    assert provider.api_key == "sk-new"

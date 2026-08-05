@@ -78,6 +78,9 @@ class SessionManager:
 
     async def delete(self, session_id: str) -> None:
         conn = await self.db.connect()
+        # 外键约束（tasks.session_id REFERENCES sessions.id）：
+        # 先删除该会话下的任务，再删除会话本身。
+        await conn.execute("DELETE FROM tasks WHERE session_id = ?", (session_id,))
         cursor = await conn.execute(
             "DELETE FROM sessions WHERE id = ?",
             (session_id,),

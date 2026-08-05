@@ -102,3 +102,27 @@ def test_hub_resolve_unknown_action_is_noop():
     hub = ApprovalHub(bus=FakeBus(), timeout=5.0)
     hub.resolve("missing", "approve")
     assert hub._waiters == {}
+
+
+@pytest.mark.asyncio
+async def test_hub_decision_during_broadcast_is_not_lost():
+    """A client may resolve as soon as it receives approval_request.
+
+    The waiter must be registered before the broadcast is sent, otherwise the
+    decision is dropped and the loop waits out the timeout to get ``reject``.
+    """
+    holder: dict[str, ApprovalHub] = {}
+
+    class ResolvingBus(FakeBus):
+        async def broadcast(self, task_id: str, payload: dict) -> None:
+            await super().broadcast(task_id, payload)
+            holder["hub"].resolve(payload["action_id"], "approve")
+
+    hub = ApprovalHub(bus=ResolvingBus(), timeout=5.0)
+    holder["hub"] = hub
+
+    decision = await hub.request(
+        "t1", {"action_id": "a1", "tool": "x", "args": {}, "level": "dangerous"}
+    )
+
+    assert decision == "approve"

@@ -47,6 +47,19 @@ def test_sandbox_rejects_control_quotes_and_wrappers():
     assert policy.allow_command("command rm -rf .") is False
 
 
+def test_sandbox_allows_quoted_arguments_and_windows_paths():
+    policy = SandboxPolicy(allow=[], deny=["rm"])
+    assert policy.allow_command('echo "hi"') is True
+    assert policy.allow_command('python -c "print(1)"') is True
+    assert policy.allow_command(r"C:\Python311\python.exe -m pytest -q") is True
+    assert policy.allow_command(r"python.exe C:\path\to\script.py") is True
+
+
+def test_sandbox_rejects_quoted_binary_name():
+    policy = SandboxPolicy(allow=[], deny=["rm"])
+    assert policy.allow_command('"rm" -rf .') is False
+
+
 def test_sandbox_normalizes_path_deny_and_allow():
     policy = SandboxPolicy(allow=["/usr/bin/pytest"], deny=["/usr/bin/rm"])
     assert policy.allow_command("/usr/bin/pytest -q") is True
