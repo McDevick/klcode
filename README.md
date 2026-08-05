@@ -59,8 +59,10 @@ npm test
 服务端 bootstrap（Task 5.6）已完成，可直接启动：
 
 ```powershell
-# 推荐：使用项目 venv（已装依赖）
-& <venv>\Scripts\python.exe -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700
+# 推荐：使用项目 venv（已装依赖；<venv> 为你的虚拟环境路径，替换为实际路径）
+& "<venv>\Scripts\python.exe" -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700
+# 例如本仓库开发 venv：
+& "E:\projects\SimpleCodingAgent\.superpowers\sdd\PLAN\venv\Scripts\python.exe" -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700
 # 或安装 server[dev] 后使用 console 入口：
 kl-server
 ```
