@@ -21,6 +21,12 @@ export interface TaskResult {
   status: string;
 }
 
+export interface ModelConfig {
+  provider: string;
+  model: string;
+  available: Array<{ provider: string; model: string; base_url: string }>;
+}
+
 export interface ProviderResult {
   name: string;
   type: string;
@@ -186,5 +192,21 @@ export class ApiClient {
 
   health(): Promise<HealthResult> {
     return this.request('/health');
+  }
+
+  getModelConfig(): Promise<ModelConfig> {
+    return this.request('/api/v1/config/model');
+  }
+
+  setModelConfig(payload: { provider: string; model?: string }): Promise<ModelConfig> {
+    return this.request('/api/v1/config/model', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: payload.provider, model: payload.model ?? '' }),
+    });
+  }
+
+  listModels(): Promise<Array<{ provider: string; model: string; base_url: string }>> {
+    return this.request('/api/v1/models');
   }
 }

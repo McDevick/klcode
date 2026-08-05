@@ -112,3 +112,67 @@ test('client omits authorization when token file is missing', async () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('client gets model config', async () => {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      provider: 'mock',
+      model: 'mock-model',
+      available: [{ provider: 'mock', model: 'mock-model', base_url: '' }],
+    }),
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    const client = new ApiClient({ baseUrl: 'http://127.0.0.1:8700' });
+    const result = await client.getModelConfig();
+
+    expect(result.provider).toBe('mock');
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:8700/api/v1/config/model',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test('client sets model config with provider and model', async () => {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ provider: 'deepseek', model: 'deepseek-chat', available: [] }),
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    const client = new ApiClient({ baseUrl: 'http://127.0.0.1:8700' });
+    await client.setModelConfig({ provider: 'deepseek', model: 'deepseek-chat' });
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toEqual({ provider: 'deepseek', model: 'deepseek-chat' });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:8700/api/v1/config/model',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test('client lists models', async () => {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => [{ provider: 'mock', model: 'mock-model', base_url: '' }],
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    const client = new ApiClient({ baseUrl: 'http://127.0.0.1:8700' });
+    const result = await client.listModels();
+
+    expect(result[0]).toMatchObject({ provider: 'mock', model: 'mock-model' });
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
