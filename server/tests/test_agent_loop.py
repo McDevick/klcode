@@ -11,6 +11,7 @@ from kl_server.core.tool_executor import ToolExecutor
 from kl_server.models.action import ToolResult
 from kl_server.models.task import Session
 from kl_server.providers.mock import MockProvider
+from kl_server.providers.registry import ProviderRegistry
 from kl_server.tools.base import Tool, ToolContext
 from kl_server.tools.registry import ToolRegistry
 
@@ -396,3 +397,75 @@ async def test_approval_abort_stops_loop(tmp_path):
 
     assert result == "ABORTED"
     assert len(provider.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_loop_resolves_provider_from_registry_by_current_default():
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+    providers = ProviderRegistry()
+    provider_a = MockProvider(responses=['{"tool":"final","args":{}}', "DONE"])
+    provider_b = MockProvider(responses=['{"tool":"final","args":{}}', "DONE"])
+    providers.register("a", provider_a)
+    providers.register("b", provider_b)
+    current = {"name": "a"}
+    loop = AgentLoop(
+        provider=MockProvider(responses=["DONE"]),  # 兜底，不应被使用
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=3),
+        provider_registry=providers,
+        default_provider=lambda: current["name"],
+        default_model=lambda: "",
+    )
+
+    await loop.run(Session(id="s1", workspace="."), "finish task")
+
+    assert len(provider_a.calls) == 2
+    assert len(provider_b.calls) == 0
+
+    current["name"] = "b"
+    await loop.run(Session(id="s2", workspace="."), "finish task")
+
+    assert len(provider_a.calls) == 2
+    assert len(provider_b.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_loop_uses_global_default_model_when_session_is_mock_placeholder():
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+    providers = ProviderRegistry()
+    provider = MockProvider(responses=["DONE"])
+    provider.model = "provider-model"
+    providers.register("p", provider)
+    loop = AgentLoop(
+        provider=MockProvider(responses=["DONE"]),
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=2),
+        provider_registry=providers,
+        default_provider=lambda: "p",
+        default_model=lambda: "global-model",
+    )
+
+    await loop.run(Session(id="s1", workspace="."), "task")
+
+    assert provider.calls[0].model == "global-model"
+
+
+@pytest.mark.asyncio
+async def test_loop_falls_back_to_injected_provider_when_registry_misses():
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+    fallback = MockProvider(responses=['{"tool":"final","args":{}}', "DONE"])
+    loop = AgentLoop(
+        provider=fallback,
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=3),
+        provider_registry=ProviderRegistry(),  # 默认只含 mock，无 "missing"
+        default_provider=lambda: "missing",
+        default_model=lambda: "",
+    )
+
+    await loop.run(Session(id="s1", workspace="."), "task")
+
+    assert len(fallback.calls) == 2

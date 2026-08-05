@@ -1,4 +1,5 @@
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from kl_server.core.feedback import classify_tool_result
@@ -6,6 +7,7 @@ from kl_server.core.tool_executor import ToolExecutor
 from kl_server.models.action import Action
 from kl_server.models.task import Session
 from kl_server.providers.base import ProviderRequest
+from kl_server.providers.registry import ProviderRegistry
 from kl_server.tools.base import ToolContext
 
 
@@ -43,8 +45,14 @@ class AgentLoop:
         memory=None,
         hooks=None,
         skills=None,
+        provider_registry: ProviderRegistry | None = None,
+        default_provider: Callable[[], str] | None = None,
+        default_model: Callable[[], str] | None = None,
     ):
         self.provider = provider
+        self.provider_registry = provider_registry
+        self.default_provider = default_provider
+        self.default_model = default_model
         self.tools = tools
         self.settings = settings
         self.logger = logger
@@ -96,12 +104,19 @@ class AgentLoop:
                         system_message,
                         {"role": "user", "content": assembled.text},
                     ]
-                # Sessions default to the mock model name; forward the provider's
-                # configured default model so real providers receive a valid id.
+                provider = self.provider
+                if self.provider_registry is not None and self.default_provider is not None:
+                    try:
+                        provider = self.provider_registry.get(self.default_provider())
+                    except KeyError:
+                        pass  # 回退 self.provider
+                # Sessions default to the mock model name; fall back to the
+                # global default model, then to the provider's own default.
                 model = session.model
                 if not model or model == "mock-model":
-                    model = getattr(self.provider, "model", None) or model
-                response = await self.provider.complete(
+                    global_model = (self.default_model() if self.default_model is not None else "") or ""
+                    model = global_model or (getattr(provider, "model", None) or model)
+                response = await provider.complete(
                     ProviderRequest(messages=request_messages, model=model)
                 )
             except Exception as exc:
