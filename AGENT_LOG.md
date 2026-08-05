@@ -3,6 +3,27 @@
 > 本文件按任务执行全程实时记录关键节点，不在任务完成后统一补写。
 > 每条记录包含：时间戳、task 编号、触发的 Superpowers 技能、关键 prompt/context、subagent 输出或 commit hash、人工干预、教训。
 
+## 2026-08-05 Task 5.4：Process docs and reflection（已完成）
+
+- 时间戳：2026-08-05 09:59（开工），提交时间见本条补记。
+- 范围：Phase 5 过程文档与反思报告。
+- 触发的技能：`subagent-driven-development`、`using-git-worktrees`、`verification-first`
+- Implementer：implementer subagent（本会话）
+- 分支：`worktree-task-5.4-process`，stacked 于 `worktree-task-5.3-dist`
+- Worktree：`.claude/worktrees/task-5.4-process`
+- 文件变更：
+  - 更新 `SPEC_PROCESS.md`：新增 Phase 5 执行决策、被采纳/拒绝决策、SPEC/PLAN 修订观察。
+  - 更新 `AGENT_LOG.md`：本条记录，并补记 5.1-5.3 的提交哈希。
+  - 新建 `REFLECTION.md`：1500-2500 中文字符反思报告。
+- 验证证据：
+  - 占位符扫描：无匹配。
+  - `(Get-Content REFLECTION.md -Raw).Length`：位于 1500-2500。
+  - `git diff dev..HEAD --check`：干净。
+  - `git status`：仅三个过程文件变更。
+- 人工干预：无。
+- 核账：AGENT_LOG 已覆盖 Task 0.1-0.4、1.1-1.14、2.1-2.10、3.1-3.10、4.1-4.11、5.1-5.4。
+- 教训：过程文档也必须用验证命令收口；字符数、占位符、diff 范围都应作为可执行检查项，不能只靠“看起来完整”。
+
 ## 2026-08-05 Task 5.3：Distribution polish（已完成）
 
 - 范围：Phase 5 分发元数据与可复现构建。
@@ -36,6 +57,7 @@
   - 按任务范围未注册 `tui` 子命令，仍属 roadmap。
 - 教训：`kl_server.main` 模块导入会创建 daemon token，属于可观察副作用；CLI 事件测试假定默认 token 路径不存在，分发验证前后要清理或隔离该状态。setuptools 的 readme 不能引用项目根目录之外的相对路径，单包发布时应在包目录内维护 README。
 - 控制器补充（质量复核）：`npm pack --dry-run` 的 prepack 会在工作树重新生成 `cli/dist/`；为保持 git status 干净，根 `.gitignore` 新增 `dist/`，该卫生修复单独提交。
+- 补记（Task 5.4 核账）：实现提交 `6ec8c2c`、日志提交 `6453879`、卫生修复 `93f381a`；提交时间 09:24-09:52，无用户干预。
 
 ## 2026-08-05 Task 5.2：README 与安装文档（已完成）
 
@@ -59,6 +81,7 @@
   - `kl init` 在守护进程未启动时直接抛 `TypeError: fetch failed`（ECONNREFUSED），不产生友好提示；README 以明确的“先 `kl server start`”前置条件覆盖。
   - 配置 YAML 的读写尚未接入服务端运行流程（属 Task 5.6 bootstrap），README 只承诺模块级 API 与测试契约。
 - 教训：文档必须与当前可执行行为一致；对尚未实现的命令（`make dev`、`kl tui`、`kl` 可执行文件）一律标注 roadmap 与前置条件，不通过改代码来“凑成功”。
+- 补记（Task 5.4 核账）：实现提交 `e8b62c5`、README 命令一致性修复 `5703874`、日志提交 `bdf4b0b`；提交时间 08:51-09:08，无用户干预。
 
 ## 2026-08-05 Task 5.1：Mock-LLM demos（已完成）
 
@@ -83,6 +106,7 @@
 - 验证：四个 demo 均无网络、确定性输出；完整 server 套件 `316 passed, 1 skipped`（新增 4 个）；`git diff --check` 干净。
 - Commit：`62e903e`（demos + test_examples）
 - 教训：反馈时间线通过记录 provider 的 `request.messages` 快照重建；tool error 演示按 executor 实际行为打印 `ToolResult(ok=False)`，保持与真实行为一致。
+- 补记（Task 5.4 核账）：日志提交 `5834c28`；提交时间 08:27，无用户干预。
 
 ## 2026-08-04 Phase 4 全量验证（已完成）
 
