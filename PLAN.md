@@ -250,12 +250,12 @@ Execution note: task numbering is organizational, not a strict execution order. 
 | 4.9 | MCP client transport (stdio / streamable-http) | Done (`c8abbcf`) |
 | 4.10 | ContextAssembler integrated into AgentLoop | Done (`188b382`) |
 | 4.11 | Wire hooks/skills/MCP/plugins into harness | Done (`13daf79`) |
-| 5.1 | Mock-LLM demos | Pending |
-| 5.2 | README and install docs | Pending |
-| 5.3 | Distribution polish | Pending |
-| 5.4 | Process docs and reflection | Pending |
-| 5.5 | Final CI pass and deliverables | Pending |
-| 5.6 | Application bootstrap and server composition | Pending |
+| 5.1 | Mock-LLM demos | Done (`62e903e`, `5834c28`) |
+| 5.2 | README and install docs | Done (`e8b62c5`, `5703874`, `bdf4b0b`) |
+| 5.3 | Distribution polish | Done (`6ec8c2c`, `6453879`, `93f381a`) |
+| 5.4 | Process docs and reflection | Done (`30218d2`, `0bfbfb8`, `729b71d`) |
+| 5.5 | Final CI pass and deliverables | Done (`666231f`, `ff30fb1`) |
+| 5.6 | Application bootstrap and server composition | Pending (remaining task) |
 
 Every task opens a `AGENT_LOG.md` entry before implementation and updates it in real time. Every completed task also updates this table and the relevant `- [ ]` checkboxes in this file.
 
@@ -5023,7 +5023,7 @@ git commit -m "feat: wire hooks skills mcp and plugins into harness"
 - Create: `examples/context_demo.py`
 - Create: `examples/tool_error_demo.py`
 
-- [ ] **Step 1: Write the demos**
+- [x] **Step 1: Write the demos**
 
 Each demo must run without network access and use `MockProvider` or direct pure functions.
 
@@ -5032,12 +5032,12 @@ Each demo must run without network access and use `MockProvider` or direct pure 
 - `context_demo.py`: build context under a token budget and show summarizer output.
 - `tool_error_demo.py`: run a crashing tool through `ToolExecutor` and print `ToolError`.
 
-- [ ] **Step 2: Verify all demos run**
+- [x] **Step 2: Verify all demos run**
 
 Run: `python examples/guardrail_demo.py && python examples/feedback_demo.py && python examples/context_demo.py && python examples/tool_error_demo.py`
 Expected: four scripts print deterministic output.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add examples
@@ -5051,17 +5051,17 @@ git commit -m "docs: add mock-llm mechanism demos"
 - Modify: `README.md`
 - Create: `docs/superpowers/plans/README.md`
 
-- [ ] **Step 1: Write required README sections**
+- [x] **Step 1: Write required README sections**
 
 Include: project intro, install, run, distribution commands, directory structure, security boundary, key configuration, known limitations.
 Create `docs/superpowers/plans/README.md` describing where the master plan and per-phase execution details live.
 
-- [ ] **Step 2: Verify cold-start commands against README**
+- [x] **Step 2: Verify cold-start commands against README**
 
 Run each README command in a clean Python/Node environment.
 Expected: `make test`, `make dev`, `kl init`, and `kl tui` work or fail with clear prerequisites.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add README.md docs/superpowers/plans/README.md
@@ -5075,16 +5075,16 @@ git commit -m "docs: add cold-start and plan index"
 - Modify: `server/pyproject.toml`
 - Modify: `cli/package.json`
 
-- [ ] **Step 1: Add package metadata**
+- [x] **Step 1: Add package metadata**
 
 Add entry points, package data, CLI bin, and publishing configuration to both packages.
 
-- [ ] **Step 2: Verify package builds**
+- [x] **Step 2: Verify package builds**
 
 Run: `python -m build server` and `npm pack --dry-run`
 Expected: both produce valid artifacts.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add server/pyproject.toml cli/package.json
@@ -5099,18 +5099,18 @@ git commit -m "chore: polish distribution metadata"
 - Create: `AGENT_LOG.md`
 - Create: `REFLECTION.md`
 
-- [ ] **Step 1: Write process evidence**
+- [x] **Step 1: Write process evidence**
 
 `SPEC_PROCESS.md` records at least three key brainstorming iterations, decisions adopted/rejected, and spec revisions.
 `AGENT_LOG.md` records every task with timestamps, Superpowers skills used, subagent outputs, and human interventions.
 `REFLECTION.md` is a 1500-2500 character Chinese reflection covering the required prompts from the project requirement.
 
-- [ ] **Step 2: Verify no placeholders**
+- [x] **Step 2: Verify no placeholders**
 
 Run: `rg -n "TBD|TODO|待补充" SPEC_PROCESS.md AGENT_LOG.md REFLECTION.md`
 Expected: no matches.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add SPEC_PROCESS.md AGENT_LOG.md REFLECTION.md
@@ -5123,21 +5123,21 @@ git commit -m "docs: add process logs and reflection"
 
 - All repository files
 
-- [ ] **Step 1: Run full test suite**
+- [x] **Step 1: Run full test suite**
 
 Run: `make test`
 Expected: all server and CLI tests pass.
 
-- [ ] **Step 2: Run CI checks locally**
+- [x] **Step 2: Run CI checks locally**
 
 Run: `python -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml')); yaml.safe_load(open('.gitlab-ci.yml'))"`
 Expected: no exception.
 
-- [ ] **Step 3: Update PLAN status**
+- [x] **Step 3: Update PLAN status**
 
 Mark every task complete and record commit hashes in the tracking table.
 
-- [ ] **Step 4: Commit final status**
+- [x] **Step 4: Commit final status**
 
 ```bash
 git add PLAN.md
