@@ -22,32 +22,56 @@ export function InputFooter({
 
   const lines = value.split('\n');
 
-  // 浮层显示全部命令；命令超出窗口时滚动，选中项始终在窗口内
-  const MAX_VISIBLE = 9;
+  // 命令面板：固定高度窗口 + 竖向滚动条；命令超出窗口时滚动，选中项始终在窗口内
+  const MAX_VISIBLE = 8;
   const windowStart = Math.max(
     0,
     Math.min(menuIndex - MAX_VISIBLE + 1, commands.length - MAX_VISIBLE),
   );
   const visibleCommands = commands.slice(windowStart, windowStart + MAX_VISIBLE);
-  const hasMoreAbove = windowStart > 0;
-  const hasMoreBelow = windowStart + MAX_VISIBLE < commands.length;
+  const hasScroll = commands.length > MAX_VISIBLE;
+  const thumbTop = hasScroll
+    ? Math.round((windowStart / (commands.length - MAX_VISIBLE)) * (MAX_VISIBLE - 1))
+    : 0;
 
   return (
     <Box flexDirection="column" flexShrink={0}>
       {menuOpen ? (
-        <Box position="absolute" bottom={1} flexDirection="column" paddingX={1}>
-          {hasMoreAbove ? <Text dimColor>▲ 更多</Text> : null}
-          {visibleCommands.map((command, index) => {
-            const absoluteIndex = windowStart + index;
-            return (
-              <Text key={command.name} color={absoluteIndex === menuIndex ? 'cyan' : 'gray'}>
-                {absoluteIndex === menuIndex ? '▸ ' : '  '}
-                {command.name}
-                <Text dimColor>  {command.desc}</Text>
-              </Text>
-            );
-          })}
-          {hasMoreBelow ? <Text dimColor>▼ 更多</Text> : null}
+        <Box
+          position="absolute"
+          bottom={1}
+          borderStyle="round"
+          borderColor="gray"
+          backgroundColor="#1E1E2E"
+          flexDirection="row"
+          paddingX={1}
+        >
+          <Box flexDirection="column">
+            {visibleCommands.map((command, index) => {
+              const absoluteIndex = windowStart + index;
+              return (
+                <Text key={command.name} color={absoluteIndex === menuIndex ? 'cyan' : 'gray'}>
+                  {absoluteIndex === menuIndex ? '▸ ' : '  '}
+                  {command.name}
+                  <Text dimColor>  {command.desc}</Text>
+                </Text>
+              );
+            })}
+            {Array.from({ length: Math.max(0, MAX_VISIBLE - visibleCommands.length) }).map(
+              (_, index) => (
+                <Text key={`pad-${index}`}> </Text>
+              ),
+            )}
+          </Box>
+          {hasScroll ? (
+            <Box flexDirection="column" paddingLeft={1}>
+              {Array.from({ length: MAX_VISIBLE }).map((_, index) => (
+                <Text key={index} color={index === thumbTop ? 'cyan' : 'gray'}>
+                  {index === thumbTop ? '█' : '│'}
+                </Text>
+              ))}
+            </Box>
+          ) : null}
         </Box>
       ) : null}
       <Box paddingX={1}>

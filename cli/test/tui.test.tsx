@@ -167,9 +167,9 @@ test('slash menu opens on / and arrow selection fills the input', async () => {
   try {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('/');
-    // 浮层菜单出现（测试视口较矮，断言窗口内靠底的可见项）
-    await waitFor(() => (lastFrame() ?? '').includes('中止当前任务'));
-    expect(lastFrame()).toContain('中止当前任务');
+    // 命令面板出现（测试视口较矮，断言窗口底部靠输入框的可见项）
+    await waitFor(() => (lastFrame() ?? '').includes('继续任务'));
+    expect(lastFrame()).toContain('继续任务');
 
     // 滚动窗口：ArrowDown 一路到 /exit（index 8）后菜单滚动显示底部命令
     for (let i = 0; i < 8; i += 1) {
