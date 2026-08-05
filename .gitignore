@@ -4,6 +4,9 @@ requirement_file/
 # Claude Code worktrees / scratch
 .claude/
 
+# 项目运行时数据（config.yaml / kl.db / audit.jsonl / memory.db）
+.kl/
+
 # Python
 __pycache__/
 *.egg-info/
