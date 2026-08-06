@@ -21,14 +21,61 @@ class LoopSettings:
 # `tools` request parameter, so this prompt only needs to steer behavior —
 # not teach the JSON action protocol. A response without tool_calls IS the
 # final answer.
-SYSTEM_PROMPT = (
-    "You are an autonomous coding agent operating in the local workspace. "
-    "Use the provided tools to complete the user's task, one tool call at a "
-    "time. Some actions require user approval; if one is rejected, take a "
-    "different approach instead of repeating it. When the task is complete, "
-    "reply with your final answer to the user. "
-    "Reply in the same language as the user's task."
-)
+SYSTEM_PROMPT = """你是运行在本地工作区中的自主编码 Agent。
+你的目标是可靠地完成用户任务，而不是假装完成。
+
+## 工具使用原则
+
+1. 获取信息时，先用 grep/glob 定位，再精确读取。
+2. 大文件不要一次读完整内容；优先使用 read_file(start_line, end_line)。
+3. 小范围修改优先使用 edit_file，而不是 write_file 重写整个文件。
+4. 只有创建新文件或必须整文件覆盖时才使用 write_file。
+5. 每个工具调用只做一件明确的事，避免一次执行大量无关操作。
+
+## 任务计划
+
+1. 多步骤任务开始前，先调用 task_manage(list) 查看当前 session 是否已有计划。
+2. 没有计划时创建；有计划时不要重复创建相同任务。
+3. 每完成一步，立即调用 task_manage(update) 更新状态。
+4. 计划状态在同一 session 内共享，后续任务可以读取和继续。
+
+## 审批
+
+1. 工具返回 requires_approval 时，停止当前操作，等待用户批准、拒绝或中止。
+2. 不要绕过审批，不要重复提交等待审批的同一个操作。
+3. 如果用户拒绝，换一种可行方案，而不是原样重试。
+
+## 意外情况处理
+
+1. 工具调用失败时，先读取 error 信息，判断是参数错误、路径错误、权限错误、编码错误还是环境问题。
+2. 如果错误明确，修正参数或改用更合适的工具，最多尝试 2-3 次。
+3. 如果同一个工具连续失败，停止重复尝试，换工具、换思路，或向用户报告卡点。
+4. 如果命令返回非零退出码，不要忽略；根据 stdout/stderr 判断是否可修复。
+5. 如果工具输出被截断，说明内容过长；使用范围读取、缩小搜索范围或分步处理。
+6. 如果文件不存在，不要编造内容；确认路径或让用户提供正确路径。
+7. 如果权限不足、文件被占用或编码不支持，如实报告，不要强行修改。
+8. 如果遇到 provider/API/网络错误，检查是否是临时故障；若不能确认，不要重复轰炸接口。
+9. 如果用户要求访问 workspace 外路径，不执行绕过操作；说明限制，并建议复制文件到 workspace 内。
+10. 如果结果不确定，明确说“不确定”，并说明缺少哪些证据。
+11. 如果任务无法完成，不要输出成功；说明已做了什么、卡在哪里、需要用户提供什么。
+12. 任何时候都不要编造工具结果、文件内容、测试结果或提交记录。
+
+## 验证
+
+1. 修改代码后，运行相关测试、lint 或 typecheck。
+2. 能验证就给出验证结果；不能验证就明确说明“未验证”。
+3. 验证失败时，先修复，再重新验证，不要直接宣告完成。
+
+## 最终回答
+
+1. 使用与用户相同的语言回复。
+2. 简洁说明：
+   - 你做了什么
+   - 改了什么文件
+   - 如何验证
+   - 是否还有未完成或不确定的部分
+3. 如果任务完成，给出关键结果；如果未完成，给出下一步建议。
+"""
 
 
 def _clean_user_message(text: str) -> str:
@@ -129,7 +176,12 @@ class AgentLoop:
             if self.logger:
                 self.logger.write("llm_call", {"iteration": iteration}, task_id)
             try:
-                request_messages = [system_message]
+                history_texts = [
+                    f"{message['role']}: {message.get('content', '')}"
+                    for message in history
+                ]
+                context_summary = ""
+                recent_history = history
                 if self.context is not None:
                     memory_entries = (
                         await self.memory.find([session.id, task_id])
@@ -147,11 +199,44 @@ class AgentLoop:
                             else ""
                         ),
                     )
+                    should_compress = getattr(self.context, "should_compress", None)
+                    compact_history = getattr(self.context, "compact_history", None)
+                    if should_compress is not None and should_compress(history_texts):
+                        try:
+                            if compact_history is not None:
+                                context_summary = await compact_history(
+                                    history_texts,
+                                    task_id,
+                                )
+                        except Exception:
+                            context_summary = ""
+                        if context_summary:
+                            recent_history = history[-4:]
+                            history = recent_history
+                            if self.memory is not None:
+                                try:
+                                    await self.memory.add(
+                                        session.id,
+                                        "context_summary",
+                                        [session.id],
+                                        context_summary[:5000],
+                                    )
+                                except Exception:
+                                    pass
+                request_messages = [system_message]
+                if self.context is not None:
                     if assembled.text:
                         request_messages.append(
                             {"role": "system", "content": assembled.text}
                         )
-                request_messages.extend(history)
+                    if context_summary:
+                        request_messages.append(
+                            {
+                                "role": "system",
+                                "content": f"Previous context summary:\n{context_summary}",
+                            }
+                        )
+                request_messages.extend(recent_history)
                 provider = self.provider
                 if self.provider_registry is not None and self.default_provider is not None:
                     try:
@@ -253,7 +338,13 @@ class AgentLoop:
                 result = await self.tools.execute(
                     action.tool,
                     action.args,
-                    ToolContext(workspace=session.workspace, task_id=session.id, workspace_mode=workspace_mode),
+                    ToolContext(
+                        workspace=session.workspace,
+                        task_id=session.id,
+                        session_id=session.id,
+                        workspace_mode=workspace_mode,
+                        state_store=self.memory,
+                    ),
                 )
                 if self.logger:
                     self.logger.write(
@@ -324,7 +415,9 @@ class AgentLoop:
                         ToolContext(
                             workspace=session.workspace,
                             task_id=session.id,
+                            session_id=session.id,
                             workspace_mode=workspace_mode,
+                            state_store=self.memory,
                         ),
                         action_id,
                     )

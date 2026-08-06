@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, field_validator
 
 from kl_server.config.config import AppConfig, ProviderConfig
+from kl_server.core.agent_loop import SYSTEM_PROMPT
 from kl_server.core.guardrail import normalize_workspace_mode
 from kl_server.core.snapshot import SnapshotManager
 from kl_server.models.task import Session, Task, TaskStatus
@@ -57,6 +58,7 @@ class ProviderPayload(BaseModel):
     type: str
     base_url: str
     default_model: str
+    max_context: int = 20000
 
 
 class KeyPayload(BaseModel):
@@ -69,13 +71,14 @@ class ModelConfigPayload(BaseModel):
 
 
 def _model_available(config: AppConfig) -> list[dict]:
-    available = [{"provider": "mock", "model": "mock-model", "base_url": ""}]
+    available = [{"provider": "mock", "model": "mock-model", "base_url": "", "max_context": 20000}]
     for name, provider_config in config.providers.items():
         available.append(
             {
                 "provider": name,
                 "model": provider_config.default_model,
                 "base_url": provider_config.base_url,
+                "max_context": provider_config.max_context,
             }
         )
     return available
@@ -91,7 +94,16 @@ def _model_state(config: AppConfig) -> dict:
         else:
             provider_config = config.providers.get(provider)
             model = provider_config.default_model if provider_config else ""
-    return {"provider": provider, "model": model, "available": available}
+    max_context = 20000
+    if provider != "mock":
+        provider_config = config.providers.get(provider)
+        max_context = provider_config.max_context if provider_config else 20000
+    return {
+        "provider": provider,
+        "model": model,
+        "max_context": max_context,
+        "available": available,
+    }
 
 
 def _history_message(record: dict) -> dict | None:
@@ -139,6 +151,7 @@ def _history_message(record: dict) -> dict | None:
 async def _load_session_history(deps, session_id: str) -> list[dict]:
     tasks = [task for task in await deps.tasks.list() if task.session_id == session_id]
     task_ids = {task.id for task in tasks}
+    summaries = {task.id: task.summary for task in tasks if task.summary}
     log_path = getattr(deps.logger, "path", None)
     if not log_path or not Path(log_path).exists():
         return []
@@ -153,12 +166,48 @@ async def _load_session_history(deps, session_id: str) -> list[dict]:
             records.append(record)
     records.sort(key=lambda record: record.get("timestamp", ""))
 
-    messages: list[dict] = []
-    for record in records:
+    messages: list[tuple[float, dict]] = []
+    last_position_by_task: dict[str, int] = {}
+    for position, record in enumerate(records):
+        task_id = record.get("task_id")
+        if task_id:
+            last_position_by_task[task_id] = position
+        if (
+            record.get("event") == "llm_result"
+            and not (record.get("payload") or {}).get("tool_calls")
+            and task_id in summaries
+        ):
+            continue
         message = _history_message(record)
         if message is not None:
-            messages.append(message)
-    return messages
+            messages.append((position, message))
+    for task in tasks:
+        summary = task.summary
+        if not summary:
+            continue
+        if summary == "DONE":
+            continue
+        if summary.startswith("DONE: "):
+            summary = summary[len("DONE: ") :]
+        position = last_position_by_task.get(task.id, -1) + 0.5
+        messages.append(
+            (
+                position,
+                {"type": "agent", "content": summary, "kind": "text"},
+            )
+        )
+    messages.sort(key=lambda item: item[0])
+    return [message for _, message in messages]
+
+
+async def _history_after_compaction(deps, session_id: str) -> list[dict]:
+    history = await _load_session_history(deps, session_id)
+    raw_count = await deps.memory.get_state(
+        f"session:{session_id}",
+        "context_compacted_count",
+    )
+    count = int(raw_count) if raw_count else 0
+    return history[count:]
 
 
 def build_router() -> APIRouter:
@@ -274,6 +323,81 @@ def build_router() -> APIRouter:
             raise HTTPException(status_code=404, detail="session not found")
         return []
 
+    @router.get("/sessions/{session_id}/context")
+    async def get_context_status(session_id: str, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is None:
+            raise HTTPException(status_code=501, detail="requires a configured server")
+        try:
+            await deps.sessions.get(session_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="session not found")
+
+        max_tokens = deps.context.max_tokens
+        system_text = SYSTEM_PROMPT
+        system_tokens = deps.context.estimate_tokens(system_text)
+
+        memory_entries = await deps.memory.find([session_id])
+        memory_text = "\n".join(memory_entries[-5:])
+        memory_tokens = deps.context.estimate_tokens(memory_text)
+
+        history_messages = await _history_after_compaction(deps, session_id)
+        history_text = json.dumps(history_messages, ensure_ascii=False)
+        history_tokens = deps.context.estimate_tokens(history_text)
+
+        sections = [
+            {"name": "system", "tokens": system_tokens},
+            {"name": "memory", "tokens": memory_tokens},
+            {"name": "history", "tokens": history_tokens},
+        ]
+        for section in sections:
+            section["percent"] = round(section["tokens"] / max_tokens * 100, 1) if max_tokens else 0
+        used_tokens = sum(section["tokens"] for section in sections)
+        remaining_tokens = max(0, max_tokens - used_tokens)
+        return {
+            "max_tokens": max_tokens,
+            "used_tokens": used_tokens,
+            "remaining_tokens": remaining_tokens,
+            "sections": sections,
+        }
+
+    @router.post("/sessions/{session_id}/context/compact")
+    async def compact_context(session_id: str, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is None:
+            raise HTTPException(status_code=501, detail="requires a configured server")
+        try:
+            await deps.sessions.get(session_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="session not found")
+
+        memory_entries = await deps.memory.find([session_id])
+        full_history = await _load_session_history(deps, session_id)
+        history_messages = full_history[
+            len(full_history) - len(await _history_after_compaction(deps, session_id)) :
+        ]
+        history_texts = list(memory_entries)
+        history_texts.extend(
+            f"{message.get('type')}: {message.get('content') or message.get('output') or message.get('name')}"
+            for message in history_messages
+        )
+        summary = ""
+        if history_texts:
+            summary = await deps.context.compact_history(history_texts, session_id)
+        if summary:
+            await deps.memory.add(
+                session_id,
+                "context_summary",
+                [session_id],
+                summary[:5000],
+            )
+            await deps.memory.set_state(
+                f"session:{session_id}",
+                "context_compacted_count",
+                str(len(full_history)),
+            )
+        return await get_context_status(session_id, request)
+
     @router.patch("/sessions/{session_id}")
     async def rename_session(session_id: str, payload: RenameSessionPayload, request: Request):
         deps = getattr(request.app.state, "deps", None)
@@ -322,6 +446,9 @@ def build_router() -> APIRouter:
                 await deps.sessions.delete(session_id)
             except KeyError:
                 raise HTTPException(status_code=404, detail="session not found")
+            memory = getattr(deps, "memory", None)
+            if memory is not None and hasattr(memory, "delete_state"):
+                await memory.delete_state(f"session:{session_id}", "subtasks")
             return Response(status_code=204)
         if sessions.pop(session_id, None) is None:
             raise HTTPException(status_code=404, detail="session not found")
@@ -499,6 +626,10 @@ def build_router() -> APIRouter:
                 raise HTTPException(status_code=404, detail="provider not found")
         deps.config.default_provider = payload.provider
         deps.config.default_model = payload.model
+        max_context = 20000
+        if payload.provider != "mock":
+            max_context = deps.config.providers[payload.provider].max_context
+        deps.context.max_tokens = max_context
         _persist_config(deps)
         return _model_state(deps.config)
 
@@ -528,6 +659,7 @@ def build_router() -> APIRouter:
                 type=payload.type,
                 base_url=payload.base_url,
                 default_model=payload.default_model,
+                max_context=payload.max_context,
             )
             deps.config.providers[payload.name] = provider_config
             _persist_config(deps)

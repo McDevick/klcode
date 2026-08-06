@@ -2,7 +2,7 @@
 
 from kl_server.tools.registry import ToolRegistry
 
-from .filesystem import DeleteFileTool, ListDirTool, ReadFileTool, WriteFileTool
+from .filesystem import DeleteFileTool, EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
 from .git import GitBranchTool, GitCommitTool, GitDiffTool, GitStatusTool
 from .patch import ApplyPatchTool
 from .search import GlobTool, GrepTool
@@ -16,6 +16,7 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
     tools = [
         ListDirTool(),
         ReadFileTool(),
+        EditFileTool(),
         WriteFileTool(),
         DeleteFileTool(),
         GrepTool(),

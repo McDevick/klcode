@@ -20,6 +20,11 @@ class MemoryStore:
                     "CREATE TABLE IF NOT EXISTS memory ("
                     "id INTEGER PRIMARY KEY, scope TEXT, kind TEXT, tags TEXT, content TEXT)"
                 )
+                await self.conn.execute(
+                    "CREATE TABLE IF NOT EXISTS state ("
+                    "scope TEXT, kind TEXT, content TEXT, "
+                    "PRIMARY KEY (scope, kind))"
+                )
                 await self.conn.commit()
         return self.conn
 
@@ -52,6 +57,34 @@ class MemoryStore:
             for row in rows
             if any(tag in json.loads(row["tags"]) for tag in tags)
         ]
+
+    async def get_state(self, scope: str, kind: str) -> str | None:
+        conn = await self._connection()
+        cursor = await conn.execute(
+            "SELECT content FROM state WHERE scope = ? AND kind = ?",
+            (scope, kind),
+        )
+        row = await cursor.fetchone()
+        return row["content"] if row is not None else None
+
+    async def set_state(self, scope: str, kind: str, content: str) -> None:
+        conn = await self._connection()
+        await conn.execute(
+            """
+            INSERT INTO state (scope, kind, content) VALUES (?, ?, ?)
+            ON CONFLICT(scope, kind) DO UPDATE SET content = excluded.content
+            """,
+            (scope, kind, content),
+        )
+        await conn.commit()
+
+    async def delete_state(self, scope: str, kind: str) -> None:
+        conn = await self._connection()
+        await conn.execute(
+            "DELETE FROM state WHERE scope = ? AND kind = ?",
+            (scope, kind),
+        )
+        await conn.commit()
 
     async def close(self) -> None:
         async with self._connect_lock:

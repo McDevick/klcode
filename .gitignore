@@ -7,6 +7,9 @@ requirement_file/
 # 项目运行时数据（config.yaml / kl.db / audit.jsonl / memory.db）
 .kl/
 
+# 临时目录
+tmp/
+
 # Python
 __pycache__/
 *.egg-info/

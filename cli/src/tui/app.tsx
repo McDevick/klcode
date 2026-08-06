@@ -18,6 +18,8 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { name: '/config', desc: '打开配置向导' },
   { name: '/status', desc: '查看当前状态' },
   { name: '/model', desc: '查看/切换模型' },
+  { name: '/context', desc: '查看上下文占用' },
+  { name: '/compact', desc: '压缩当前上下文' },
   { name: '/help', desc: '显示帮助' },
   { name: '/abort', desc: '中止当前任务' },
   { name: '/pause', desc: '暂停任务' },
@@ -81,6 +83,21 @@ function formatToolArgs(args: Record<string, unknown> | undefined): string {
   if (typeof args.patch === 'string' && args.patch) {
     parts.push(`patch=${quoteToolValue(truncateToolText(args.patch, 80))}`);
   }
+  if (typeof args.old_text === 'string' && args.old_text) {
+    parts.push(`old_text=${quoteToolValue(truncateToolText(args.old_text, 80))}`);
+  }
+  if (typeof args.new_text === 'string' && args.new_text) {
+    parts.push(`new_text=${quoteToolValue(truncateToolText(args.new_text, 80))}`);
+  }
+  if (typeof args.new_content === 'string' && args.new_content) {
+    parts.push(`new_content=${quoteToolValue(truncateToolText(args.new_content, 80))}`);
+  }
+  if (typeof args.start_line === 'number') {
+    parts.push(`start_line=${args.start_line}`);
+  }
+  if (typeof args.end_line === 'number') {
+    parts.push(`end_line=${args.end_line}`);
+  }
   if (parts.length > 0) return truncateToolText(parts.join(', '));
   return truncateToolText(
     Object.entries(args)
@@ -140,6 +157,29 @@ function summarizeToolResult(payload: {
   }
   const single = output.replace(/\s+/g, ' ').trim();
   return single.length > 80 ? `${single.slice(0, 80)}…` : single;
+}
+
+function parseTaskManageItems(output: string | null | undefined): Array<{ title: string; done: boolean }> | null {
+  if (!output) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed)) return null;
+  const items = parsed
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const record = item as Record<string, unknown>;
+      if (typeof record.title !== 'string') return null;
+      return {
+        title: record.title,
+        done: record.status === 'done',
+      };
+    })
+    .filter((item): item is { title: string; done: boolean } => item !== null);
+  return items;
 }
 
 
@@ -382,6 +422,7 @@ export function App() {
           args: formatToolArgs(payload.args),
           summary: summarizeToolResult(payload),
           ok: isToolOk(payload),
+          taskItems: parseTaskManageItems(payload.output),
         });
         setRunning((current) =>
           current === null ? current : { ...current, steps: current.steps + 1 },
@@ -449,6 +490,7 @@ export function App() {
                 output: item.output ?? '',
               }),
               ok: item.ok ?? false,
+              taskItems: parseTaskManageItems(item.output),
             },
           };
         }
@@ -520,6 +562,57 @@ export function App() {
         })
         .catch((error: unknown) => {
           pushMessage('agent', `模型切换失败: ${String(error)}`, 'error');
+        });
+      return;
+    }
+    if (commandName === '/context') {
+      if (sessionId === null) {
+        pushMessage('agent', '/context: 当前无会话', 'error');
+        return;
+      }
+      const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
+      client
+        .getContextStatus(sessionId)
+        .then((status) => {
+          const usedPercent = status.max_tokens
+            ? ((status.used_tokens / status.max_tokens) * 100).toFixed(1)
+            : '0.0';
+          const remainingPercent = status.max_tokens
+            ? ((status.remaining_tokens / status.max_tokens) * 100).toFixed(1)
+            : '0.0';
+          const lines = [
+            `上下文: ${status.used_tokens}/${status.max_tokens} tokens (${usedPercent}%)`,
+            `剩余: ${status.remaining_tokens}/${status.max_tokens} tokens (${remainingPercent}%)`,
+            ...status.sections.map(
+              (section) =>
+                `${section.name}: ${section.tokens} tokens (${section.percent.toFixed(1)}%)`,
+            ),
+          ];
+          pushMessage('agent', lines.join('\n'), 'info');
+        })
+        .catch((error: unknown) => {
+          pushMessage('agent', `上下文状态读取失败: ${String(error)}`, 'error');
+        });
+      return;
+    }
+    if (commandName === '/compact') {
+      if (sessionId === null) {
+        pushMessage('agent', '/compact: 当前无会话', 'error');
+        return;
+      }
+      const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
+      pushMessage('agent', 'Compacting...', 'info');
+      client
+        .compactContext(sessionId)
+        .then((status) => {
+          pushMessage(
+            'agent',
+            `上下文已压缩，剩余 ${status.remaining_tokens}/${status.max_tokens} tokens`,
+            'done',
+          );
+        })
+        .catch((error: unknown) => {
+          pushMessage('agent', `上下文压缩失败: ${String(error)}`, 'error');
         });
       return;
     }

@@ -73,6 +73,9 @@ class GitCommitTool(Tool):
         paths = args.get("paths")
         if not isinstance(paths, list) or not paths:
             return ToolResult(ok=False, output="", error="paths are required")
+        message = args.get("message")
+        if not isinstance(message, str) or not message.strip():
+            return ToolResult(ok=False, output="", error="message is required")
         root = Path(ctx.workspace).resolve()
         for path in paths:
             if not isinstance(path, str) or not path:

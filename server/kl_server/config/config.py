@@ -11,6 +11,8 @@ class ProviderConfig(BaseModel):
     credential_ref: str | None = None
     # 直接写在配置文件里的 API key（本地工具场景，用户自行管理；.kl/ 已 gitignore）
     api_key: str | None = None
+    # 当前模型的最大上下文 token 数；未配置时默认 20k
+    max_context: int = 20000
 
 
 class AppConfig(BaseModel):

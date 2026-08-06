@@ -36,8 +36,20 @@ class LLMSummarizer:
             f"{index}. {segment}" for index, segment in enumerate(segments, start=1)
         )
         prompt = (
-            "Summarize segments for task "
-            f"{task_id} with goals, results, failures, and open items:\n"
+            "You are compressing an agent session context.\n"
+            f"Task: {task_id}\n\n"
+            "Produce a concise structured summary with these sections:\n"
+            "## Goals\n"
+            "## Results\n"
+            "## Failures\n"
+            "## Open Items\n\n"
+            "Rules:\n"
+            "- Preserve exact file paths, commands, tool names, decisions, and pending work.\n"
+            "- Do not invent facts or tool results.\n"
+            "- Remove repeated or low-signal details.\n"
+            "- Keep the summary under 1000 tokens when possible.\n"
+            "- Use Chinese if the source segments are Chinese.\n\n"
+            "Segments:\n"
             f"{numbered_segments}"
         )
         request = ProviderRequest(
@@ -141,6 +153,19 @@ class ContextAssembler:
 
         text, used_tokens = self._fit_to_budget(sections)
         return AssembledContext(text=text, used_tokens=used_tokens)
+
+    def estimate_tokens(self, text: str) -> int:
+        return self._estimate(text)
+
+    def should_compress(self, history: list[str]) -> bool:
+        if not history:
+            return False
+        return self._estimate("\n\n".join(history)) > int(self.max_tokens * 0.8)
+
+    async def compact_history(self, history: list[str], task_id: str) -> str:
+        if not history or self.summarizer is None:
+            return ""
+        return await self.summarizer.summarize(history, task_id)
 
     def _read_summary_state(self, task_id: str) -> tuple[int, str] | None:
         if task_id not in self._summary_state:

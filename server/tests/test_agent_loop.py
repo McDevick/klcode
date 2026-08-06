@@ -150,6 +150,23 @@ class SpyAssembler:
         self.last_kwargs = kwargs
         return AssembledContext(text="assembled", used_tokens=10)
 
+    def should_compress(self, history: list[str]) -> bool:
+        return False
+
+    async def compact_history(self, history: list[str], task_id: str) -> str:
+        return ""
+
+
+class CompressContext:
+    async def build(self, **kwargs) -> AssembledContext:
+        return AssembledContext(text="compiled", used_tokens=10)
+
+    def should_compress(self, history: list[str]) -> bool:
+        return bool(history)
+
+    async def compact_history(self, history: list[str], task_id: str) -> str:
+        return "compressed summary"
+
 
 class FakeMemory:
     def __init__(self):
@@ -247,6 +264,29 @@ async def test_loop_context_preserves_role_labels():
     messages = provider.calls[1].messages
     assert any(message["role"] == "assistant" and "tool_calls" in message for message in messages)
     assert any(message["role"] == "tool" for message in messages)
+
+
+@pytest.mark.asyncio
+async def test_loop_injects_compressed_context_summary():
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+    provider = MockProvider(
+        responses=['{"tool":"final","args":{}}', '{"tool":"final","args":{}}', "DONE"]
+    )
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=4),
+        context=CompressContext(),
+    )
+
+    await loop.run(Session(id="s1", workspace="."), "task")
+
+    first_messages = provider.calls[0].messages
+    assert any(
+        "Previous context summary" in str(message.get("content", ""))
+        for message in first_messages
+    )
 
 
 @pytest.mark.asyncio

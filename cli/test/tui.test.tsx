@@ -66,7 +66,8 @@ const modelConfigResponse = {
   json: async () => ({
     provider: 'mock',
     model: 'mock-model',
-    available: [{ provider: 'mock', model: 'mock-model', base_url: '' }],
+    max_context: 20000,
+    available: [{ provider: 'mock', model: 'mock-model', base_url: '', max_context: 20000 }],
   }),
 };
 
@@ -154,6 +155,29 @@ test('tool line renders readable args and status label', () => {
     expect(lastFrame()).toContain('[Tool]: read_file');
     expect(lastFrame()).toContain('read_file("src/a.ts")');
     expect(lastFrame()).toContain('✓');
+  } finally {
+    unmount();
+  }
+});
+
+test('tool line renders task_manage checklist', () => {
+  const { lastFrame, unmount } = render(
+    <ToolCallLine
+      tool={{
+        name: 'task_manage',
+        args: 'action="list"',
+        summary: '',
+        ok: true,
+        taskItems: [
+          { title: '读取文件', done: false },
+          { title: '写入文件', done: true },
+        ],
+      }}
+    />,
+  );
+  try {
+    expect(lastFrame()).toContain('[ ] 读取文件');
+    expect(lastFrame()).toContain('[✓] 写入文件');
   } finally {
     unmount();
   }
@@ -250,20 +274,20 @@ test('slash menu opens on / and arrow selection fills the input', async () => {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('/');
     // 命令面板出现（测试视口较矮，断言窗口底部靠输入框的可见项）
-    await waitFor(() => (lastFrame() ?? '').includes('暂停任务'));
-    expect(lastFrame()).toContain('暂停任务');
+    await waitFor(() => (lastFrame() ?? '').includes('/abort'));
+    expect(lastFrame()).toContain('/abort');
     const menuFrame = lastFrame() ?? '';
-    expect(menuFrame.indexOf('暂停任务')).toBeLessThan(menuFrame.indexOf('> '));
+    expect(menuFrame.indexOf('/abort')).toBeLessThan(menuFrame.indexOf('> '));
 
-    // 滚动窗口：ArrowDown 一路到 /exit（index 10，共 11 项）后菜单滚动显示底部命令
-    for (let i = 0; i < 10; i += 1) {
+    // 滚动窗口：ArrowDown 一路到 /exit（index 12，共 13 项）后菜单滚动显示底部命令
+    for (let i = 0; i < 12; i += 1) {
       stdin.write('[B');
     }
     await sleep(30);
     expect(lastFrame()).toContain('退出 TUI');
 
     // ArrowDown 回到 index 0（/session），Enter 填入输入框
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < 12; i += 1) {
       stdin.write('[A');
     }
     await sleep(30);
@@ -360,6 +384,52 @@ test('app runs /status slash command', async () => {
   }
 });
 
+test('app /context and /compact show context status', async () => {
+  const contextStatus = {
+    max_tokens: 20000,
+    used_tokens: 5000,
+    remaining_tokens: 15000,
+    sections: [
+      { name: 'system', tokens: 1000, percent: 5 },
+      { name: 'memory', tokens: 2000, percent: 10 },
+      { name: 'history', tokens: 2000, percent: 10 },
+    ],
+  };
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    if (url.includes('/context/compact') && method === 'POST') {
+      return { ok: true, status: 200, json: async () => contextStatus };
+    }
+    if (url.includes('/context') && method === 'GET') {
+      return { ok: true, status: 200, json: async () => contextStatus };
+    }
+    if (url.includes('/api/v1/sessions') && method === 'GET') return listSessionsEmpty;
+    if (url.includes('/api/v1/sessions') && method === 'POST') return sessionResponse;
+    if (url.includes('/config/model')) return modelConfigResponse;
+    return { ok: true, status: 200, json: async () => ({}) };
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('/context');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('上下文: 5000/20000 tokens'));
+    expect(lastFrame()).toContain('剩余: 15000/20000 tokens');
+
+    stdin.write('/compact');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('上下文已压缩'));
+    expect(lastFrame()).toContain('Compacting...');
+    expect(lastFrame()).toContain('剩余 15000/20000 tokens');
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
 test('app /session opens manager and enter selects session', async () => {
   let sessionListCount = 0;
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
@@ -411,6 +481,41 @@ test('app /session opens manager and enter selects session', async () => {
     stdin.write('\r');
     await waitFor(() => (lastFrame() ?? '').includes('session: s2'));
     expect(lastFrame()).toContain('session: s2');
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('session manager displays id once when name equals id', async () => {
+  let listCount = 0;
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    if (url.includes('/api/v1/sessions') && method === 'GET') {
+      listCount += 1;
+      return {
+        ok: true,
+        status: 200,
+        json: async () =>
+          listCount === 1
+            ? []
+            : [{ id: 's2', workspace: process.cwd(), name: 's2', status: 'active' }],
+      };
+    }
+    if (url.includes('/api/v1/sessions') && method === 'POST') return sessionResponse;
+    if (url.includes('/config/model')) return modelConfigResponse;
+    return { ok: true, status: 200, json: async () => ({}) };
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('/session');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('s2'));
+    expect(lastFrame()).not.toContain('s2 · s2');
   } finally {
     unmount();
     vi.unstubAllGlobals();
@@ -1045,6 +1150,37 @@ test('tool call line shows failure marker for non-zero exit code', async () => {
     await waitFor(() => (lastFrame() ?? '').includes('✗ exit 1'));
     expect(lastFrame()).toContain('✗ error: exit 1 · FAILED test_foo.py::test_bar');
     expect(lastFrame()).toContain('[Tool]: run_command("python -m pytest")');
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app renders task_manage output as checklist', async () => {
+  const fetchMock = taskFetchMocks();
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('hello');
+    stdin.write('\r');
+    await waitFor(() => FakeWebSocket.instances.length > 0);
+    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    emit(socket, {
+      event: 'tool_result',
+      payload: {
+        tool: 'task_manage',
+        ok: true,
+        error: null,
+        args: { action: 'list' },
+        output:
+          '[{"title":"读取文件","status":"pending"},{"title":"写入文件","status":"done"}]',
+      },
+    });
+    await waitFor(() => (lastFrame() ?? '').includes('[ ] 读取文件'));
+    expect(lastFrame()).toContain('[✓] 写入文件');
   } finally {
     unmount();
     vi.unstubAllGlobals();

@@ -24,7 +24,26 @@ export interface TaskResult {
 export interface ModelConfig {
   provider: string;
   model: string;
-  available: Array<{ provider: string; model: string; base_url: string }>;
+  max_context: number;
+  available: Array<{
+    provider: string;
+    model: string;
+    base_url: string;
+    max_context: number;
+  }>;
+}
+
+export interface ContextSection {
+  name: string;
+  tokens: number;
+  percent: number;
+}
+
+export interface ContextStatus {
+  max_tokens: number;
+  used_tokens: number;
+  remaining_tokens: number;
+  sections: ContextSection[];
 }
 
 export interface ProviderResult {
@@ -80,7 +99,7 @@ export class ApiClient {
     return `${base}/api/v1/tasks/${encodeURIComponent(taskId)}`;
   }
 
-  async request<T>(path: string, init?: RequestInit): Promise<T> {
+  async request<T>(path: string, init?: RequestInit, timeoutMs = 5000): Promise<T> {
     const base = this.options.baseUrl.replace(/\/+$/, '');
     const headers = new Headers(init?.headers);
     const token = readDaemonToken(this.tokenPath);
@@ -90,7 +109,7 @@ export class ApiClient {
     const response = await fetch(`${base}${path}`, {
       ...init,
       headers,
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) {
       throw new Error(`request failed: ${response.status}`);
@@ -113,6 +132,16 @@ export class ApiClient {
 
   getSessionHistory(id: string): Promise<SessionHistoryMessage[]> {
     return this.request(`/api/v1/sessions/${encodeURIComponent(id)}/history`);
+  }
+
+  getContextStatus(id: string): Promise<ContextStatus> {
+    return this.request(`/api/v1/sessions/${encodeURIComponent(id)}/context`);
+  }
+
+  compactContext(id: string): Promise<ContextStatus> {
+    return this.request(`/api/v1/sessions/${encodeURIComponent(id)}/context/compact`, {
+      method: 'POST',
+    }, 120000);
   }
 
   createSession(payload: { workspace: string; name?: string }): Promise<{ id: string }> {

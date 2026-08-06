@@ -1,8 +1,9 @@
 from pathlib import Path
 
 import pytest
+from kl_server.memory.store import MemoryStore
 from kl_server.tools.base import ToolContext
-from kl_server.tools.builtin.filesystem import ListDirTool, ReadFileTool, WriteFileTool
+from kl_server.tools.builtin.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
 from kl_server.tools.builtin.search import GlobTool, GrepTool
 
 
@@ -22,6 +23,23 @@ async def test_grep_and_glob(tmp_path):
     grep = await GrepTool().execute({"pattern": "def add", "path": "."}, ctx)
     glob = await GlobTool().execute({"pattern": "*.py"}, ctx)
     assert "a.py" in grep.output and "a.py" in glob.output
+
+
+@pytest.mark.asyncio
+async def test_grep_and_glob_ignore_common_dirs(tmp_path):
+    (tmp_path / "a.txt").write_text("needle", encoding="utf-8")
+    ignored = tmp_path / "node_modules"
+    ignored.mkdir()
+    (ignored / "ignored.txt").write_text("needle", encoding="utf-8")
+    ctx = ToolContext(workspace=str(tmp_path))
+
+    grep = await GrepTool().execute({"pattern": "needle", "path": "."}, ctx)
+    glob = await GlobTool().execute({"pattern": "**/*.txt"}, ctx)
+
+    assert "a.txt" in grep.output
+    assert "node_modules" not in grep.output
+    assert "a.txt" in glob.output
+    assert "node_modules" not in glob.output
 
 
 @pytest.mark.asyncio
@@ -70,6 +88,127 @@ async def test_read_non_utf8_file_returns_error(tmp_path):
     result = await ReadFileTool().execute({"path": "binary.bin"}, ctx)
     assert not result.ok
     assert result.error
+
+
+@pytest.mark.asyncio
+async def test_read_file_range_returns_requested_lines(tmp_path):
+    (tmp_path / "big.txt").write_text(
+        "\n".join(f"line{i}" for i in range(1, 301)),
+        encoding="utf-8",
+    )
+    ctx = ToolContext(workspace=str(tmp_path))
+    result = await ReadFileTool().execute(
+        {"path": "big.txt", "start_line": 2, "end_line": 4},
+        ctx,
+    )
+    assert result.ok is True
+    assert result.output == "line2\nline3\nline4"
+
+
+@pytest.mark.asyncio
+async def test_read_file_range_rejects_over_200_lines(tmp_path):
+    (tmp_path / "big.txt").write_text(
+        "\n".join(f"line{i}" for i in range(1, 301)),
+        encoding="utf-8",
+    )
+    ctx = ToolContext(workspace=str(tmp_path))
+    result = await ReadFileTool().execute(
+        {"path": "big.txt", "start_line": 1, "end_line": 250},
+        ctx,
+    )
+    assert result.ok is False
+    assert "exceeds 200" in result.error
+
+
+@pytest.mark.asyncio
+async def test_read_file_end_line_only_clamps_to_200(tmp_path):
+    (tmp_path / "big.txt").write_text(
+        "\n".join(f"line{i}" for i in range(1, 301)),
+        encoding="utf-8",
+    )
+    ctx = ToolContext(workspace=str(tmp_path))
+    result = await ReadFileTool().execute({"path": "big.txt", "end_line": 500}, ctx)
+    assert result.ok is True
+    assert result.output.startswith("line1")
+    assert "line200" in result.output
+    assert "line201" not in result.output
+
+
+@pytest.mark.asyncio
+async def test_edit_file_replaces_first_old_text_occurrence(tmp_path):
+    path = tmp_path / "a.txt"
+    path.write_text("aaa\nbbb\naaa\n", encoding="utf-8")
+    ctx = ToolContext(workspace=str(tmp_path))
+
+    result = await EditFileTool().execute(
+        {"path": "a.txt", "old_text": "aaa", "new_text": "XXX"},
+        ctx,
+    )
+
+    assert result.ok is True
+    assert path.read_text(encoding="utf-8") == "XXX\nbbb\naaa\n"
+
+
+@pytest.mark.asyncio
+async def test_edit_file_old_text_missing_does_not_write(tmp_path):
+    path = tmp_path / "a.txt"
+    path.write_text("original\n", encoding="utf-8")
+    ctx = ToolContext(workspace=str(tmp_path))
+
+    result = await EditFileTool().execute(
+        {"path": "a.txt", "old_text": "missing", "new_text": "changed"},
+        ctx,
+    )
+
+    assert result.ok is False
+    assert "not found" in result.error
+    assert path.read_text(encoding="utf-8") == "original\n"
+
+
+@pytest.mark.asyncio
+async def test_edit_file_replaces_line_range(tmp_path):
+    path = tmp_path / "a.txt"
+    path.write_text("\n".join(f"line{i}" for i in range(1, 6)), encoding="utf-8")
+    ctx = ToolContext(workspace=str(tmp_path))
+
+    result = await EditFileTool().execute(
+        {
+            "path": "a.txt",
+            "start_line": 2,
+            "end_line": 3,
+            "new_content": "new2\nnew3",
+        },
+        ctx,
+    )
+
+    assert result.ok is True
+    assert path.read_text(encoding="utf-8") == "line1\nnew2\nnew3\nline4\nline5"
+
+
+@pytest.mark.asyncio
+async def test_edit_file_rejects_line_range_over_200(tmp_path):
+    path = tmp_path / "a.txt"
+    path.write_text("\n".join(f"line{i}" for i in range(1, 301)), encoding="utf-8")
+    ctx = ToolContext(workspace=str(tmp_path))
+
+    result = await EditFileTool().execute(
+        {"path": "a.txt", "start_line": 1, "end_line": 250},
+        ctx,
+    )
+
+    assert result.ok is False
+    assert "exceeds 200" in result.error
+
+
+@pytest.mark.asyncio
+async def test_edit_file_rejects_outside_workspace(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    result = await EditFileTool().execute(
+        {"path": "../outside.txt", "old_text": "a", "new_text": "b"},
+        ctx,
+    )
+    assert result.ok is False
+    assert "outside workspace" in result.error
 
 
 @pytest.mark.asyncio
@@ -212,6 +351,20 @@ async def test_apply_patch_rejects_multiple_files(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_apply_patch_rejects_path_not_matching_header(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    (tmp_path / "a.txt").write_text("one\n", encoding="utf-8")
+    (tmp_path / "b.txt").write_text("unchanged\n", encoding="utf-8")
+    diff = "--- a.txt\n+++ b.txt\n@@ -1 +1 @@\n-one\n+one!\n"
+
+    result = await ApplyPatchTool().execute({"path": "b.txt", "patch": diff}, ctx)
+
+    assert result.ok is False
+    assert "path does not match" in result.error
+    assert (tmp_path / "b.txt").read_text(encoding="utf-8") == "unchanged\n"
+
+
+@pytest.mark.asyncio
 async def test_git_status_in_repo(tmp_path):
     ctx = ToolContext(workspace=str(tmp_path))
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
@@ -227,6 +380,14 @@ async def test_git_commit_requires_paths(tmp_path):
     result = await GitCommitTool().execute({"message": "commit"}, ctx)
     assert result.ok is False
     assert "paths" in result.error
+
+
+@pytest.mark.asyncio
+async def test_git_commit_rejects_empty_message(tmp_path):
+    ctx = ToolContext(workspace=str(tmp_path))
+    result = await GitCommitTool().execute({"message": "   ", "paths": ["a.txt"]}, ctx)
+    assert result.ok is False
+    assert "message is required" in result.error
 
 
 @pytest.mark.asyncio
@@ -302,10 +463,15 @@ async def test_task_manage_crud(tmp_path):
     ctx = ToolContext(workspace=str(tmp_path))
     created = await TaskManageTool().execute({"action": "create", "title": "fix bug"}, ctx)
     listed = await TaskManageTool().execute({"action": "list"}, ctx)
-    assert created.ok and '"fix bug"' in listed.output
+    assert created.ok
+    assert '"fix bug"' in created.output
+    assert '"fix bug"' in listed.output
     updated = await TaskManageTool().execute({"action": "update", "item_id": "1", "status": "done"}, ctx)
     listed_after = await TaskManageTool().execute({"action": "list"}, ctx)
-    assert updated.ok and '"done"' in listed_after.output
+    assert updated.ok
+    updated_payload = json.loads(updated.output)
+    assert updated_payload[0]["status"] == "done"
+    assert '"done"' in listed_after.output
 
 
 @pytest.mark.asyncio
@@ -320,6 +486,44 @@ async def test_task_manage_delete(tmp_path):
     assert "2" in second.output
 
 
+@pytest.mark.asyncio
+async def test_task_manage_state_is_scoped_to_session(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+    await store.connect()
+    try:
+        first = ToolContext(
+            workspace=str(tmp_path),
+            task_id="t1",
+            session_id="s1",
+            state_store=store,
+        )
+        created = await TaskManageTool().execute(
+            {"action": "create", "title": "fix bug"},
+            first,
+        )
+        assert created.ok is True
+
+        second_call = ToolContext(
+            workspace=str(tmp_path),
+            task_id="t2",
+            session_id="s1",
+            state_store=store,
+        )
+        listed = await TaskManageTool().execute({"action": "list"}, second_call)
+        assert '"fix bug"' in listed.output
+
+        other_session = ToolContext(
+            workspace=str(tmp_path),
+            task_id="t1",
+            session_id="s2",
+            state_store=store,
+        )
+        other_listed = await TaskManageTool().execute({"action": "list"}, other_session)
+        assert '"fix bug"' not in other_listed.output
+    finally:
+        await store.close()
+
+
 def test_register_builtin_tools_catalog():
     registry = ToolRegistry()
     register_builtin_tools(registry)
@@ -327,6 +531,7 @@ def test_register_builtin_tools_catalog():
     assert names == {
         "list_dir",
         "read_file",
+        "edit_file",
         "write_file",
         "delete_file",
         "grep",

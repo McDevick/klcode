@@ -93,7 +93,11 @@ def build_app_dependencies(
     executor = ToolExecutor(tools, guardrail=guardrail)
     logger = EventLogger(Path(log_path))
     memory = MemoryStore(db_path.parent / "memory.db")
-    context = ContextAssembler(max_tokens=20000)
+    default_max_context = 20000
+    default_provider_config = config.providers.get(config.default_provider)
+    if default_provider_config is not None:
+        default_max_context = default_provider_config.max_context
+    context = ContextAssembler(max_tokens=default_max_context)
     hooks = HookManager(config.hooks)
     skills_root = Path(workspace) / ".kl" / "skills"
     skills_root.mkdir(parents=True, exist_ok=True)

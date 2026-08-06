@@ -1,6 +1,7 @@
 import yaml
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 
 from kl_server.api.app import create_app
@@ -144,6 +145,116 @@ def test_session_history_replays_audit_events(tmp_path):
     assert history.json()[1]["content"] == "我先看一下"
     assert history.json()[2]["name"] == "list_dir"
     assert history.json()[3]["content"] == "完成"
+
+
+@pytest.mark.asyncio
+async def test_session_history_uses_full_task_summary(tmp_path):
+    client = make_deps_client(tmp_path)
+    session_id = create_session(client, str(tmp_path)).json()["id"]
+    task = client.post(
+        "/api/v1/tasks",
+        json={"session_id": session_id, "description": "hello"},
+    ).json()
+    deps = client.app.state.deps
+    stored = await deps.tasks.get(task["id"])
+    stored.summary = "DONE: 这是完整回答"
+    await deps.tasks.update(stored)
+
+    audit_path = tmp_path / "audit.jsonl"
+    audit_path.write_text(
+        json.dumps(
+            {
+                "event": "llm_result",
+                "timestamp": "2026-01-01T00:00:00+00:00",
+                "task_id": task["id"],
+                "payload": {"text": "这是被截断的回答"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    history = client.get(f"/api/v1/sessions/{session_id}/history").json()
+
+    assert history[-1]["content"] == "这是完整回答"
+    assert "被截断" not in history[-1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_delete_session_cleans_task_manage_state(tmp_path):
+    client = make_deps_client(tmp_path)
+    session_id = create_session(client, str(tmp_path)).json()["id"]
+    memory = client.app.state.deps.memory
+    await memory.set_state(f"session:{session_id}", "subtasks", "[]")
+
+    deleted = client.delete(f"/api/v1/sessions/{session_id}")
+
+    assert deleted.status_code == 204
+    assert await memory.get_state(f"session:{session_id}", "subtasks") is None
+
+
+@pytest.mark.asyncio
+async def test_context_status_and_compact(tmp_path):
+    client = make_deps_client(tmp_path)
+    session_id = create_session(client, str(tmp_path)).json()["id"]
+    memory = client.app.state.deps.memory
+    await memory.add(session_id, "context_summary", [session_id], "some remembered context")
+
+    status = client.get(f"/api/v1/sessions/{session_id}/context")
+    assert status.status_code == 200
+    body = status.json()
+    assert body["max_tokens"] == 20000
+    assert {section["name"] for section in body["sections"]} == {"system", "memory", "history"}
+    assert body["remaining_tokens"] >= 0
+
+    compacted = client.post(f"/api/v1/sessions/{session_id}/context/compact")
+    assert compacted.status_code == 200
+    assert compacted.json()["max_tokens"] == 20000
+
+
+@pytest.mark.asyncio
+async def test_compact_context_reduces_history_status(tmp_path):
+    client = make_deps_client(tmp_path)
+    session_id = create_session(client, str(tmp_path)).json()["id"]
+    task = client.post(
+        "/api/v1/tasks",
+        json={"session_id": session_id, "description": "hello"},
+    ).json()
+    audit_path = tmp_path / "audit.jsonl"
+    audit_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "event": "loop_start",
+                        "timestamp": "2026-01-01T00:00:00+00:00",
+                        "task_id": task["id"],
+                        "payload": {"task": "hello"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event": "agent_message",
+                        "timestamp": "2026-01-01T00:00:01+00:00",
+                        "task_id": task["id"],
+                        "payload": {"text": "I did something"},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    before = client.get(f"/api/v1/sessions/{session_id}/context").json()
+    history_before = next(section["tokens"] for section in before["sections"] if section["name"] == "history")
+    assert history_before > 0
+
+    client.post(f"/api/v1/sessions/{session_id}/context/compact")
+
+    after = client.get(f"/api/v1/sessions/{session_id}/context").json()
+    history_after = next(section["tokens"] for section in after["sections"] if section["name"] == "history")
+    assert history_after == 0
 
 
 def test_missing_session_returns_not_found():
@@ -451,7 +562,13 @@ def test_config_model_get_returns_current_default(tmp_path):
     body = response.json()
     assert body["provider"] == "mock"
     assert body["model"] == "mock-model"
-    assert {"provider": "mock", "model": "mock-model", "base_url": ""} in body["available"]
+    assert body["max_context"] == 20000
+    assert {
+        "provider": "mock",
+        "model": "mock-model",
+        "base_url": "",
+        "max_context": 20000,
+    } in body["available"]
 
 
 def test_config_model_set_switches_provider_and_persists(tmp_path):

@@ -28,6 +28,10 @@ async def test_summarizer_builds_provider_request():
     assert "old action\nline2" in content
     assert "old result" in content
     assert "t1" in content
+    assert "## Goals" in content
+    assert "## Results" in content
+    assert "## Failures" in content
+    assert "## Open Items" in content
 
 
 @pytest.mark.asyncio

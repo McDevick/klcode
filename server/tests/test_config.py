@@ -28,3 +28,21 @@ def test_app_config_loads_default_model_from_yaml(tmp_path):
 
     assert config.default_provider == "deepseek"
     assert config.default_model == "deepseek-chat"
+    assert config.providers["deepseek"].max_context == 20000
+
+
+def test_app_config_loads_max_context_from_yaml(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "providers:\n"
+        "  deepseek:\n"
+        "    type: openai-compatible\n"
+        "    base_url: https://api.deepseek.com/v1\n"
+        "    default_model: deepseek-chat\n"
+        "    max_context: 128000\n",
+        encoding="utf-8",
+    )
+
+    config = load_app_config(path)
+
+    assert config.providers["deepseek"].max_context == 128000

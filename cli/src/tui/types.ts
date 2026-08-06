@@ -18,6 +18,7 @@ export interface ChatMessage {
     args: string;
     summary: string;
     ok: boolean;
+    taskItems?: Array<{ title: string; done: boolean }>;
   };
 }
 

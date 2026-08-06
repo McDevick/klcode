@@ -19,28 +19,56 @@ class TaskManageTool(Tool):
         "required": ["action"],
     }
 
+    async def _load_state(self, ctx: ToolContext) -> dict:
+        store = getattr(ctx, "state_store", None)
+        if store is not None and hasattr(store, "get_state"):
+            raw = await store.get_state(
+                f"session:{ctx.session_id or ctx.task_id}",
+                "subtasks",
+            )
+            if raw:
+                try:
+                    state = json.loads(raw)
+                except json.JSONDecodeError:
+                    state = {}
+                return state if isinstance(state, dict) else {}
+        return ctx.task_state
+
+    async def _save_state(self, ctx: ToolContext, state: dict) -> None:
+        store = getattr(ctx, "state_store", None)
+        if store is not None and hasattr(store, "set_state"):
+            await store.set_state(
+                f"session:{ctx.session_id or ctx.task_id}",
+                "subtasks",
+                json.dumps(state, ensure_ascii=False),
+            )
+
     async def execute(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-        subtasks = ctx.task_state.setdefault("subtasks", [])
+        state = await self._load_state(ctx)
+        subtasks = state.setdefault("subtasks", [])
         action = args["action"]
         if action == "create":
-            next_id = ctx.task_state.get("next_id", 1)
+            next_id = state.get("next_id", 1)
             item = {"id": str(next_id), "title": args.get("title", ""), "status": "pending"}
             subtasks.append(item)
-            ctx.task_state["next_id"] = next_id + 1
-            return ToolResult(ok=True, output=f"created {item['id']}")
+            state["next_id"] = next_id + 1
+            await self._save_state(ctx, state)
+            return ToolResult(ok=True, output=json.dumps(subtasks, ensure_ascii=False))
         if action == "update":
             for item in subtasks:
                 if item["id"] == args.get("item_id"):
                     item["status"] = args.get("status", item["status"])
                     if args.get("title"):
                         item["title"] = args["title"]
-                    return ToolResult(ok=True, output=f"updated {item['id']}")
+                    await self._save_state(ctx, state)
+                    return ToolResult(ok=True, output=json.dumps(subtasks, ensure_ascii=False))
             return ToolResult(ok=False, output="", error="item not found")
         if action == "delete":
             for item in subtasks:
                 if item["id"] == args.get("item_id"):
                     subtasks.remove(item)
-                    return ToolResult(ok=True, output=f"deleted {item['id']}")
+                    await self._save_state(ctx, state)
+                    return ToolResult(ok=True, output=json.dumps(subtasks, ensure_ascii=False))
             return ToolResult(ok=False, output="", error="item not found")
         if action == "list":
             return ToolResult(ok=True, output=json.dumps(subtasks, ensure_ascii=False))

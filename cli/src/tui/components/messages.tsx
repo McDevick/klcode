@@ -74,11 +74,30 @@ export function ToolCallLine({ tool }: { tool: NonNullable<ChatMessage['tool']> 
   return (
     <Box paddingX={1} flexDirection="column">
       <Text bold color={theme.blue}>[Tool]: {callText}</Text>
-      <Box paddingLeft={3}>
-        <Text color={theme.textDim}>→ </Text>
-        <Text color={markerColor}>{marker} </Text>
-        <Text color={theme.textDim}>{failureLabel}{cleanSummary}</Text>
-      </Box>
+      {tool.taskItems ? (
+        <Box paddingLeft={3} flexDirection="column">
+          <Box flexDirection="row">
+            <Text color={theme.textDim}>→ </Text>
+            <Text color={markerColor}>{marker} </Text>
+          </Box>
+          {tool.taskItems.map((item, index) => (
+            <Text
+              key={`${item.title}-${index}`}
+              color={item.done ? theme.green : theme.textDim}
+              strikethrough={item.done}
+            >
+              {item.done ? '[✓] ' : '[ ] '}
+              {item.title}
+            </Text>
+          ))}
+        </Box>
+      ) : (
+        <Box paddingLeft={3}>
+          <Text color={theme.textDim}>→ </Text>
+          <Text color={markerColor}>{marker} </Text>
+          <Text color={theme.textDim}>{failureLabel}{cleanSummary}</Text>
+        </Box>
+      )}
     </Box>
   );
 }

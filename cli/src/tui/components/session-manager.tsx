@@ -23,7 +23,7 @@ const ACTIONS = [
 
 function displayName(session: SessionRecord): string {
   const name = session.name?.trim();
-  if (!name || name === 'default') return session.id;
+  if (!name || name === 'default' || name === session.id) return session.id;
   return `${session.id} · ${name}`;
 }
 

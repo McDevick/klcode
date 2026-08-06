@@ -92,7 +92,15 @@ class ApplyPatchTool(Tool):
         if len(matches) > 1:
             return ToolResult(ok=False, output="", error="multi-file patches are not supported")
         root = Path(ctx.workspace).resolve()
-        raw_path = _strip_diff_prefix(args.get("path") or matches[0])
+        patch_path = _strip_diff_prefix(matches[0])
+        requested_path = args.get("path")
+        if requested_path and _strip_diff_prefix(requested_path) != patch_path:
+            return ToolResult(
+                ok=False,
+                output="",
+                error="path does not match patch header",
+            )
+        raw_path = _strip_diff_prefix(requested_path or matches[0])
         target = (root / raw_path).resolve()
         if not target.is_relative_to(root):
             return ToolResult(ok=False, output="", error="path outside workspace")
