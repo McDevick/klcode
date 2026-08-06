@@ -1,4 +1,6 @@
 import yaml
+import json
+
 from fastapi.testclient import TestClient
 
 from kl_server.api.app import create_app
@@ -78,6 +80,70 @@ def test_session_rename_close_and_delete():
     deleted = client.delete(f"/api/v1/sessions/{session_id}")
     assert deleted.status_code == 204
     assert client.get(f"/api/v1/sessions/{session_id}").status_code == 404
+
+
+def test_session_history_replays_audit_events(tmp_path):
+    client = make_deps_client(tmp_path)
+    session_id = create_session(client, str(tmp_path)).json()["id"]
+    task = client.post(
+        "/api/v1/tasks",
+        json={"session_id": session_id, "description": "hello"},
+    ).json()
+    audit_path = tmp_path / "audit.jsonl"
+    audit_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "event": "loop_start",
+                        "timestamp": "2026-01-01T00:00:00+00:00",
+                        "task_id": task["id"],
+                        "payload": {"task": "hello"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event": "agent_message",
+                        "timestamp": "2026-01-01T00:00:01+00:00",
+                        "task_id": task["id"],
+                        "payload": {"text": "我先看一下"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event": "tool_result",
+                        "timestamp": "2026-01-01T00:00:02+00:00",
+                        "task_id": task["id"],
+                        "payload": {
+                            "tool": "list_dir",
+                            "ok": True,
+                            "args": {"path": "."},
+                            "output": "demo.cpp",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event": "llm_result",
+                        "timestamp": "2026-01-01T00:00:03+00:00",
+                        "task_id": task["id"],
+                        "payload": {"text": "DONE: 完成"},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    history = client.get(f"/api/v1/sessions/{session_id}/history")
+
+    assert history.status_code == 200
+    assert [item["type"] for item in history.json()] == ["user", "agent", "tool", "agent"]
+    assert history.json()[0]["content"] == "hello"
+    assert history.json()[1]["content"] == "我先看一下"
+    assert history.json()[2]["name"] == "list_dir"
+    assert history.json()[3]["content"] == "完成"
 
 
 def test_missing_session_returns_not_found():

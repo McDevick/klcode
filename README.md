@@ -8,7 +8,7 @@
 
 本仓库目录名仍沿用 `SimpleCodingAgent`，但项目正式名称定为 **KL Code**，后续文档、命名、标识统一使用该名称。
 
-当前进度：Phase 1–5 核心框架已全部实现并通过测试 —— 后端（模型、Provider、AgentLoop、工具系统、治理守卫、沙箱、反馈闭环、上下文/记忆、存储、MCP/插件/skills/hooks、bootstrap 服务端组装）与 CLI（init/run/server/config 命令、打包分发）均可运行。CLI TUI 组件已实现但仍未接线启动，属 roadmap（见”已知限制”）。
+当前进度：Phase 1–5 核心框架已全部实现并通过测试 —— 后端（模型、Provider、AgentLoop、工具系统、治理守卫、沙箱、反馈闭环、上下文/记忆、存储、MCP/插件/skills/hooks、bootstrap 服务端组装）与 CLI（init/run/server/config/tui 命令、打包分发）均可运行。
 
 ## 环境要求
 
@@ -169,8 +169,11 @@ node dist/main.js tui            # 已构建过时
 TUI 启动后自动创建 session（workspace 为当前目录）并连接服务端，支持：
 
 - 输入任务回车 → 创建任务并在服务端后台执行，实时显示事件流（loop / tool / feedback / task_end）
-- 危险动作弹出审批面板：`a` 批准、`r` 拒绝、`x` 中止、`m` 修改（修改暂为关闭面板）
-- 斜杠指令：`/sessions`、`/session new|open|rename|close|delete`、`/config`（配置向导）、`/status`（当前 session/task/审批状态）、`/help`、`/abort`、`/pause`、`/continue`、`/exit`
+- 危险动作弹出审批菜单：方向键选择 approve/reject/abort，Enter 确认；快捷键 `a`/`r`/`x`
+- 滚轮（需 `/mouse`）、方向键按行连续滚动，PageUp/PageDown 半屏滚动
+- 斜杠指令：`/session`（打开会话管理）、`/config`（配置向导）、`/status`（当前 session/task/审批状态）、`/help`、`/abort`、`/pause`、`/continue`、`/exit`
+
+斜杠命令菜单和配置向导会停靠在消息区下方的固定面板中，不覆盖已有对话；输入区始终保留在面板下方。
 
 > 需要真实终端（TTY）：ink 在非交互管道（如 `echo | kl tui`）下会提示 raw mode 不支持，请在交互式终端中运行。
 
@@ -223,7 +226,7 @@ make dev       # roadmap 占位，默认退出码 1
 
 ## 已知限制
 
-- `kl tui` 尚未接线（组件已实现），`make dev` 仍为占位守卫，均按 roadmap 处理。
+- `kl tui` 已接线（需先启动服务端）；`make dev` 仍为占位守卫，按 roadmap 处理。
 - `kl init` 依赖守护进程已运行，否则连接被拒（`ECONNREFUSED 127.0.0.1:8700`）而失败。
 - `kl server start` 探测 python 需要能导入 uvicorn/fastapi/kl_server；若本机只有缺依赖的系统 python，请用项目 venv 手动启动。
 - TUI 的 `/pause`、`/continue` 为任务状态标记（TaskManager 状态机）；运行中任务的真正挂起/恢复尚未实现。

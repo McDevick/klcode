@@ -12,8 +12,8 @@ class SessionManager:
         conn = await self.db.connect()
         await conn.execute(
             """
-            INSERT INTO sessions (id, workspace, name, provider, model, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO sessions (id, workspace, name, provider, model, status, rules, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 session.id,
@@ -22,6 +22,7 @@ class SessionManager:
                 session.provider,
                 session.model,
                 session.status,
+                session.rules,
                 session.created_at.isoformat(),
             ),
         )
@@ -32,7 +33,7 @@ class SessionManager:
         conn = await self.db.connect()
         cursor = await conn.execute(
             """
-            SELECT id, workspace, name, provider, model, status, created_at
+            SELECT id, workspace, name, provider, model, status, rules, created_at
             FROM sessions
             WHERE id = ?
             """,
@@ -47,7 +48,7 @@ class SessionManager:
         conn = await self.db.connect()
         cursor = await conn.execute(
             """
-            SELECT id, workspace, name, provider, model, status, created_at
+            SELECT id, workspace, name, provider, model, status, rules, created_at
             FROM sessions
             ORDER BY created_at
             """
@@ -60,7 +61,7 @@ class SessionManager:
         cursor = await conn.execute(
             """
             UPDATE sessions
-            SET workspace = ?, name = ?, provider = ?, model = ?, status = ?
+            SET workspace = ?, name = ?, provider = ?, model = ?, status = ?, rules = ?
             WHERE id = ?
             """,
             (
@@ -69,6 +70,7 @@ class SessionManager:
                 session.provider,
                 session.model,
                 session.status,
+                session.rules,
                 session.id,
             ),
         )
@@ -98,5 +100,6 @@ class SessionManager:
             provider=row["provider"],
             model=row["model"],
             status=row["status"],
+            rules=row["rules"],
             created_at=datetime.fromisoformat(row["created_at"]),
         )

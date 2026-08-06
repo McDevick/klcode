@@ -1,3 +1,4 @@
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -60,7 +61,21 @@ def build_app_dependencies(
     db = Database(db_path)
     sessions = SessionManager(db)
     tasks = TaskManager(db)
-    credentials = credential_store or create_credential_store()
+    # 凭据存储：优先 OS keyring；不可用时回退到 AES 加密文件（.kl/ 下，
+    # 主密码首次生成后持久化），而非纯内存（重启丢失）。
+    if credential_store is not None:
+        credentials = credential_store
+    else:
+        master_path = db_path.parent / "credentials.master"
+        if master_path.exists():
+            password = master_path.read_text(encoding="utf-8").strip()
+        else:
+            password = secrets.token_urlsafe(32)
+            master_path.write_text(password, encoding="utf-8")
+        credentials = create_credential_store(
+            fallback_path=db_path.parent / "credentials.bin",
+            password=password,
+        )
     config_error = None
     try:
         providers = build_provider_registry(config, credentials)

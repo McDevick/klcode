@@ -1,5 +1,5 @@
-import React from 'react';
-import { Box, Text, useStdout } from 'ink';
+import React, { useEffect, useRef, useState } from 'react';
+import { Box, Text, type DOMElement } from 'ink';
 import type { ChatMessage, RunningTask } from '../types';
 import { StatusCard } from './status-card';
 import { MarkdownRenderer } from './markdown';
@@ -62,40 +62,93 @@ export function AgentBubble({ content, kind }: { content: string; kind: ChatMess
   );
 }
 
+// 工具调用行：[Tool]: run_command("python -m pytest") → ✓ exit 0 · 3 passed
+// 结果状态用 ✓/✗ 着色，参数和摘要灰显，工具名保留原名（蓝色）
+export function ToolCallLine({ tool }: { tool: NonNullable<ChatMessage['tool']> }) {
+  const callText = tool.args ? `${tool.name}(${tool.args})` : tool.name;
+  const summary = tool.summary.length > 120 ? `${tool.summary.slice(0, 120)}…` : tool.summary;
+  const failureLabel = tool.ok ? '' : 'error: ';
+  const cleanSummary = tool.ok ? summary : summary.replace(/^error:\s*/i, '');
+  const marker = tool.ok ? '✓' : '✗';
+  const markerColor = tool.ok ? theme.green : theme.red;
+  return (
+    <Box paddingX={1} flexDirection="column">
+      <Text bold color={theme.blue}>[Tool]: {callText}</Text>
+      <Box paddingLeft={3}>
+        <Text color={theme.textDim}>→ </Text>
+        <Text color={markerColor}>{marker} </Text>
+        <Text color={theme.textDim}>{failureLabel}{cleanSummary}</Text>
+      </Box>
+    </Box>
+  );
+}
+
 export function Messages({
   messages,
   running,
-  offset,
+  scrollTop,
+  viewportRows,
+  onScrollTopChange,
 }: {
   messages: ChatMessage[];
   running: RunningTask | null;
-  offset: number;
+  scrollTop: number;
+  viewportRows: number;
+  onScrollTopChange: React.Dispatch<React.SetStateAction<number>>;
 }) {
-  // offset 是"隐藏最新 N 条"；滚动到最早时至少保留 1 条，避免对话完全消失
-  // 窗口滚动：offset 是"从底部上移的行数"，窗口随滚动上移显示更早的对话，
-  // 消息少时滚动窗口覆盖全部，滚到最早至少保留 1 条（不会整个对话消失）。
-  const { stdout } = useStdout();
-  const rows = stdout.rows ?? 24;
-  const visibleCount = Math.max(1, rows - 6); // 减 header/输入框/状态栏等固定区域
-  const end = Math.max(1, messages.length - offset);
-  const start = Math.max(0, end - visibleCount);
-  const visible = messages.slice(start, end);
+  const contentRef = useRef<DOMElement | null>(null);
+  const [contentHeight, setContentHeight] = useState(0);
+
+  useEffect(() => {
+    const node = contentRef.current;
+    setContentHeight(node?.yogaNode?.getComputedHeight() ?? 0);
+  }, [messages, running]);
+
+  useEffect(() => {
+    const maxScrollTop = Math.max(0, contentHeight - viewportRows);
+    onScrollTopChange((current) => Math.min(current, maxScrollTop));
+  }, [contentHeight, onScrollTopChange, viewportRows]);
+
+  const effectiveScrollTop = Math.min(
+    scrollTop,
+    Math.max(0, contentHeight - viewportRows),
+  );
+  const top = -(Math.max(0, contentHeight - viewportRows) - effectiveScrollTop);
+
   return (
-    <Box flexGrow={1} flexDirection="column" paddingY={1}>
-      {visible.map((message) => (
-        <Box key={message.id} paddingY={1}>
-          {message.role === 'user' ? (
-            <UserBubble content={message.content} />
-          ) : (
-            <AgentBubble content={message.content} kind={message.kind} />
-          )}
+    <Box flexGrow={1} flexDirection="column">
+      <Box
+        height={viewportRows}
+        flexDirection="column"
+        overflowY="hidden"
+        width="100%"
+      >
+        <Box
+          ref={contentRef}
+          position="absolute"
+          top={top}
+          left={0}
+          width="100%"
+          flexDirection="column"
+        >
+          {messages.map((message) => (
+            <Box key={message.id}>
+              {message.role === 'user' ? (
+                <UserBubble content={message.content} />
+              ) : message.kind === 'tool' && message.tool !== undefined ? (
+                <ToolCallLine tool={message.tool} />
+              ) : (
+                <AgentBubble content={message.content} kind={message.kind} />
+              )}
+            </Box>
+          ))}
+          {running !== null ? (
+            <Box>
+              <StatusCard running={running} />
+            </Box>
+          ) : null}
         </Box>
-      ))}
-      {running !== null ? (
-        <Box paddingY={1}>
-          <StatusCard running={running} />
-        </Box>
-      ) : null}
+      </Box>
     </Box>
   );
 }

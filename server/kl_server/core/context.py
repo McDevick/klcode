@@ -1,6 +1,5 @@
 """Token-budgeted context assembly for the agent loop."""
 
-import json
 import logging
 from collections import OrderedDict
 from collections.abc import Callable
@@ -9,6 +8,9 @@ from dataclasses import dataclass
 from kl_server.providers.base import ProviderRequest
 
 logger = logging.getLogger(__name__)
+
+# 注入上下文的记忆条数上限（最新 N 条）
+MEMORY_LIMIT = 5
 
 
 class LLMSummarizer:
@@ -78,36 +80,22 @@ class ContextAssembler:
     def _default_token_estimate(text: str) -> int:
         return len(text) // 4
 
-    @staticmethod
-    def _format_tool_catalog(tool_catalog: list[dict]) -> str:
-        if not tool_catalog:
-            return ""
-        lines = ["Tool catalog:"]
-        for tool in tool_catalog:
-            name = tool.get("name", "")
-            description = tool.get("description", "")
-            schema = tool.get("schema") or {}
-            args_text = json.dumps(schema, ensure_ascii=False, sort_keys=True)
-            lines.append(f"- {name}: {description} (args: {args_text})")
-        return "\n".join(lines)
-
     async def build(
         self,
-        tool_catalog: list[dict],
         rules: str,
         memory: list[str],
         history: list[str],
         task_id: str = "t1",
         skills: str = "",
     ) -> AssembledContext:
-        tool_catalog_text = self._format_tool_catalog(tool_catalog)
+        # 工具目录通过 OpenAI `tools` 请求参数传给模型（含 schema），
+        # 不再占用上下文预算。
         base_sections = [rules]
-        if tool_catalog_text:
-            base_sections.append(tool_catalog_text)
         if skills:
             base_sections.append(skills)
         if memory:
-            base_sections.append(memory[-1])
+            # 取最新若干条记忆（而非只有最后一条），按时间倒序自然排列
+            base_sections.append("\n".join(memory[-MEMORY_LIMIT:]))
 
         budget = max(0, self.max_tokens)
         if history:

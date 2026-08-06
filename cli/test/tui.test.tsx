@@ -2,7 +2,7 @@ import { expect, test, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import React from 'react';
 import { App } from '../src/tui/app';
-import { UserBubble, AgentBubble } from '../src/tui/components/messages';
+import { UserBubble, AgentBubble, ToolCallLine } from '../src/tui/components/messages';
 import { StatusCard } from '../src/tui/components/status-card';
 import type { RunningTask } from '../src/tui/types';
 
@@ -126,19 +126,49 @@ test('agent bubble renders markdown content', () => {
   expect(lastFrame()).toContain('plain');
 });
 
-test('status card shows spinner metrics and tool calls', () => {
+test('agent bubble renders inline markdown in headings and lists', () => {
+  const { lastFrame } = render(
+    <AgentBubble
+      content="## **bold heading**\n\n1. **bold item**\n\n> **bold quote**"
+      kind="text"
+    />,
+  );
+  expect(lastFrame()).toContain('bold heading');
+  expect(lastFrame()).toContain('bold item');
+  expect(lastFrame()).toContain('bold quote');
+  expect(lastFrame()).not.toContain('**');
+});
+
+test('tool line renders readable args and status label', () => {
+  const { lastFrame, unmount } = render(
+    <ToolCallLine
+      tool={{
+        name: 'read_file',
+        args: '"src/a.ts"',
+        summary: 'ok',
+        ok: true,
+      }}
+    />,
+  );
+  try {
+    expect(lastFrame()).toContain('[Tool]: read_file');
+    expect(lastFrame()).toContain('read_file("src/a.ts")');
+    expect(lastFrame()).toContain('✓');
+  } finally {
+    unmount();
+  }
+});
+
+test('status card shows thinking timer and step count', () => {
   const running: RunningTask = {
     taskId: 't1',
     startedAt: Date.now(),
     steps: 12,
-    toolCalls: [{ name: 'read_file', args: '{"path":"a.ts"}', summary: 'ok' }],
   };
   const { lastFrame, unmount } = render(<StatusCard running={running} />);
   try {
     expect(lastFrame()).toContain('thinking');
-    expect(lastFrame()).toContain('12 steps');
-    expect(lastFrame()).toContain('read_file');
-    expect(lastFrame()).toContain('ok');
+    expect(lastFrame()).toContain('12 次工具调用');
   } finally {
     unmount();
   }
@@ -186,7 +216,21 @@ test('app submits a task and streams events into messages', async () => {
     await waitFor(() => FakeWebSocket.instances.length > 0);
     const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
     emit(socket, { event: 'loop_start', payload: { task: 'hello' } });
-    emit(socket, { event: 'tool_result', payload: { tool: 'run_command', ok: true, error: null } });
+    emit(socket, {
+      event: 'tool_result',
+      payload: {
+        tool: 'run_command',
+        ok: true,
+        error: null,
+        args: { command: 'echo hi' },
+        output: '{"exit_code":0,"stdout":"hi","stderr":""}',
+      },
+    });
+    // 工具调用显示命令与结果摘要
+    await waitFor(() => (lastFrame() ?? '').includes('run_command("echo hi")'));
+    expect(lastFrame()).toContain('run_command("echo hi")');
+    expect(lastFrame()).toContain('exit 0 · hi');
+    expect(lastFrame()).toContain('[Tool]: run_command');
     emit(socket, { event: 'task_end', status: 'succeeded' });
     await waitFor(() => (lastFrame() ?? '').includes('任务完成: succeeded'));
     expect(lastFrame()).toContain('任务完成: succeeded');
@@ -208,16 +252,18 @@ test('slash menu opens on / and arrow selection fills the input', async () => {
     // 命令面板出现（测试视口较矮，断言窗口底部靠输入框的可见项）
     await waitFor(() => (lastFrame() ?? '').includes('暂停任务'));
     expect(lastFrame()).toContain('暂停任务');
+    const menuFrame = lastFrame() ?? '';
+    expect(menuFrame.indexOf('暂停任务')).toBeLessThan(menuFrame.indexOf('> '));
 
-    // 滚动窗口：ArrowDown 一路到 /exit（index 9）后菜单滚动显示底部命令
-    for (let i = 0; i < 9; i += 1) {
+    // 滚动窗口：ArrowDown 一路到 /exit（index 10，共 11 项）后菜单滚动显示底部命令
+    for (let i = 0; i < 10; i += 1) {
       stdin.write('[B');
     }
     await sleep(30);
     expect(lastFrame()).toContain('退出 TUI');
 
-    // ArrowDown 回到 index 1（/session），Enter 填入输入框
-    for (let i = 0; i < 8; i += 1) {
+    // ArrowDown 回到 index 0（/session），Enter 填入输入框
+    for (let i = 0; i < 10; i += 1) {
       stdin.write('[A');
     }
     await sleep(30);
@@ -264,6 +310,38 @@ test('app shows approval bar and sends decision on a', async () => {
   }
 });
 
+test('app approval menu can select reject with arrows and enter', async () => {
+  const fetchMock = taskFetchMocks();
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('hello');
+    stdin.write('\r');
+    await waitFor(() => FakeWebSocket.instances.length > 0);
+    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    emit(socket, {
+      event: 'approval_request',
+      action_id: 'a1',
+      tool: 'run_command',
+      args: { command: 'rm -rf /' },
+      level: 'critical',
+    });
+    await waitFor(() => (lastFrame() ?? '').includes('审批请求'));
+    stdin.write('\u001b[B');
+    await sleep(50);
+    stdin.write('\r');
+    await sleep(50);
+    const decisionSocket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    expect(decisionSocket.sent.some((data) => data.includes('"reject"'))).toBe(true);
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
 test('app runs /status slash command', async () => {
   const fetchMock = urlFetchMock();
   vi.stubGlobal('fetch', fetchMock);
@@ -277,6 +355,216 @@ test('app runs /status slash command', async () => {
     expect(lastFrame()).toContain('session: s1');
   } finally {
     unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app /session opens manager and enter selects session', async () => {
+  let sessionListCount = 0;
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    if (url.includes('/api/v1/sessions/s2/history') && method === 'GET') {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [{ type: 'agent', content: '旧会话历史', kind: 'text' }],
+      };
+    }
+    if (url.includes('/api/v1/sessions') && method === 'GET') {
+      sessionListCount += 1;
+      return {
+        ok: true,
+        status: 200,
+        json: async () =>
+          sessionListCount === 1
+            ? []
+            : [
+                {
+                  id: 's2',
+                  workspace: process.cwd(),
+                  name: 'old',
+                  status: 'active',
+                },
+              ],
+      };
+    }
+    if (url.includes('/api/v1/sessions') && method === 'POST') return sessionResponse;
+    if (url.includes('/config/model')) return modelConfigResponse;
+    return { ok: true, status: 200, json: async () => ({}) };
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('/session');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('会话管理'));
+    await waitFor(() => (lastFrame() ?? '').includes('old'));
+    expect(lastFrame()).toContain('[Enter]');
+    expect(lastFrame()).toContain('Delete');
+    expect(lastFrame()).toContain('Rename');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('旧会话历史'));
+    stdin.write('/status');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('session: s2'));
+    expect(lastFrame()).toContain('session: s2');
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app session manager renames selected session', async () => {
+  let renamed = false;
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    if (url.includes('/api/v1/sessions') && method === 'GET') {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            id: 's2',
+            workspace: process.cwd(),
+            name: renamed ? 'new-name' : 'old',
+            status: 'active',
+          },
+        ],
+      };
+    }
+    if (url.includes('/api/v1/sessions/s2') && method === 'PATCH') {
+      renamed = true;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ id: 's2', name: 'new-name' }),
+      };
+    }
+    if (url.includes('/api/v1/sessions') && method === 'POST') return sessionResponse;
+    if (url.includes('/config/model')) return modelConfigResponse;
+    return { ok: true, status: 200, json: async () => ({}) };
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('/session');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('old'));
+    stdin.write('r');
+    await sleep(50);
+    stdin.write('new-name');
+    await sleep(50);
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('new-name'));
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:8700/api/v1/sessions/s2',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: expect.stringContaining('new-name'),
+      }),
+    );
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app session manager clicks create new session card', async () => {
+  let postCount = 0;
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    if (url.includes('/api/v1/sessions') && method === 'GET') {
+      return { ok: true, status: 200, json: async () => [] };
+    }
+    if (url.includes('/api/v1/sessions') && method === 'POST') {
+      postCount += 1;
+      const id = postCount === 1 ? 's1' : 's3';
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ id, workspace: process.cwd(), name: id, status: 'active' }),
+      };
+    }
+    if (url.includes('/config/model')) return modelConfigResponse;
+    return { ok: true, status: 200, json: async () => ({}) };
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('/session');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('会话管理'));
+    stdin.write('\x1b[<0;60;22M');
+    await waitFor(() => (lastFrame() ?? '').includes('该会话暂无历史消息'));
+    expect(
+      fetchMock.mock.calls.some(
+        (call) =>
+          String(call[0]).includes('/api/v1/sessions') &&
+          ((call[1] as RequestInit | undefined)?.method ?? 'GET') === 'POST',
+      ),
+    ).toBe(true);
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app blocks a second task while one is running', async () => {
+  const fetchMock = taskFetchMocks();
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('hello');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('thinking'));
+    const taskPostsBefore = fetchMock.mock.calls.filter(
+      (call) =>
+        String(call[0]).includes('/api/v1/tasks') &&
+        ((call[1] as RequestInit | undefined)?.method ?? 'GET') === 'POST',
+    ).length;
+    stdin.write('second');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('当前任务仍在运行'));
+    const taskPostsAfter = fetchMock.mock.calls.filter(
+      (call) =>
+        String(call[0]).includes('/api/v1/tasks') &&
+        ((call[1] as RequestInit | undefined)?.method ?? 'GET') === 'POST',
+    ).length;
+    expect(taskPostsAfter).toBe(taskPostsBefore);
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app disables mouse tracking on unmount after /mouse', async () => {
+  const fetchMock = urlFetchMock();
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('/mouse');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('鼠标追踪: 开'));
+    unmount();
+    expect(writeSpy).toHaveBeenCalledWith('\x1b[?1000l\x1b[?1006l');
+  } finally {
+    writeSpy.mockRestore();
     vi.unstubAllGlobals();
     restore();
   }
@@ -436,6 +724,8 @@ test('app /config opens the config wizard menu', async () => {
     stdin.write('/config');
     stdin.write('\r');
     await waitFor(() => (lastFrame() ?? '').includes('配置向导'));
+    const configFrame = lastFrame() ?? '';
+    expect(configFrame.indexOf('配置向导')).toBeLessThan(configFrame.indexOf('> '));
     expect(lastFrame()).toContain('provider add');
     expect(lastFrame()).toContain('key set');
     expect(lastFrame()).toContain('model set');
@@ -548,21 +838,29 @@ test('mouse wheel up scrolls to history and down returns', async () => {
   const { stdin, lastFrame, unmount } = render(<App />);
   try {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
-    // 发 14 条消息制造可滚动内容
-    for (let i = 0; i < 14; i += 1) {
-      stdin.write(`消息${i}`);
-      stdin.write('\r');
-      await sleep(50);
+    // 滚轮需先开启鼠标追踪（默认关闭以保持鼠标选择复制可用）
+    stdin.write('/mouse');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('鼠标追踪: 开'));
+    stdin.write('hello');
+    stdin.write('\r');
+    await waitFor(() => FakeWebSocket.instances.length > 0);
+    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    const lines = Array.from({ length: 30 }, (_, index) => `消息${index}`);
+    emit(socket, { event: 'task_end', status: 'succeeded', result: lines.join('\n') });
+    await waitFor(() => (lastFrame() ?? '').includes('消息29'));
+    // 初始停在最新内容；上滚查看更早的行
+    for (let i = 0; i < 3; i += 1) {
+      stdin.write('\x1b[<64;5;5M');
+      await sleep(30);
     }
-    await waitFor(() => (lastFrame() ?? '').includes('消息13'));
-    // 滚轮上滚（SGR 按钮 64）→ 查看历史，最新消息被隐藏
-    stdin.write('\x1b[<64;5;5M');
-    await sleep(100);
-    expect(lastFrame()).not.toContain('消息13');
-    // 滚轮下滚（SGR 按钮 65）→ 回到最新
-    stdin.write('\x1b[<65;5;5M');
-    await sleep(100);
-    expect(lastFrame()).toContain('消息13');
+    expect(lastFrame()).not.toContain('消息29');
+    // 下滚回到最新
+    for (let i = 0; i < 3; i += 1) {
+      stdin.write('\x1b[<65;5;5M');
+      await sleep(30);
+    }
+    expect(lastFrame()).toContain('消息29');
   } finally {
     unmount();
     vi.unstubAllGlobals();
@@ -596,15 +894,16 @@ test('wheel does not scroll conversation while config wizard is open', async () 
   const { stdin, lastFrame, unmount } = render(<App />);
   try {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
-    stdin.write('你好');
+    // 开启鼠标追踪以注入滚轮事件
+    stdin.write('/mouse');
     stdin.write('\r');
-    await waitFor(() => (lastFrame() ?? '').includes('你好'));
+    await waitFor(() => (lastFrame() ?? '').includes('鼠标追踪: 开'));
     stdin.write('/config');
     stdin.write('\r');
     await waitFor(() => (lastFrame() ?? '').includes('配置向导'));
     stdin.write('\x1b[<64;5;5M'); // 滚轮上滚
     await sleep(150);
-    expect(lastFrame()).toContain('你好');
+    expect(lastFrame()).toContain('配置向导');
   } finally {
     unmount();
     vi.unstubAllGlobals();
@@ -619,23 +918,27 @@ test('wheel up with few messages keeps at least the earliest visible', async () 
   const { stdin, lastFrame, unmount } = render(<App />);
   try {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
-    stdin.write('第一条');
+    // 开启鼠标追踪以注入滚轮事件
+    stdin.write('/mouse');
     stdin.write('\r');
-    await sleep(50);
-    stdin.write('第二条');
+    await waitFor(() => (lastFrame() ?? '').includes('鼠标追踪: 开'));
+    stdin.write('hello');
     stdin.write('\r');
-    await sleep(50);
-    await waitFor(() => (lastFrame() ?? '').includes('第二条'));
-    // 滚轮上滚一次（消息少时步长为 1）：平滑滚动，对话仍可见
+    await waitFor(() => FakeWebSocket.instances.length > 0);
+    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    const lines = Array.from({ length: 10 }, (_, index) => `行${index}`);
+    emit(socket, { event: 'task_end', status: 'succeeded', result: lines.join('\n') });
+    await waitFor(() => (lastFrame() ?? '').includes('行9'));
+    // 滚轮上滚一次：按行平滑滚动，仍能看到内容
     stdin.write('\x1b[<64;5;5M');
     await sleep(100);
-    expect(lastFrame()).toContain('第一条');
-    // 滚到最早：至少保留 1 条消息，不出现空白对话
+    expect(lastFrame()).toContain('行');
+    // 滚到最顶部：不出现空白对话
     for (let i = 0; i < 5; i += 1) {
       stdin.write('\x1b[<64;5;5M');
       await sleep(50);
     }
-    expect(lastFrame()).toContain('会话 s1 已就绪');
+    expect(lastFrame()).toContain('行0');
   } finally {
     unmount();
     vi.unstubAllGlobals();
@@ -696,7 +999,7 @@ test('app shows model final answer from task_end result', async () => {
   }
 });
 
-test('app shows agent message event and failure reason', async () => {
+test('app hides bare DONE sentinel from task_end result', async () => {
   const fetchMock = taskFetchMocks();
   vi.stubGlobal('fetch', fetchMock);
   const restore = stubWebSocket();
@@ -707,8 +1010,110 @@ test('app shows agent message event and failure reason', async () => {
     stdin.write('\r');
     await waitFor(() => FakeWebSocket.instances.length > 0);
     const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    emit(socket, { event: 'task_end', status: 'succeeded', result: 'DONE' });
+    await waitFor(() => (lastFrame() ?? '').includes('任务完成: succeeded'));
+    expect(lastFrame()).not.toContain('[Agent]: DONE');
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('tool call line shows failure marker for non-zero exit code', async () => {
+  const fetchMock = taskFetchMocks();
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('hello');
+    stdin.write('\r');
+    await waitFor(() => FakeWebSocket.instances.length > 0);
+    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    // run_command 非零退出码（工具返回 ok=true 但 exit 1）→ 工具行应显示 ✗
+    emit(socket, {
+      event: 'tool_result',
+      payload: {
+        tool: 'run_command',
+        ok: true,
+        error: null,
+        args: { command: 'python -m pytest' },
+        output: '{"exit_code":1,"stdout":"","stderr":"FAILED test_foo.py::test_bar"}',
+      },
+    });
+    await waitFor(() => (lastFrame() ?? '').includes('✗ exit 1'));
+    expect(lastFrame()).toContain('✗ error: exit 1 · FAILED test_foo.py::test_bar');
+    expect(lastFrame()).toContain('[Tool]: run_command("python -m pytest")');
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app toggles mouse tracking via /mouse (off by default for copy)', async () => {
+  const fetchMock = urlFetchMock();
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    // 默认关（随时鼠标选择复制）；/mouse 开启滚轮滚动
+    stdin.write('/mouse');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('鼠标追踪: 开'));
+    expect(lastFrame()).toContain('鼠标追踪: 开（滚轮滚动可用');
+    // 再关：回到选择复制
+    stdin.write('/mouse');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('鼠标追踪: 关'));
+    expect(lastFrame()).toContain('鼠标追踪: 关（鼠标选择复制随时可用');
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app shows plain replies by default and raw rounds in debug mode', async () => {
+  const fetchMock = taskFetchMocks();
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('hello');
+    stdin.write('\r');
+    await waitFor(() => FakeWebSocket.instances.length > 0);
+    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    // 默认模式：agent_message 显示纯文本；JSON 动作不进消息区（由工具行表达）
+    emit(socket, { event: 'llm_call', payload: { iteration: 0 } });
+    emit(socket, {
+      event: 'llm_result',
+      payload: { text: '我先看一下目录结构\n{"tool":"read_file","args":{}}' },
+    });
     emit(socket, { event: 'agent_message', payload: { text: '我先看一下目录结构' } });
     await waitFor(() => (lastFrame() ?? '').includes('我先看一下目录结构'));
+    expect(lastFrame()).not.toContain('[Agent 第1轮]');
+    expect(lastFrame()).not.toContain('{"tool"');
+    // 打开调试模式（/debug 与回车分开写，避免一次写入 \r 处理异常）
+    stdin.write('/debug');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('调试模式: 开'));
+    // debug 模式：llm_result 带轮次标签显示完整原始回复（含 JSON）
+    emit(socket, { event: 'llm_call', payload: { iteration: 1 } });
+    emit(socket, {
+      event: 'llm_result',
+      payload: { text: '第二次检查\n{"tool":"read_file","args":{"path":"a.ts"}}' },
+    });
+    await waitFor(() => (lastFrame() ?? '').includes('[Agent 第2轮]'));
+    expect(lastFrame()).toContain('[Agent 第2轮] 第二次检查');
+    stdin.write('\u001b[A');
+    await sleep(100);
+    expect(lastFrame()).toContain('"args":{"path":"a.ts"}');
+    // DONE 回复不重复显示（由 task_end 显示最终回答）；失败显示具体原因
+    emit(socket, { event: 'llm_result', payload: { text: 'DONE: 完成' } });
     emit(socket, { event: 'task_end', status: 'failed', result: 'MAX_ITERATIONS' });
     await waitFor(() => (lastFrame() ?? '').includes('任务失败: MAX_ITERATIONS'));
     expect(lastFrame()).toContain('任务失败: MAX_ITERATIONS');

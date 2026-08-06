@@ -40,7 +40,7 @@ async def test_feedback_demo_loop_adapts_and_reports_timeline():
         FeedbackCategory.TEST_FAILURE.value,
         FeedbackCategory.SUCCESS.value,
     ]
-    attempts = [action["args"]["attempt"] for action in provider.actions]
+    attempts = [action["attempt"] for action in provider.actions]
     assert attempts == [1, 2]
     assert provider.timeline[0]["summary"].startswith("assert")
     assert provider.timeline[1]["summary"].startswith("all")

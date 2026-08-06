@@ -53,6 +53,17 @@ export interface HealthResult {
   status: string;
 }
 
+export interface SessionHistoryMessage {
+  type: 'user' | 'agent' | 'tool';
+  content?: string;
+  kind?: 'text' | 'error';
+  name?: string;
+  args?: Record<string, unknown> | null;
+  ok?: boolean;
+  error?: string | null;
+  output?: string | null;
+}
+
 function defaultTokenPath(): string {
   return join(homedir(), '.kl', 'daemon.token');
 }
@@ -98,6 +109,10 @@ export class ApiClient {
 
   getSession(id: string): Promise<{ id: string }> {
     return this.request(`/api/v1/sessions/${encodeURIComponent(id)}`);
+  }
+
+  getSessionHistory(id: string): Promise<SessionHistoryMessage[]> {
+    return this.request(`/api/v1/sessions/${encodeURIComponent(id)}/history`);
   }
 
   createSession(payload: { workspace: string; name?: string }): Promise<{ id: string }> {

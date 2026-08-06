@@ -31,7 +31,6 @@ async def run_demo():
         "user: final status?",
     ]
     result = await assembler.build(
-        tool_catalog=[],
         rules="rules",
         memory=[],
         history=history,

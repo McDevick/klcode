@@ -52,10 +52,10 @@ export function buildProgram(): Command {
     .description('launch the interactive TUI')
     .action(() => {
       // 备用屏幕缓冲区（alt screen）：终端滚动条不滚动 TUI 的重绘历史。
-      // 对话滚动由 TUI 内部处理（滚轮/方向键/PageUp/Down，见 App）。
-      // 启用鼠标追踪（SGR）以接收滚轮事件；复制请按住 Shift 拖动选择。
+      // 对话滚动由 TUI 内部处理（方向键/PageUp/PageDown，滚轮需 /mouse 开启）。
+      // 默认不启用鼠标追踪（SGR）：鼠标拖动选择/复制随时可用；
+      // /mouse 开启追踪后滚轮内部滚动可用，复制改用 Shift+拖动。
       process.stdout.write('[?1049h');
-      process.stdout.write('[?1000h[?1006h');
       process.on('exit', () => {
         process.stdout.write('[?1000l[?1006l');
         process.stdout.write('[?1049l');

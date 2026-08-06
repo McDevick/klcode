@@ -24,6 +24,7 @@ class Database:
                         provider TEXT NOT NULL,
                         model TEXT NOT NULL,
                         status TEXT NOT NULL,
+                        rules TEXT NOT NULL DEFAULT '',
                         created_at TEXT NOT NULL
                     );
                     CREATE TABLE IF NOT EXISTS tasks (
@@ -39,6 +40,15 @@ class Database:
                     );
                     """
                 )
+                await self.conn.commit()
+                # 迁移：旧库无 rules 列，追加后所有读取操作才正常。
+                for stmt in [
+                    "ALTER TABLE sessions ADD COLUMN rules TEXT NOT NULL DEFAULT ''",
+                ]:
+                    try:
+                        await self.conn.execute(stmt)
+                    except Exception:
+                        pass
                 await self.conn.commit()
             return self.conn
 

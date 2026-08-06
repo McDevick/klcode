@@ -1,4 +1,5 @@
 import asyncio
+import json
 from pathlib import Path
 
 import yaml
@@ -29,11 +30,12 @@ _running_tasks: dict[str, asyncio.Task] = {}
 
 class CreateSessionPayload(BaseModel):
     workspace: str
-    name: str = "default"
+    name: str | None = None
 
 
 class RenameSessionPayload(BaseModel):
-    name: str
+    name: str = ""
+    rules: str | None = None  # None = 不修改；空串 = 清空
 
 
 class CreateTaskPayload(BaseModel):
@@ -92,6 +94,73 @@ def _model_state(config: AppConfig) -> dict:
     return {"provider": provider, "model": model, "available": available}
 
 
+def _history_message(record: dict) -> dict | None:
+    event = record.get("event")
+    payload = record.get("payload") or {}
+    if event == "loop_start":
+        task = payload.get("task")
+        if task:
+            return {"type": "user", "content": task}
+        return None
+    if event == "agent_message":
+        text = payload.get("text")
+        if text:
+            return {"type": "agent", "content": text, "kind": "text"}
+        return None
+    if event == "llm_result":
+        if payload.get("tool_calls"):
+            return None
+        text = str(payload.get("text") or "").strip()
+        if text == "DONE":
+            return None
+        if text.startswith("DONE: "):
+            text = text[len("DONE: ") :]
+        if text:
+            return {"type": "agent", "content": text, "kind": "text"}
+        return None
+    if event == "tool_result":
+        return {
+            "type": "tool",
+            "name": payload.get("tool", ""),
+            "args": payload.get("args"),
+            "ok": bool(payload.get("ok")),
+            "error": payload.get("error"),
+            "output": payload.get("output"),
+        }
+    if event == "provider_error":
+        return {
+            "type": "agent",
+            "content": f"错误: {payload.get('error', 'unknown')}",
+            "kind": "error",
+        }
+    return None
+
+
+async def _load_session_history(deps, session_id: str) -> list[dict]:
+    tasks = [task for task in await deps.tasks.list() if task.session_id == session_id]
+    task_ids = {task.id for task in tasks}
+    log_path = getattr(deps.logger, "path", None)
+    if not log_path or not Path(log_path).exists():
+        return []
+
+    records: list[dict] = []
+    for line in Path(log_path).read_text(encoding="utf-8").splitlines():
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if record.get("task_id") in task_ids:
+            records.append(record)
+    records.sort(key=lambda record: record.get("timestamp", ""))
+
+    messages: list[dict] = []
+    for record in records:
+        message = _history_message(record)
+        if message is not None:
+            messages.append(message)
+    return messages
+
+
 def build_router() -> APIRouter:
     sessions: dict[str, dict] = {}
     tasks: dict[str, dict] = {}
@@ -106,6 +175,9 @@ def build_router() -> APIRouter:
             "workspace": session.workspace,
             "name": session.name,
             "status": session.status,
+            "provider": session.provider,
+            "model": session.model,
+            "rules": session.rules,
         }
 
     def task_dict(task: Task) -> dict:
@@ -163,7 +235,9 @@ def build_router() -> APIRouter:
         session = Session(
             id=session_id,
             workspace=payload.workspace,
-            name=payload.name,
+            name=payload.name or session_id,
+            provider=deps.config.default_provider if deps is not None else "mock",
+            model=deps.config.default_model if deps is not None else "mock-model",
         )
         if deps is not None:
             await deps.sessions.create(session)
@@ -187,6 +261,19 @@ def build_router() -> APIRouter:
             raise HTTPException(status_code=404, detail="session not found")
         return session
 
+    @router.get("/sessions/{session_id}/history")
+    async def get_session_history(session_id: str, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is not None:
+            try:
+                await deps.sessions.get(session_id)
+            except KeyError:
+                raise HTTPException(status_code=404, detail="session not found")
+            return await _load_session_history(deps, session_id)
+        if session_id not in sessions:
+            raise HTTPException(status_code=404, detail="session not found")
+        return []
+
     @router.patch("/sessions/{session_id}")
     async def rename_session(session_id: str, payload: RenameSessionPayload, request: Request):
         deps = getattr(request.app.state, "deps", None)
@@ -195,13 +282,19 @@ def build_router() -> APIRouter:
                 session = await deps.sessions.get(session_id)
             except KeyError:
                 raise HTTPException(status_code=404, detail="session not found")
-            session.name = payload.name
+            if payload.name:
+                session.name = payload.name
+            if payload.rules is not None:
+                session.rules = payload.rules
             await deps.sessions.update(session)
             return session_dict(session)
         session = sessions.get(session_id)
         if session is None:
             raise HTTPException(status_code=404, detail="session not found")
-        session["name"] = payload.name
+        if payload.name:
+            session["name"] = payload.name
+        if payload.rules is not None:
+            session["rules"] = payload.rules
         return session
 
     @router.post("/sessions/{session_id}/close")
@@ -533,20 +626,18 @@ async def _execute_task(deps, session, task, bus) -> None:
         return
     finally:
         _running_tasks.pop(task.id, None)
-    if result == "DONE" or result.startswith("DONE:"):
-        task.status = TaskStatus.SUCCEEDED
-    elif result == "NEEDS_APPROVAL":
-        task.status = TaskStatus.AWAITING_APPROVAL
-    elif result == "ABORTED":
-        task.status = TaskStatus.CANCELED
-    elif result == "MAX_ITERATIONS":
-        task.status = TaskStatus.FAILED
-        task.summary = "max_iterations reached"
+    if result in ("NEEDS_APPROVAL", "ABORTED", "MAX_ITERATIONS"):
+        if result == "NEEDS_APPROVAL":
+            task.status = TaskStatus.AWAITING_APPROVAL
+        elif result == "ABORTED":
+            task.status = TaskStatus.CANCELED
+        else:
+            task.status = TaskStatus.FAILED
+            task.summary = "max_iterations reached"
     else:
-        task.status = TaskStatus.FAILED
-    # 模型通过 "DONE: <answer>" 给出的最终回答存入任务摘要
-    if result.startswith("DONE: "):
-        task.summary = result[len("DONE: ") :]
+        # 原生 tool calling：无工具调用时的回复即最终回答
+        task.status = TaskStatus.SUCCEEDED
+        task.summary = result[len("DONE: ") :] if result.startswith("DONE: ") else result
     await deps.tasks.update(task)
     if bus is not None:
         await bus.broadcast(

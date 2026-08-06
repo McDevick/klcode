@@ -1,4 +1,9 @@
-"""Mock-LLM demo: feedback loop makes the agent change its next action."""
+"""Mock-LLM demo: feedback loop makes the agent change its next action.
+
+Uses the native tool-calling format: the mock provider emits tool_calls,
+the loop returns tool results, and a provider with no tool_calls gives the
+final answer.
+"""
 
 import asyncio
 import json
@@ -13,7 +18,7 @@ from kl_server.core.agent_loop import AgentLoop, LoopSettings  # noqa: E402
 from kl_server.core.tool_executor import ToolExecutor  # noqa: E402
 from kl_server.models.action import ToolResult  # noqa: E402
 from kl_server.models.task import Session  # noqa: E402
-from kl_server.providers.base import ProviderResponse  # noqa: E402
+from kl_server.providers.base import ProviderResponse, ProviderToolCall  # noqa: E402
 from kl_server.providers.mock import MockProvider  # noqa: E402
 from kl_server.tools.base import Tool, ToolContext  # noqa: E402
 from kl_server.tools.registry import ToolRegistry  # noqa: E402
@@ -45,31 +50,42 @@ class FakeRunTests(Tool):
 
 
 class FeedbackAwareMockProvider(MockProvider):
-    """MockProvider that picks its next action from the last feedback."""
+    """MockProvider that picks its next tool call from the last feedback."""
 
     def __init__(self) -> None:
         super().__init__(responses=[])
         self.timeline: list[dict] = []
         self.actions: list[dict] = []
         self._snapshots: list[list[dict]] = []
+        self._seq = 0
+
+    def _call(self, name: str, args: dict) -> ProviderResponse:
+        self._seq += 1
+        return ProviderResponse(
+            text="下一步",
+            tool_calls=[
+                ProviderToolCall(
+                    id=f"call_{self._seq}",
+                    name=name,
+                    arguments=json.dumps(args),
+                )
+            ],
+        )
 
     async def complete(self, request):
         self.calls.append(request)
         snapshot = [dict(message) for message in request.messages]
         self._snapshots.append(snapshot)
         feedback = [
-            message["content"]
+            str(message.get("content", ""))
             for message in snapshot
-            if message.get("role") == "feedback"
+            if message.get("role") == "user"
+            and str(message.get("content", "")).startswith("feedback")
         ]
         if not feedback:
-            return ProviderResponse(
-                text=json.dumps({"tool": "run_tests", "args": {"attempt": 1}})
-            )
-        if feedback[-1].startswith("test_failure"):
-            return ProviderResponse(
-                text=json.dumps({"tool": "run_tests", "args": {"attempt": 2}})
-            )
+            return self._call("run_tests", {"attempt": 1})
+        if "test_failure" in feedback[-1]:
+            return self._call("run_tests", {"attempt": 2})
         return ProviderResponse(text="DONE")
 
 
@@ -91,16 +107,20 @@ async def run_demo():
 
     final = provider._snapshots[-1]
     for message in final:
-        if message["role"] == "feedback":
-            category, _, summary = message["content"].partition(": ")
-            provider.timeline.append(
-                {"category": category, "summary": summary.strip()}
-            )
+        if message["role"] == "user" and str(message["content"]).startswith("feedback"):
+            for line in str(message["content"]).splitlines()[1:]:
+                category, _, summary = line.partition(": ")
+                provider.timeline.append(
+                    {"category": category, "summary": summary.strip()}
+                )
         elif message["role"] == "assistant":
-            try:
-                provider.actions.append(json.loads(message["content"]))
-            except json.JSONDecodeError:
-                pass
+            for call in message.get("tool_calls") or []:
+                try:
+                    provider.actions.append(
+                        json.loads(call["function"]["arguments"])
+                    )
+                except (json.JSONDecodeError, KeyError):
+                    pass
     return provider, result
 
 

@@ -81,7 +81,11 @@ def test_bootstrap_wires_api_routes_to_deps(tmp_path):
         async def count_by_session(self, session_id):
             return sum(1 for task in self.store.values() if task.session_id == session_id)
 
-    deps = SimpleNamespace(sessions=FakeSessions(), tasks=FakeTasks())
+    deps = SimpleNamespace(
+        sessions=FakeSessions(),
+        tasks=FakeTasks(),
+        config=SimpleNamespace(default_provider="mock", default_model=""),
+    )
     client = TestClient(create_app(deps=deps))
 
     created = client.post(

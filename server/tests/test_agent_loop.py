@@ -10,6 +10,7 @@ from kl_server.core.sandbox import SandboxPolicy
 from kl_server.core.tool_executor import ToolExecutor
 from kl_server.models.action import ToolResult
 from kl_server.models.task import Session
+from kl_server.providers.base import ProviderResponse, ProviderToolCall
 from kl_server.providers.mock import MockProvider
 from kl_server.providers.registry import ProviderRegistry
 from kl_server.tools.base import Tool, ToolContext
@@ -56,7 +57,13 @@ async def test_loop_runs_tool_and_stops():
 
 @pytest.mark.asyncio
 async def test_loop_stops_at_max_iterations():
-    loop, provider = make_loop(ToolRegistry(), ["not json", "not json"], max_iterations=2)
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+    loop, provider = make_loop(
+        registry,
+        ['{"tool":"final","args":{}}', '{"tool":"final","args":{}}'],
+        max_iterations=2,
+    )
 
     result = await loop.run(Session(id="s1", workspace="."), "finish task")
 
@@ -65,13 +72,24 @@ async def test_loop_stops_at_max_iterations():
 
 
 @pytest.mark.asyncio
-async def test_loop_skips_malformed_valid_json():
-    loop, provider = make_loop(ToolRegistry(), ["{}", "DONE"])
+async def test_loop_treats_json_without_tool_as_final_answer():
+    """原生格式下无 tool 字段的 JSON 不是动作：整体作为最终回答结束循环。"""
+    loop, provider = make_loop(ToolRegistry(), ["{}"])
 
     result = await loop.run(Session(id="s1", workspace="."), "finish task")
 
-    assert result == "DONE"
-    assert len(provider.calls) == 2
+    assert result == "{}"
+    assert len(provider.calls) == 1
+
+
+def _feedback_messages(messages: list[dict]) -> list[dict]:
+    """收集注入的反馈消息（原生格式下 feedback 为 user 消息）。"""
+    return [
+        message
+        for message in messages
+        if message.get("role") == "user"
+        and str(message.get("content", "")).startswith("feedback")
+    ]
 
 
 @pytest.mark.asyncio
@@ -82,7 +100,7 @@ async def test_unknown_tool_is_reported_back():
 
     assert result == "DONE"
     second_messages = provider.calls[1].messages
-    assert any("missing" in message["content"] for message in second_messages if message["role"] == "feedback")
+    assert any("missing" in message["content"] for message in _feedback_messages(second_messages))
 
 
 @pytest.mark.asyncio
@@ -95,7 +113,7 @@ async def test_tool_crash_is_reported_back():
 
     assert result == "DONE"
     second_messages = provider.calls[1].messages
-    assert any("boom" in message["content"] for message in second_messages if message["role"] == "feedback")
+    assert any("boom" in message["content"] for message in _feedback_messages(second_messages))
 
 
 class FailingCommandTool(Tool):
@@ -118,7 +136,7 @@ async def test_loop_reinjects_feedback_into_history():
         settings=LoopSettings(max_iterations=3),
     )
     await loop.run(Session(id="s1", workspace="."), "fix")
-    feedback_msgs = [m for m in provider.calls[1].messages if m.get("role") == "feedback"]
+    feedback_msgs = _feedback_messages(provider.calls[1].messages)
     assert feedback_msgs and "test_failure" in feedback_msgs[0]["content"]
 
 
@@ -199,10 +217,14 @@ async def test_loop_uses_context_assembler():
     assert spy.calls >= 1
     assert spy.last_kwargs["memory"] == ["remembered decision"]
     assert spy.last_kwargs["task_id"] == "s1"
-    assert spy.last_kwargs["tool_catalog"][0]["name"] == "final"
-    # A system message carries the action protocol in front of the assembled user message.
+    # 工具目录通过 OpenAI tools 请求参数传递（含 schema），不再进上下文
+    tools = provider.calls[0].tools
+    assert tools is not None
+    assert tools[0]["function"]["name"] == "final"
+    # 规则/记忆作为 system 上下文注入，原生 role 历史完整保留在后面。
     assert provider.calls[0].messages[0]["role"] == "system"
-    assert provider.calls[0].messages[1] == {"role": "user", "content": "assembled"}
+    assert provider.calls[0].messages[1] == {"role": "system", "content": "assembled"}
+    assert provider.calls[0].messages[2] == {"role": "user", "content": "task"}
 
 
 @pytest.mark.asyncio
@@ -221,10 +243,10 @@ async def test_loop_context_preserves_role_labels():
 
     await loop.run(Session(id="s1", workspace="."), "task")
 
-    history = spy.last_kwargs["history"]
-    assert history[0] == "user: task"
-    assert any(item.startswith("assistant: ") for item in history)
-    assert any(item.startswith("feedback: ") for item in history)
+    assert spy.last_kwargs["history"] == []
+    messages = provider.calls[1].messages
+    assert any(message["role"] == "assistant" and "tool_calls" in message for message in messages)
+    assert any(message["role"] == "tool" for message in messages)
 
 
 @pytest.mark.asyncio
@@ -265,21 +287,6 @@ async def test_loop_logs_ordered_events_with_task_id(tmp_path):
     assert "llm_result" in event_names
     assert "tool_result" in event_names
     assert event_names[-1] == "loop_end"
-
-
-@pytest.mark.asyncio
-async def test_loop_logs_invalid_action(tmp_path):
-    provider = MockProvider(responses=["not json", "DONE"])
-    logger = EventLogger(tmp_path / "audit.jsonl")
-    loop = AgentLoop(
-        provider=provider,
-        tools=ToolExecutor(ToolRegistry()),
-        settings=LoopSettings(max_iterations=3),
-        logger=logger,
-    )
-    await loop.run(Session(id="s1", workspace="."), "task")
-    records = [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text(encoding="utf-8").strip().splitlines()]
-    assert any(record["event"] == "invalid_action" for record in records)
 
 
 @pytest.mark.asyncio
@@ -412,8 +419,9 @@ async def test_approval_reject_continues_with_feedback(tmp_path):
 
     assert result == "DONE"
     assert len(provider.calls) == 2
-    feedback = [m for m in provider.calls[1].messages if m.get("role") == "feedback"]
-    assert any("rejected" in message["content"] for message in feedback)
+    # 拒绝结果通过 tool 消息回传给模型
+    tool_messages = [m for m in provider.calls[1].messages if m.get("role") == "tool"]
+    assert any("rejected" in message["content"] for message in tool_messages)
 
 
 @pytest.mark.asyncio
@@ -556,6 +564,69 @@ async def test_loop_emits_agent_message_before_tool_action(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_loop_tool_result_event_includes_args_and_output(tmp_path):
+    """tool_result 事件带动作参数和输出摘要，供 TUI 显示命令与结果。"""
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+    provider = MockProvider(responses=['{"tool":"final","args":{"path":"a.ts"}}', "DONE"])
+    logger = EventLogger(tmp_path / "audit.jsonl")
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=3),
+        logger=logger,
+    )
+
+    await loop.run(Session(id="s1", workspace="."), "task")
+
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "audit.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    ]
+    tool_result = next(r for r in records if r["event"] == "tool_result")
+    assert tool_result["payload"]["args"] == {"path": "a.ts"}
+    assert tool_result["payload"]["output"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_approved_action_logs_final_tool_result(tmp_path):
+    """审批通过后补发一条最终 tool_result，工具结果对前端可见。"""
+    executor, guardrail = make_approval_executor(tmp_path)
+    provider = MockProvider(
+        responses=[
+            '{"tool":"run_command","args":{"command":"git push --force"}}',
+            "DONE",
+        ]
+    )
+    logger = EventLogger(tmp_path / "audit.jsonl")
+
+    async def approve(task_id: str, action: dict) -> str:
+        guardrail.hitl.approve(action["action_id"])
+        return "approve"
+
+    loop = AgentLoop(
+        provider=provider,
+        tools=executor,
+        settings=LoopSettings(max_iterations=5),
+        logger=logger,
+        on_approval=approve,
+    )
+
+    result = await loop.run(Session(id="s1", workspace=str(tmp_path)), "deploy")
+
+    assert result == "DONE"
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "audit.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    ]
+    results = [r for r in records if r["event"] == "tool_result"]
+    assert len(results) == 2
+    assert results[0]["payload"]["error"] == "requires_approval"
+    assert results[1]["payload"]["ok"] is True
+    assert results[1]["payload"]["output"] == '{"exit_code": 0, "stdout": "ok", "stderr": ""}'
+
+
+@pytest.mark.asyncio
 async def test_loop_parses_action_when_message_contains_braces(tmp_path):
     registry = ToolRegistry()
     registry.register(FinalTool())
@@ -580,3 +651,33 @@ async def test_loop_parses_action_when_message_contains_braces(tmp_path):
     message = next(r for r in records if r["event"] == "agent_message")
     assert message["payload"]["text"] == "先检查 {project} 目录"
     assert len(provider.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_loop_skips_noise_agent_message_for_native_tool_call(tmp_path):
+    """原生 tool_calls 的 content 只有 `<` 时，不把噪声发给 TUI。"""
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+
+    class NoiseNativeProvider:
+        async def complete(self, request):
+            return ProviderResponse(
+                text="<",
+                tool_calls=[ProviderToolCall(id="c1", name="final", arguments="{}")],
+            )
+
+    logger = EventLogger(tmp_path / "audit.jsonl")
+    loop = AgentLoop(
+        provider=NoiseNativeProvider(),
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=3),
+        logger=logger,
+    )
+
+    await loop.run(Session(id="s1", workspace="."), "task")
+
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "audit.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    ]
+    assert not any(record["event"] == "agent_message" for record in records)

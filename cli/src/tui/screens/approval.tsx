@@ -36,7 +36,7 @@ export function ApprovalPanel({
       <Text>
         requires approval{level ? ` (${level})` : ''}: {tool} {command}
       </Text>
-      <Text>[a]pprove [r]eject [m]odify [x]bort</Text>
+      <Text>[a]pprove [r]eject [x]bort</Text>
     </Box>
   );
 }

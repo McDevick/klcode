@@ -21,6 +21,7 @@ class Session:
     provider: str = "mock"
     model: str = "mock-model"
     status: str = "active"
+    rules: str = ""
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 

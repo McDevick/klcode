@@ -10,7 +10,6 @@ from kl_server.config.backends import (
     CredentialFileError,
     EncryptedFileBackend,
     KeyringBackend,
-    load_env_file,
 )
 from kl_server.config.config import AppConfig, ProviderConfig
 from kl_server.config.credentials import InMemoryCredentialStore, create_credential_store
@@ -180,20 +179,6 @@ def test_keyring_backend_auto_detection_ignores_fail_backend(monkeypatch):
     backend = KeyringBackend()
 
     assert backend.available is False
-
-
-def test_load_env_file_parses_comments_quotes_and_empty_lines(tmp_path):
-    env = tmp_path / ".env"
-    env.write_text(
-        "# comment\n\nKEY=value # comment\nHASH=abc#def\nQUOTED=\"quoted value\"\nEQ='a=b'\n",
-        encoding="utf-8",
-    )
-    assert load_env_file(env) == {
-        "KEY": "value",
-        "HASH": "abc#def",
-        "QUOTED": "quoted value",
-        "EQ": "a=b",
-    }
 
 
 def test_create_credential_store_returns_encrypted_file(tmp_path):

@@ -246,7 +246,7 @@ export function ConfigWizard({
     secret ? '•'.repeat(value.length) : value;
 
   return (
-    <Box paddingX={1}>
+    <Box paddingX={1} flexShrink={0}>
       <Box
         borderStyle="round"
         borderColor={theme.surfaceAlt}

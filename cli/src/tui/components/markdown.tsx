@@ -41,6 +41,16 @@ function InlineContent({ tokens }: { tokens: Tokens.Generic[] }) {
   );
 }
 
+function collectInlineTokens(tokens: Tokens.Generic[]): Tokens.Generic[] {
+  return tokens.flatMap((token) => {
+    const nested = (token as Tokens.Generic & { tokens?: Tokens.Generic[] }).tokens;
+    if (nested && nested.some((item) => ['strong', 'em', 'codespan', 'link'].includes(item.type))) {
+      return nested;
+    }
+    return [token];
+  });
+}
+
 function renderToken(token: Tokens.Generic, index: number) {
   const key = `token-${index}`;
   switch (token.type) {
@@ -48,7 +58,7 @@ function renderToken(token: Tokens.Generic, index: number) {
       const heading = token as Tokens.Heading;
       return (
         <Text key={key} bold color={theme.teal}>
-          {heading.text}
+          <InlineContent tokens={heading.tokens ?? []} />
         </Text>
       );
     }
@@ -75,7 +85,7 @@ function renderToken(token: Tokens.Generic, index: number) {
           {list.items.map((item, itemIndex) => (
             <Text key={`${key}-${itemIndex}`}>
               {list.ordered ? `${itemIndex + 1}. ` : '- '}
-              {item.text}
+              <InlineContent tokens={collectInlineTokens(item.tokens ?? [])} />
             </Text>
           ))}
         </Box>
@@ -85,7 +95,7 @@ function renderToken(token: Tokens.Generic, index: number) {
       const quote = token as Tokens.Blockquote;
       return (
         <Text key={key} color={theme.textDim}>
-          ▍{quote.text}
+          ▍<InlineContent tokens={collectInlineTokens(quote.tokens ?? [])} />
         </Text>
       );
     }

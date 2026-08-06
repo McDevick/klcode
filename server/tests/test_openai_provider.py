@@ -24,10 +24,11 @@ async def test_openai_compatible_provider_parses_chat_completion():
         assert str(request.url).endswith("/chat/completions")
         assert request.headers["Authorization"] == "Bearer sk-test"
         assert body["model"] == "gpt-test"
+        # 原生格式：feedback 防御映射为 user；tool 角色原样透传
         assert body["messages"] == [
             {"role": "user", "content": "hi"},
             {"role": "user", "content": "feedback: keep going"},
-            {"role": "user", "content": "tool_result: 42"},
+            {"role": "tool", "tool_call_id": "call_1", "content": "42"},
         ]
         return httpx.Response(200, json={"choices": [{"message": {"content": "hello"}}]})
 
@@ -43,12 +44,75 @@ async def test_openai_compatible_provider_parses_chat_completion():
             messages=[
                 {"role": "user", "content": "hi"},
                 {"role": "feedback", "content": "keep going"},
-                {"role": "tool", "content": "42"},
+                {"role": "tool", "tool_call_id": "call_1", "content": "42"},
             ],
             model="gpt-test",
         )
     )
     assert response.text == "hello"
+    assert response.tool_calls is None
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_provider_parses_tool_calls_and_forwards_tools():
+    async def handler(request):
+        body = json.loads(request.content)
+        assert body["tools"] == [
+            {
+                "type": "function",
+                "function": {"name": "list_dir", "description": "Lists", "parameters": {}},
+            }
+        ]
+        assert body["tool_choice"] == "auto"
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": "我先看一下目录结构",
+                            "tool_calls": [
+                                {
+                                    "id": "call_9",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "list_dir",
+                                        "arguments": '{"path":"."}',
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenAICompatibleProvider(
+        base_url="https://example.com/v1",
+        api_key="sk-test",
+        model="gpt-test",
+        client=client,
+    )
+    response = await provider.complete(
+        ProviderRequest(
+            messages=[{"role": "user", "content": "hi"}],
+            model="gpt-test",
+            tools=[
+                {
+                    "type": "function",
+                    "function": {"name": "list_dir", "description": "Lists", "parameters": {}},
+                }
+            ],
+        )
+    )
+    assert response.text == "我先看一下目录结构"
+    assert response.tool_calls is not None
+    assert len(response.tool_calls) == 1
+    call = response.tool_calls[0]
+    assert call.id == "call_9"
+    assert call.name == "list_dir"
+    assert call.arguments == '{"path":"."}'
 
 
 @pytest.mark.asyncio

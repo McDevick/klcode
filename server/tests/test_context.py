@@ -51,7 +51,6 @@ async def test_assembler_uses_provider_summary_without_repeating_latest():
     assembler.summarizer = LLMSummarizer(provider, model="mock-model")
 
     result = await assembler.build(
-        tool_catalog=[],
         rules="rules",
         memory=[],
         history=["old-" + "x" * 200, "old-" + "y" * 200, "latest"],
@@ -75,7 +74,6 @@ async def test_assembler_keeps_raw_history_within_budget():
     summarizer = CountingSummarizer()
     assembler.summarizer = summarizer
     result = await assembler.build(
-        tool_catalog=[],
         rules="rules",
         memory=[],
         history=["round1", "round2", "round3", "round4", "round5: final check"],
@@ -99,7 +97,6 @@ async def test_assembler_summarizes_dropped_history_when_over_budget():
     summarizer = CountingSummarizer()
     assembler.summarizer = summarizer
     result = await assembler.build(
-        tool_catalog=[],
         rules="rules",
         memory=[],
         history=["x" * 100, "y" * 100, "latest"],
@@ -126,8 +123,7 @@ async def test_assembler_caches_summary_for_unchanged_history():
 
     for _ in range(3):
         await assembler.build(
-            tool_catalog=[],
-            rules="rules",
+                rules="rules",
             memory=[],
             history=history,
         )
@@ -152,19 +148,16 @@ async def test_assembler_increments_summary_for_new_old_history():
     old2 = "y" * 100
 
     await assembler.build(
-        tool_catalog=[],
         rules="rules",
         memory=[],
         history=[old1, "latest1"],
     )
     await assembler.build(
-        tool_catalog=[],
         rules="rules",
         memory=[],
         history=[old1, "latest1"],
     )
     await assembler.build(
-        tool_catalog=[],
         rules="rules",
         memory=[],
         history=[old1, old2, "latest2"],
@@ -199,14 +192,12 @@ async def test_assembler_evicts_old_summary_states():
 
     for task_id in ("t1", "t2", "t3"):
         await assembler.build(
-            tool_catalog=[],
-            rules="rules",
+                rules="rules",
             memory=[],
             history=history,
             task_id=task_id,
         )
     await assembler.build(
-        tool_catalog=[],
         rules="rules",
         memory=[],
         history=history,
@@ -225,7 +216,6 @@ async def test_assembler_falls_back_when_provider_fails(caplog):
     assembler = ContextAssembler(max_tokens=100)
     assembler.summarizer = LLMSummarizer(FailingProvider(), model="mock-model")
     result = await assembler.build(
-        tool_catalog=[],
         rules="rules",
         memory=[],
         history=["old-" + "x" * 200, "old-" + "y" * 200, "latest"],
@@ -240,7 +230,6 @@ async def test_assembler_falls_back_when_provider_fails(caplog):
 async def test_context_keeps_priority_sections():
     assembler = ContextAssembler(max_tokens=100)
     result = await assembler.build(
-        tool_catalog=[],
         rules="rules",
         memory=["m1", "m2"],
         history=["h1", "h2", "h3"],
@@ -253,7 +242,6 @@ async def test_context_keeps_priority_sections():
 async def test_context_keeps_latest_history_when_it_fits_budget():
     assembler = ContextAssembler(max_tokens=10)
     result = await assembler.build(
-        tool_catalog=[],
         rules="rules",
         memory=["m1", "m2"],
         history=["old-" + "x" * 200, "old-" + "y" * 200, "latest"],
@@ -268,50 +256,12 @@ async def test_context_keeps_latest_history_when_it_fits_budget():
 async def test_context_truncates_priority_sections_as_last_resort():
     assembler = ContextAssembler(max_tokens=4)
     result = await assembler.build(
-        tool_catalog=[],
         rules="r" * 100,
         memory=["m" * 100],
         history=["h" * 100],
     )
     assert result.used_tokens <= 4
     assert result.text.startswith("r")
-
-
-@pytest.mark.asyncio
-async def test_context_includes_tool_catalog_after_rules():
-    assembler = ContextAssembler(max_tokens=100)
-    result = await assembler.build(
-        tool_catalog=[{"name": "echo", "description": "Echoes input."}],
-        rules="rules",
-        memory=[],
-        history=[],
-    )
-    assert result.text.index("rules") < result.text.index("Tool catalog:")
-    assert result.contains_priority("- echo: Echoes input.")
-    assert result.used_tokens <= 100
-
-
-@pytest.mark.asyncio
-async def test_context_includes_tool_args_schema():
-    assembler = ContextAssembler(max_tokens=100)
-    result = await assembler.build(
-        tool_catalog=[
-            {
-                "name": "run_command",
-                "description": "Runs a command.",
-                "schema": {
-                    "type": "object",
-                    "properties": {"command": {"type": "string"}},
-                },
-            }
-        ],
-        rules="rules",
-        memory=[],
-        history=[],
-    )
-    assert result.contains_priority('"command"')
-    assert result.contains_priority('"type": "string"')
-    assert result.used_tokens <= 100
 
 
 @pytest.mark.asyncio
@@ -323,7 +273,6 @@ async def test_latest_history_is_kept_over_lower_priority_summary():
     assembler = ContextAssembler(max_tokens=10, token_estimator=len)
     assembler.summarizer = FakeSummarizer()
     result = await assembler.build(
-        tool_catalog=[],
         rules="r",
         memory=[],
         history=["old1", "old2", "latest"],
@@ -346,7 +295,6 @@ async def test_summarizer_failure_keeps_latest_history_once():
     assembler = ContextAssembler(max_tokens=30, token_estimator=len)
     assembler.summarizer = summarizer
     result = await assembler.build(
-        tool_catalog=[],
         rules="rules",
         memory=[],
         history=["x" * 100, "y" * 100, "latest"],
@@ -362,7 +310,6 @@ async def test_summarizer_failure_keeps_latest_history_once():
 async def test_context_uses_injected_token_estimator():
     assembler = ContextAssembler(max_tokens=10, token_estimator=len)
     result = await assembler.build(
-        tool_catalog=[],
         rules="r" * 100,
         memory=["m" * 100],
         history=["h" * 100],
@@ -375,7 +322,6 @@ async def test_context_uses_injected_token_estimator():
 async def test_empty_input_builds_empty_context():
     assembler = ContextAssembler(max_tokens=100)
     result = await assembler.build(
-        tool_catalog=[],
         rules="",
         memory=[],
         history=[],
@@ -390,7 +336,6 @@ async def test_empty_input_builds_empty_context():
 async def test_non_positive_budget_is_deterministic(max_tokens):
     assembler = ContextAssembler(max_tokens=max_tokens)
     result = await assembler.build(
-        tool_catalog=[{"name": "x", "description": "d"}],
         rules="r" * 100,
         memory=["m" * 100],
         history=["h" * 100],
