@@ -12,6 +12,7 @@ from kl_server.core.agent_loop import SYSTEM_PROMPT
 from kl_server.core.guardrail import normalize_workspace_mode
 from kl_server.core.snapshot import SnapshotManager
 from kl_server.models.task import Session, Task, TaskStatus
+from kl_server.providers.base import ProviderRequest
 from kl_server.providers.openai_compatible import OpenAICompatibleProvider
 
 
@@ -820,6 +821,38 @@ def build_router() -> APIRouter:
         provider = payload.model_dump()
         providers.append(provider)
         return provider
+
+    @router.post("/providers/{name}/test")
+    async def test_provider(name: str, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is None:
+            raise HTTPException(status_code=501, detail="requires a configured server")
+        try:
+            provider = deps.provider_registry.get(name)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="provider not found")
+        model = (
+            "mock-model"
+            if name == "mock"
+            else (getattr(provider, "model", None) or "")
+        )
+        if not model:
+            return {
+                "ok": False,
+                "provider": name,
+                "error": "provider has no default model",
+            }
+        try:
+            await provider.complete(
+                ProviderRequest(
+                    messages=[{"role": "user", "content": "ping"}],
+                    model=model,
+                    max_tokens=16,
+                )
+            )
+        except Exception as exc:
+            return {"ok": False, "provider": name, "error": str(exc)}
+        return {"ok": True, "provider": name, "model": model}
 
     @router.get("/models")
     def list_models(request: Request):

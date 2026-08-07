@@ -210,7 +210,7 @@ def test_provider_factory_builds_mock_and_openai(tmp_path):
     assert registry.get("openai") is not None
 
 
-def test_provider_factory_raises_when_credential_missing(tmp_path):
+def test_provider_factory_registers_provider_when_credential_missing(tmp_path):
     path = tmp_path / "config.yaml"
     path.write_text(
         "providers:\n"
@@ -222,8 +222,10 @@ def test_provider_factory_raises_when_credential_missing(tmp_path):
         encoding="utf-8",
     )
     config = load_app_config(path)
-    with pytest.raises(ValueError, match="credential not found: openai"):
-        build_provider_registry(config, FakeCredentialStore(secret=None))
+    registry = build_provider_registry(config, FakeCredentialStore(secret=None))
+    provider = registry.get("openai")
+    assert provider is not None
+    assert provider.api_key is None
 
 
 def test_provider_factory_rejects_unsupported_type(tmp_path):

@@ -67,19 +67,32 @@ test('config provider list includes mock', async () => {
 });
 
 test('config provider test reports provider availability', async () => {
-  const fetchMock = vi.fn().mockResolvedValue({
-    ok: true,
-    status: 200,
-    json: async () => [{ name: 'mock', type: 'mock' }],
+  const fetchMock = vi.fn(async (url: string) => {
+    if (url.includes('/providers/mock/test')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true, provider: 'mock', model: 'mock-model' }),
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => [{ name: 'mock', type: 'mock' }],
+    };
   });
   vi.stubGlobal('fetch', fetchMock);
   try {
     const result = await ConfigCommand.run(['provider', 'test']);
 
-    expect(result).toContain('ok');
+    expect(result).toContain('mock: ok');
     expect(fetchMock).toHaveBeenCalledWith(
       `${DEFAULT_BASE_URL}/api/v1/providers`,
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${DEFAULT_BASE_URL}/api/v1/providers/mock/test`,
+      expect.objectContaining({ method: 'POST' }),
     );
   } finally {
     vi.unstubAllGlobals();

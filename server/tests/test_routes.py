@@ -689,6 +689,19 @@ def test_provider_add_writes_config_yaml_with_deps(tmp_path):
     assert "http://127.0.0.1:9999/v1" in content
 
 
+def test_provider_test_calls_real_provider_endpoint(tmp_path):
+    client = make_deps_client(tmp_path)
+
+    response = client.post("/api/v1/providers/mock/test")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "ok": True,
+        "provider": "mock",
+        "model": "mock-model",
+    }
+
+
 def test_create_session_after_restart_avoids_id_conflict(tmp_path):
     # 第一次启动：创建 s1 并持久化
     first = make_deps_client(tmp_path)
@@ -868,7 +881,7 @@ def test_config_model_set_unknown_provider_returns_404(tmp_path):
     assert response.json()["detail"] == "provider not found"
 
 
-def test_config_model_set_degraded_provider_returns_404(tmp_path):
+def test_config_model_set_allows_unavailable_provider(tmp_path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         "default_provider: mock\n"
@@ -880,7 +893,7 @@ def test_config_model_set_degraded_provider_returns_404(tmp_path):
         "    credential_ref: deepseek\n",
         encoding="utf-8",
     )
-    # 不设置 deepseek 凭证 → bootstrap 退化，registry 仅含 mock
+    # 不设置 deepseek 凭证 → provider 存在但不可用，仍允许切换
     deps = build_app_dependencies(
         config_path=config_path,
         db_path=tmp_path / "kl.db",
@@ -892,8 +905,9 @@ def test_config_model_set_degraded_provider_returns_404(tmp_path):
 
     response = client.post("/api/v1/config/model", json={"provider": "deepseek"})
 
-    assert response.status_code == 404
-    assert response.json()["detail"] == "provider not found"
+    assert response.status_code == 200
+    assert response.json()["provider"] == "deepseek"
+    assert response.json()["model"] == "deepseek-chat"
 
 
 def test_config_check_reports_configured_providers(tmp_path):

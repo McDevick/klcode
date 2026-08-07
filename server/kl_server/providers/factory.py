@@ -20,12 +20,6 @@ def build_provider_registry(config: AppConfig, credential_store) -> ProviderRegi
         # survive restarts even when the OS keyring is unavailable.
         if api_key is None:
             api_key = os.environ.get(f"KL_KEY_{name.upper()}")
-        if (
-            provider_config.credential_ref is not None
-            and api_key is None
-            and provider_config.api_key is None
-        ):
-            raise ValueError(f"credential not found: {provider_config.credential_ref}")
         registry.register(
             name,
             OpenAICompatibleProvider(

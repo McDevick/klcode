@@ -1,12 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { ApiClient, DEFAULT_BASE_URL, type McpServerInfo } from '../../api/client';
+import { CommandMenu } from './command-menu';
 import { theme } from '../theme';
-
-function transportText(server: McpServerInfo): string {
-  if (server.url) return `url ${server.url}`;
-  return `command ${server.command ?? ''} ${(server.args ?? []).join(' ')}`.trim();
-}
 
 export function McpManager({
   onClose,
@@ -110,23 +106,10 @@ export function McpManager({
       ) : servers.length === 0 ? (
         <Text dimColor>暂无已配置的 mcp server</Text>
       ) : (
-        <Box flexDirection="column">
-          {servers.map((server, index) => (
-            <Box key={server.name} flexDirection="column">
-              <Text color={index === selectedIndex ? theme.teal : theme.text}>
-                {index === selectedIndex ? '▸ ' : '  '}
-                {server.name}
-                <Text dimColor>  {transportText(server)}</Text>
-              </Text>
-              {(server.tools ?? []).map((tool) => (
-                <Text key={tool.name} dimColor>
-                  {'   '}
-                  {tool.name} ({tool.remote_name})
-                </Text>
-              ))}
-            </Box>
-          ))}
-        </Box>
+        <CommandMenu
+          commands={servers.map((server) => ({ name: server.name, desc: '' }))}
+          menuIndex={selectedIndex}
+        />
       )}
       {notice ? (
         <Text color={notice.startsWith('已') ? theme.green : theme.red}>{notice}</Text>

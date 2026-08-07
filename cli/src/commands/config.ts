@@ -44,12 +44,23 @@ async function runProvider(subcommand: string | undefined, rest: string[]): Prom
     case 'test': {
       const providers = await client.listProviders();
       const name = rest[0];
-      const available = name
-        ? providers.some((provider) => provider.name === name)
-        : providers.length > 0;
-      return available
-        ? `provider test ok${name ? ` (${name})` : ''}`
-        : `provider test failed${name ? ` (${name})` : ''}`;
+      const names = name ? [name] : providers.map((provider) => provider.name);
+      if (names.length === 0) {
+        return 'provider test failed: no providers';
+      }
+      const results = await Promise.all(
+        names.map(async (providerName) => {
+          try {
+            const result = await client.testProvider(providerName);
+            return `${providerName}: ${result.ok ? 'ok' : 'failed'}${
+              result.error ? ` - ${result.error}` : ''
+            }`;
+          } catch (error: unknown) {
+            return `${providerName}: failed - ${String(error)}`;
+          }
+        }),
+      );
+      return results.join('\n');
     }
     default:
       return 'usage: kl config provider add|list|test';

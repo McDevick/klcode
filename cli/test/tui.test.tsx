@@ -441,7 +441,7 @@ test('app /mcp opens manager and deletes selected server', async () => {
     stdin.write('/mcp');
     stdin.write('\r');
     await waitFor(() => (lastFrame() ?? '').includes('demo'));
-    expect(lastFrame()).toContain('mcp_demo_echo');
+    expect(lastFrame() ?? '').not.toContain('mcp_demo_echo');
 
     stdin.write('d');
     await sleep(50);

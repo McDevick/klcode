@@ -243,6 +243,12 @@ export class ApiClient {
     });
   }
 
+  testProvider(name: string): Promise<{ ok: boolean; provider: string; error?: string; model?: string }> {
+    return this.request(`/api/v1/providers/${encodeURIComponent(name)}/test`, {
+      method: 'POST',
+    }, 120000);
+  }
+
   listKeys(): Promise<KeysResult> {
     return this.request('/api/v1/keys');
   }

@@ -37,6 +37,30 @@ def test_bootstrap_registers_providers_tools_and_managers(tmp_path):
     assert deps.tasks is not None
 
 
+def test_bootstrap_registers_provider_without_key_without_failure(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "providers:\n"
+        "  deepseek:\n"
+        "    type: openai-compatible\n"
+        "    base_url: https://api.deepseek.com\n"
+        "    default_model: deepseek-v4-flash\n",
+        encoding="utf-8",
+    )
+    deps = build_app_dependencies(
+        config_path=config_path,
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+
+    provider = deps.provider_registry.get("deepseek")
+    assert provider is not None
+    assert provider.api_key is None
+    assert deps.config_error is None
+
+
 def test_bootstrap_wires_api_routes_to_deps(tmp_path):
     class FakeSessions:
         def __init__(self):
@@ -163,14 +187,15 @@ def test_bootstrap_starts_with_missing_provider_credential(tmp_path):
         credential_store=InMemoryCredentialStore(),
     )
 
-    assert deps.provider_registry.get("mock") is not None
-    assert deps.config_error == "credential not found: openai"
+    provider = deps.provider_registry.get("openai")
+    assert provider is not None
+    assert provider.api_key is None
+    assert deps.config_error is None
 
     client = TestClient(create_app(deps=deps))
     response = client.post("/api/v1/config/check")
     assert response.status_code == 200
-    assert response.json()["status"] == "degraded"
-    assert response.json()["error"] == "credential not found: openai"
+    assert response.json()["status"] == "ok"
 
 
 def test_bootstrap_loop_uses_runtime_default_resolvers(tmp_path):
