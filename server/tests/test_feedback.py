@@ -49,6 +49,15 @@ def test_classify_tool_result_timeout_error_is_timeout():
     assert feedback.category == FeedbackCategory.TIMEOUT
 
 
+def test_classify_tool_result_uses_output_when_error_is_missing():
+    feedback = classify_tool_result(
+        ToolResult(ok=False, output="ERROR: boom", error=None),
+        tool="mcp_demo_shell",
+    )
+    assert feedback.category == FeedbackCategory.TOOL_ERROR
+    assert "ERROR: boom" in feedback.summary
+
+
 def test_classify_tool_result_malformed_json_is_unknown():
     feedback = classify_tool_result(
         ToolResult(ok=True, output='{"exit_code": 1, "stdout": "1 failed"'),

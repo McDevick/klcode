@@ -1,9 +1,11 @@
+import asyncio
+
 import pytest
 
 from kl_server.core.agent_loop import AgentLoop, LoopSettings
 from kl_server.core.context import AssembledContext
 from kl_server.core.tool_executor import ToolExecutor
-from kl_server.extensions import McpTool, register_mcp_tools, register_user_tools
+from kl_server.extensions import register_mcp_tools, register_user_tools
 from kl_server.models.action import ToolResult
 from kl_server.models.task import Session
 from kl_server.providers.mock import MockProvider
@@ -99,42 +101,6 @@ class FakeMcpAdapter:
 
 
 @pytest.mark.asyncio
-async def test_mcp_tool_dispatches_to_adapter():
-    tool = McpTool(FakeMcpAdapter())
-
-    result = await tool.execute(
-        {"server": "demo", "tool": "echo", "args": {"text": "hi"}},
-        ToolContext(workspace="."),
-    )
-
-    assert result.ok is True
-    assert result.output == "demo:echo"
-
-
-@pytest.mark.asyncio
-async def test_mcp_tool_rejects_missing_required_arguments():
-    tool = McpTool(FakeMcpAdapter())
-
-    result = await tool.execute({"server": "demo"}, ToolContext(workspace="."))
-
-    assert result.ok is False
-    assert "tool" in result.error
-
-
-@pytest.mark.asyncio
-async def test_mcp_tool_rejects_non_object_args():
-    tool = McpTool(FakeMcpAdapter())
-
-    result = await tool.execute(
-        {"server": "demo", "tool": "echo", "args": "not-an-object"},
-        ToolContext(workspace="."),
-    )
-
-    assert result.ok is False
-    assert "args" in result.error
-
-
-@pytest.mark.asyncio
 async def test_register_mcp_tools_registers_remote_tools():
     registry = ToolRegistry()
     adapter = FakeMcpAdapter()
@@ -153,6 +119,169 @@ async def test_register_mcp_tools_registers_remote_tools():
     )
     assert result.ok is True
     assert result.output == "demo:echo"
+
+
+class SlowMcpAdapter:
+    servers = {"slow": {}}
+
+    async def list_tools(self, server):
+        await asyncio.sleep(0.1)
+        return []
+
+
+@pytest.mark.asyncio
+async def test_register_mcp_tools_skips_slow_server_after_timeout():
+    registry = ToolRegistry()
+
+    registered = await register_mcp_tools(
+        registry,
+        SlowMcpAdapter(),
+        discovery_timeout=0.01,
+    )
+
+    assert registered == []
+
+
+class CollisionMcpAdapter:
+    servers = {"a_b": {}, "a": {}}
+
+    async def list_tools(self, server):
+        schema = {
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+        }
+        if server == "a_b":
+            return [{"name": "c", "description": "c", "input_schema": schema}]
+        return [{"name": "b_c", "description": "b_c", "input_schema": schema}]
+
+
+@pytest.mark.asyncio
+async def test_register_mcp_tools_avoids_cross_server_name_collision():
+    registry = ToolRegistry()
+
+    registered = await register_mcp_tools(registry, CollisionMcpAdapter())
+
+    assert len(registered) == 2
+    names = [item["name"] for item in registered]
+    assert len(set(names)) == 2
+    assert len({name.split("_")[-1] for name in names}) == 2
+    assert registry.get(names[0]).name != registry.get(names[1]).name
+
+
+class LongNameMcpAdapter:
+    servers = {"server": {}}
+
+    async def list_tools(self, server):
+        return [
+            {
+                "name": "x" * 80,
+                "description": "long tool",
+                "input_schema": {"type": "object", "properties": {}},
+            }
+        ]
+
+
+@pytest.mark.asyncio
+async def test_register_mcp_tools_truncates_long_name_with_hash():
+    registry = ToolRegistry()
+
+    registered = await register_mcp_tools(registry, LongNameMcpAdapter())
+
+    assert len(registered) == 1
+    name = registered[0]["name"]
+    assert len(name) <= 64
+    assert len(name.split("_")[-1]) == 8
+
+
+class SchemaMcpAdapter:
+    servers = {"demo": {}}
+
+    async def list_tools(self, server):
+        return [
+            {
+                "name": "echo",
+                "description": "echo",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "a": {
+                            "type": "string",
+                            "extra": "removed",
+                            "enum": [str(index) for index in range(100)],
+                        }
+                    },
+                    "required": ["a"],
+                    "extra": "removed",
+                },
+            }
+        ]
+
+
+@pytest.mark.asyncio
+async def test_register_mcp_tools_whitelists_schema_and_limits_enum():
+    registry = ToolRegistry()
+
+    registered = await register_mcp_tools(registry, SchemaMcpAdapter())
+
+    assert len(registered) == 1
+    schema = registry.get("mcp_demo_echo").schema
+    assert "extra" not in schema
+    assert len(schema["properties"]["a"]["enum"]) == 20
+    assert schema["required"] == ["a"]
+
+
+class BadSchemaMcpAdapter:
+    servers = {"demo": {}}
+
+    async def list_tools(self, server):
+        return [
+            {
+                "name": "bad",
+                "description": "bad",
+                "input_schema": {"type": "array"},
+            }
+        ]
+
+
+@pytest.mark.asyncio
+async def test_register_mcp_tools_skips_invalid_schema():
+    registry = ToolRegistry()
+
+    registered = await register_mcp_tools(registry, BadSchemaMcpAdapter())
+
+    assert registered == []
+    assert all(
+        item["name"] != "mcp_demo_bad"
+        for item in registry.catalog()
+    )
+
+
+class DeepSchemaMcpAdapter:
+    servers = {"demo": {}}
+
+    async def list_tools(self, server):
+        root = {"type": "object"}
+        node = root
+        for _ in range(200):
+            node["properties"] = {"x": {"type": "object"}}
+            node = node["properties"]["x"]
+        return [
+            {
+                "name": "deep",
+                "description": "deep schema",
+                "input_schema": root,
+            }
+        ]
+
+
+@pytest.mark.asyncio
+async def test_register_mcp_tools_tolerates_deep_schema():
+    registry = ToolRegistry()
+
+    registered = await register_mcp_tools(registry, DeepSchemaMcpAdapter())
+
+    assert len(registered) == 1
 
 
 class PluginTool(Tool):

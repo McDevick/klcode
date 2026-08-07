@@ -245,6 +245,22 @@ def test_bootstrap_wires_hooks_and_mcp_from_config(tmp_path):
     ]
 
 
+def test_bootstrap_does_not_register_generic_mcp_tool(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("", encoding="utf-8")
+    deps = build_app_dependencies(
+        config_path=config_path,
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+
+    names = {item["name"] for item in deps.tool_registry.catalog()}
+
+    assert "mcp_tool" not in names
+
+
 def test_bootstrap_provider_reads_api_key_from_config(tmp_path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text(

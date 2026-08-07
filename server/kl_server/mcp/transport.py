@@ -1,5 +1,7 @@
 """MCP client transports for stdio and streamable-http servers."""
 
+import asyncio
+
 
 class McpTransport:
     """Thin wrapper around the official mcp SDK client for one server."""
@@ -9,6 +11,10 @@ class McpTransport:
         self._client_cm = None
         self._client = None
         self._session = None
+
+    @property
+    def is_connected(self) -> bool:
+        return self._session is not None
 
     async def connect(self):
         try:
@@ -34,9 +40,12 @@ class McpTransport:
 
             self._session = await ClientSession(*self._client).__aenter__()
             await self._session.initialize()
+        except asyncio.CancelledError:
+            await self.close()
+            raise
         except Exception as exc:
             await self.close()
-            raise ConnectionError("not connected") from exc
+            raise ConnectionError(f"not connected: {exc}") from exc
 
     async def call_tool(self, name: str, arguments: dict) -> dict:
         if self._session is None:

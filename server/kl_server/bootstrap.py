@@ -14,7 +14,7 @@ from kl_server.core.sandbox import SandboxPolicy
 from kl_server.core.session_manager import SessionManager
 from kl_server.core.task_manager import TaskManager
 from kl_server.core.tool_executor import ToolExecutor
-from kl_server.extensions import McpTool, register_user_tools
+from kl_server.extensions import register_user_tools
 from kl_server.hooks.manager import HookManager
 from kl_server.mcp.adapter import McpAdapter
 from kl_server.memory.store import MemoryStore
@@ -108,7 +108,6 @@ def build_app_dependencies(
     plugins_root.mkdir(parents=True, exist_ok=True)
     plugins = PluginLoader(str(plugins_root))
     register_user_tools(tools, plugins)
-    tools.register(McpTool(mcp))
     try:
         provider = providers.get(config.default_provider)
     except KeyError:

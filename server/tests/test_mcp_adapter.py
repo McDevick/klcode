@@ -36,7 +36,91 @@ async def test_tool_returns_not_connected_for_known_server():
 
     assert result.ok is False
     assert result.output == ""
-    assert result.error == "not connected"
+    assert result.error.startswith("not connected")
+
+
+class StickyTransport:
+    def __init__(self):
+        self._session = object()
+        self.closed = 0
+        self.failures = 1
+
+    @property
+    def is_connected(self):
+        return self._session is not None
+
+    async def connect(self):
+        if self._session is None:
+            self._session = object()
+
+    async def call_tool(self, name, arguments):
+        if self.failures > 0:
+            self.failures -= 1
+            raise ConnectionError("not connected: closed")
+        if self._session is None:
+            raise ConnectionError("not connected: closed")
+        return {
+            "content": [{"type": "text", "text": "ok"}],
+            "isError": False,
+        }
+
+    async def list_tools(self):
+        return []
+
+    async def close(self):
+        self.closed += 1
+        self._session = None
+
+
+class ErrorTextTransport:
+    def __init__(self):
+        self._session = object()
+
+    @property
+    def is_connected(self):
+        return self._session is not None
+
+    async def connect(self):
+        pass
+
+    async def call_tool(self, name, arguments):
+        return {
+            "content": [{"type": "text", "text": "ERROR: boom"}],
+            "isError": True,
+        }
+
+    async def list_tools(self):
+        return []
+
+    async def close(self):
+        self._session = None
+
+
+@pytest.mark.asyncio
+async def test_tool_is_error_keeps_real_text_output():
+    adapter = McpAdapter({"demo": {}})
+    adapter._transports["demo"] = ErrorTextTransport()
+
+    result = await adapter.tool("demo", "shell", {})
+
+    assert result.ok is False
+    assert result.error is None
+    assert result.output == "ERROR: boom"
+
+
+@pytest.mark.asyncio
+async def test_tool_reconnects_after_connection_error():
+    adapter = McpAdapter({"demo": {}})
+    transport = StickyTransport()
+    adapter._transports["demo"] = transport
+
+    first = await adapter.tool("demo", "echo", {})
+    second = await adapter.tool("demo", "echo", {})
+
+    assert first.error.startswith("not connected")
+    assert second.ok is True
+    assert "ok" in second.output
+    assert transport.closed == 1
 
 
 @pytest.mark.asyncio
@@ -117,7 +201,7 @@ async def test_tool_calls_stdio_mcp_server(tmp_path):
         await adapter.close()
 
     assert result.ok is True
-    assert "echo:hello" in result.output
+    assert result.output == "echo:hello"
 
 
 @pytest.mark.asyncio
@@ -148,7 +232,7 @@ async def test_tool_reports_not_connected_for_failing_server(tmp_path):
     result = await adapter.tool("demo", "echo", {})
 
     assert result.ok is False
-    assert result.error == "not connected"
+    assert result.error.startswith("not connected")
 
 
 class MissingMcpEndpoint(BaseHTTPRequestHandler):
@@ -181,4 +265,4 @@ async def test_streamable_http_unavailable_returns_not_connected():
         server.server_close()
 
     assert result.ok is False
-    assert result.error == "not connected"
+    assert result.error.startswith("not connected")
