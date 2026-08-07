@@ -211,6 +211,17 @@ export class ApiClient {
     });
   }
 
+  addTaskInstruction(
+    taskId: string,
+    instruction: string,
+  ): Promise<{ task_id: string; status: string }> {
+    return this.request(`/api/v1/tasks/${encodeURIComponent(taskId)}/instructions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ instruction }),
+    });
+  }
+
   pauseTask(taskId: string): Promise<{ status: string }> {
     return this.request(`/api/v1/tasks/${encodeURIComponent(taskId)}/pause`, {
       method: 'POST',

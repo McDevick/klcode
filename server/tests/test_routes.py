@@ -516,6 +516,45 @@ def test_task_create_with_missing_session_returns_404_with_deps(tmp_path):
     assert response.status_code == 404
 
 
+def test_task_create_rejects_missing_workspace(tmp_path):
+    client = make_deps_client(tmp_path)
+    session_id = client.post(
+        "/api/v1/sessions",
+        json={"workspace": str(tmp_path / "missing")},
+    ).json()["id"]
+
+    response = client.post(
+        "/api/v1/tasks",
+        json={"session_id": session_id, "description": "hello"},
+    )
+
+    assert response.status_code == 400
+    assert "workspace does not exist" in response.json()["detail"]
+
+
+def test_task_instruction_endpoint_adds_to_loop(tmp_path):
+    client = make_deps_client(tmp_path)
+    session_id = client.post(
+        "/api/v1/sessions",
+        json={"workspace": str(tmp_path)},
+    ).json()["id"]
+    task = client.post(
+        "/api/v1/tasks",
+        json={"session_id": session_id, "description": "hello"},
+    ).json()
+
+    response = client.post(
+        f"/api/v1/tasks/{task['id']}/instructions",
+        json={"instruction": "请先运行测试"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "instruction_added"
+    assert client.app.state.deps.loop._instructions[task["id"]] == [
+        "请先运行测试"
+    ]
+
+
 def test_task_create_with_existing_session_succeeds_with_deps(tmp_path):
     client = make_deps_client(tmp_path)
 

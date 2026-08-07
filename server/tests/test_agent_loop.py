@@ -784,6 +784,27 @@ async def test_loop_injects_resolved_model_into_system_message_and_tracks_switch
 
 
 @pytest.mark.asyncio
+async def test_loop_appends_instruction_to_history():
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+    provider = MockProvider(responses=["DONE"])
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=2),
+    )
+
+    loop.add_instruction("s1", "请先运行测试")
+    await loop.run(Session(id="s1", workspace="."), "task")
+
+    assert any(
+        message.get("role") == "user"
+        and message.get("content") == "[追加说明] 请先运行测试"
+        for message in provider.calls[0].messages
+    )
+
+
+@pytest.mark.asyncio
 async def test_loop_falls_back_to_injected_provider_when_registry_misses():
     registry = ToolRegistry()
     registry.register(FinalTool())

@@ -120,6 +120,7 @@ class AgentLoop:
         # task_id -> gate event；pause 时 clear，resume/重新 run 时移除并 set。
         # AgentLoop 在迭代边界 await，使 /pause 真正挂起执行而非只改数据库状态。
         self._pause_events: dict[str, asyncio.Event] = {}
+        self._instructions: dict[str, list[str]] = {}
 
     def set_paused(self, task_id: str, paused: bool) -> None:
         """Pause (clear gate) or resume (remove gate) a task's execution."""
@@ -129,6 +130,9 @@ class AgentLoop:
         event = self._pause_events.pop(task_id, None)
         if event is not None:
             event.set()
+
+    def add_instruction(self, task_id: str, instruction: str) -> None:
+        self._instructions.setdefault(task_id, []).append(instruction)
 
     async def _wait_if_paused(self, task_id: str) -> None:
         """Block until the task is resumed (no-op when not paused)."""
@@ -176,6 +180,20 @@ class AgentLoop:
         system_message = {"role": "system", "content": SYSTEM_PROMPT}
         for iteration in range(self.settings.max_iterations):
             await self._wait_if_paused(task_id)
+            pending_instructions = self._instructions.pop(task_id, [])
+            for instruction in pending_instructions:
+                history.append(
+                    {
+                        "role": "user",
+                        "content": f"[追加说明] {instruction}",
+                    }
+                )
+                if self.logger:
+                    self.logger.write(
+                        "instruction_added",
+                        {"instruction": instruction[:500]},
+                        task_id,
+                    )
             if self.logger:
                 self.logger.write("llm_call", {"iteration": iteration}, task_id)
             try:

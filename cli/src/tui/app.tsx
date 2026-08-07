@@ -28,6 +28,7 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { name: '/compact', desc: '压缩当前上下文' },
   { name: '/help', desc: '显示帮助' },
   { name: '/abort', desc: '中止当前任务' },
+  { name: '/note', desc: '给当前任务追加说明' },
   { name: '/pause', desc: '暂停任务' },
   { name: '/continue', desc: '继续任务' },
   { name: '/debug', desc: '调试模式开关（显示轮次与原始回复）' },
@@ -698,6 +699,27 @@ export function App() {
     }
     if (commandName === '/mouse') {
       toggleMouseTracking();
+      return;
+    }
+    if (commandName === '/note') {
+      const text = args.join(' ');
+      if (!text) {
+        pushMessage('agent', '/note <说明>: 请提供要追加的内容', 'error');
+        return;
+      }
+      if (taskId === null) {
+        pushMessage('agent', '/note: 当前无任务', 'error');
+        return;
+      }
+      const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
+      client
+        .addTaskInstruction(taskId, text)
+        .then(() => {
+          pushMessage('agent', `已追加说明: ${text}`, 'done');
+        })
+        .catch((error: unknown) => {
+          pushMessage('agent', `追加说明失败: ${String(error)}`, 'error');
+        });
       return;
     }
     if (commandName === '/abort' || commandName === '/pause' || commandName === '/continue') {

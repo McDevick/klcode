@@ -342,15 +342,15 @@ test('slash menu opens on / and arrow selection fills the input', async () => {
     const menuFrame = lastFrame() ?? '';
     expect(menuFrame.indexOf('/context')).toBeLessThan(menuFrame.indexOf('> '));
 
-    // 滚动窗口：ArrowDown 一路到 /exit（index 15，共 16 项）后菜单滚动显示底部命令
-    for (let i = 0; i < 15; i += 1) {
+    // 滚动窗口：ArrowDown 一路到 /exit（index 16，共 17 项）后菜单滚动显示底部命令
+    for (let i = 0; i < 16; i += 1) {
       stdin.write('[B');
     }
     await sleep(30);
     expect(lastFrame()).toContain('退出 TUI');
 
     // ArrowDown 回到 index 0（/session），Enter 填入输入框
-    for (let i = 0; i < 15; i += 1) {
+    for (let i = 0; i < 16; i += 1) {
       stdin.write('[A');
     }
     await sleep(30);
@@ -851,6 +851,33 @@ test('app aborts the current task via the api', async () => {
       expect.objectContaining({ method: 'POST' }),
     );
     await waitFor(() => (lastFrame() ?? '').includes('任务状态: canceled'));
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app /note appends instruction to current task', async () => {
+  const fetchMock = taskFetchMocks();
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('hello');
+    stdin.write('\r');
+    await waitFor(() => FakeWebSocket.instances.length > 0);
+    stdin.write('/note 请先运行测试');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('已追加说明: 请先运行测试'));
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:8700/api/v1/tasks/t1/instructions',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('请先运行测试'),
+      }),
+    );
   } finally {
     unmount();
     vi.unstubAllGlobals();

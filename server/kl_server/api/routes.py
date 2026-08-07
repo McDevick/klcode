@@ -1,7 +1,9 @@
 import asyncio
 import json
+import os
 import re
 from pathlib import Path
+from uuid import uuid4
 
 import yaml
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -25,6 +27,21 @@ def _persist_config(deps) -> None:
         yaml.safe_dump(deps.config.model_dump(), allow_unicode=True),
         encoding="utf-8",
     )
+
+
+def _validate_workspace(path: str) -> str | None:
+    target = Path(path)
+    if not target.exists():
+        return "workspace does not exist"
+    if not target.is_dir():
+        return "workspace is not a directory"
+    probe = target / f".kl-write-probe-{uuid4().hex[:8]}"
+    try:
+        probe.write_text("", encoding="utf-8")
+        probe.unlink()
+    except OSError as exc:
+        return f"workspace is not writable: {exc}"
+    return None
 
 
 # Task ids of currently executing background tasks, so they can be cancelled.
@@ -53,6 +70,17 @@ class CreateTaskPayload(BaseModel):
         if value not in {"git", "managed", "unmanaged", "snapshot", "manual"}:
             raise ValueError(f"unknown workspace mode: {value}")
         return value
+
+
+class TaskInstructionPayload(BaseModel):
+    instruction: str
+
+    @field_validator("instruction")
+    @classmethod
+    def _valid_instruction(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("instruction must not be blank")
+        return value.strip()
 
 
 class ProviderPayload(BaseModel):
@@ -214,6 +242,12 @@ def _history_message(record: dict) -> dict | None:
             "type": "agent",
             "content": f"{payload.get('tool', 'tool')}: {payload.get('category', 'unknown')}",
             "kind": "feedback",
+        }
+    if event == "instruction_added":
+        return {
+            "type": "user",
+            "content": f"[追加说明] {payload.get('instruction', '')}",
+            "kind": "text",
         }
     if event == "provider_error":
         return {
@@ -563,9 +597,18 @@ def build_router() -> APIRouter:
         )
         if deps is not None:
             try:
-                await deps.sessions.get(payload.session_id)
+                session = await deps.sessions.get(payload.session_id)
             except KeyError:
                 raise HTTPException(status_code=404, detail="session not found")
+            workspace_error = await asyncio.to_thread(
+                _validate_workspace,
+                session.workspace,
+            )
+            if workspace_error is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"workspace invalid: {workspace_error}",
+                )
             await deps.tasks.create(task)
         next_task_id += 1
         record = task_dict(task)
@@ -621,6 +664,30 @@ def build_router() -> APIRouter:
         # （否则 abort 可能落在协程尚未把自身写入 _running_tasks 的窗口里）。
         _running_tasks[task.id] = asyncio.create_task(_execute_task(deps, session, task, bus))
         return {"status": "running"}
+
+    @router.post("/tasks/{task_id}/instructions")
+    async def add_task_instruction(
+        task_id: str,
+        payload: TaskInstructionPayload,
+        request: Request,
+    ):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is None:
+            raise HTTPException(
+                status_code=501,
+                detail="task execution requires a configured server",
+            )
+        try:
+            task = await deps.tasks.get(task_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="task not found")
+        if task.status in (TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.CANCELED):
+            raise HTTPException(
+                status_code=409,
+                detail=f"cannot add instruction to task in {task.status.value}",
+            )
+        deps.loop.add_instruction(task.id, payload.instruction)
+        return {"task_id": task.id, "status": "instruction_added"}
 
     @router.post("/tasks/{task_id}/abort")
     async def abort_task(task_id: str, request: Request):
