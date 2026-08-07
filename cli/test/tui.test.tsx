@@ -337,20 +337,20 @@ test('slash menu opens on / and arrow selection fills the input', async () => {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('/');
     // 命令面板出现（测试视口较矮，断言窗口底部靠输入框的可见项）
-    await waitFor(() => (lastFrame() ?? '').includes('/compact'));
-    expect(lastFrame()).toContain('/compact');
+    await waitFor(() => (lastFrame() ?? '').includes('/context'));
+    expect(lastFrame()).toContain('/context');
     const menuFrame = lastFrame() ?? '';
-    expect(menuFrame.indexOf('/compact')).toBeLessThan(menuFrame.indexOf('> '));
+    expect(menuFrame.indexOf('/context')).toBeLessThan(menuFrame.indexOf('> '));
 
-    // 滚动窗口：ArrowDown 一路到 /exit（index 14，共 15 项）后菜单滚动显示底部命令
-    for (let i = 0; i < 14; i += 1) {
+    // 滚动窗口：ArrowDown 一路到 /exit（index 15，共 16 项）后菜单滚动显示底部命令
+    for (let i = 0; i < 15; i += 1) {
       stdin.write('[B');
     }
     await sleep(30);
     expect(lastFrame()).toContain('退出 TUI');
 
     // ArrowDown 回到 index 0（/session），Enter 填入输入框
-    for (let i = 0; i < 14; i += 1) {
+    for (let i = 0; i < 15; i += 1) {
       stdin.write('[A');
     }
     await sleep(30);
@@ -1137,43 +1137,29 @@ test('app /model <provider> switches model via api', async () => {
   }
 });
 
-test('app /config opens the config wizard menu', async () => {
-  const fetchMock = urlFetchMock();
-  vi.stubGlobal('fetch', fetchMock);
-  const restore = stubWebSocket();
-  const { stdin, lastFrame, unmount } = render(<App />);
-  try {
-    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
-    stdin.write('/config');
-    stdin.write('\r');
-    await waitFor(() => (lastFrame() ?? '').includes('配置向导'));
-    const configFrame = lastFrame() ?? '';
-    expect(configFrame.indexOf('配置向导')).toBeLessThan(configFrame.indexOf('> '));
-    expect(lastFrame()).toContain('provider add');
-    expect(lastFrame()).toContain('key set');
-    expect(lastFrame()).toContain('model set');
-  } finally {
-    unmount();
-    vi.unstubAllGlobals();
-    restore();
-  }
-});
-
-test('app config wizard lists providers and esc returns to menu', async () => {
+test('app /connect lists configured providers', async () => {
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET';
     if (url.includes('/api/v1/sessions') && method === 'GET') return listSessionsEmpty;
     if (url.includes('/api/v1/sessions') && method === 'POST') return sessionResponse;
     if (url.includes('/config/model')) return modelConfigResponse;
-    if (url.includes('/api/v1/providers')) {
+    if (url.includes('/api/v1/providers') && method === 'GET') {
       return {
         ok: true,
         status: 200,
         json: async () => [
           { name: 'mock', type: 'mock' },
-          { name: 'deepseek', type: 'openai-compatible', base_url: 'https://api.deepseek.com/v1' },
+          {
+            name: 'deepseek',
+            type: 'openai-compatible',
+            base_url: 'https://api.deepseek.com/v1',
+            credential_ref: 'deepseek',
+          },
         ],
       };
+    }
+    if (url.includes('/api/v1/keys') && method === 'GET') {
+      return { ok: true, status: 200, json: async () => ({ configured: ['deepseek'] }) };
     }
     return { ok: true, status: 200, json: async () => ({}) };
   });
@@ -1182,15 +1168,11 @@ test('app config wizard lists providers and esc returns to menu', async () => {
   const { stdin, lastFrame, unmount } = render(<App />);
   try {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
-    stdin.write('/config');
+    stdin.write('/connect');
     stdin.write('\r');
-    await waitFor(() => (lastFrame() ?? '').includes('配置向导'));
-    await sleep(200); // 等待 ConfigWizard 的 useInput 订阅建立，避免首个按键丢失
-    stdin.write('\r'); // 第一项：provider list
-    await waitFor(() => (lastFrame() ?? '').includes('deepseek'));
+    await waitFor(() => (lastFrame() ?? '').includes('API 连接'));
     expect(lastFrame()).toContain('deepseek');
-    stdin.write('\u001b'); // esc 返回菜单
-    await waitFor(() => (lastFrame() ?? '').includes('provider add'));
+    expect(lastFrame()).toContain('✓ 已配置');
   } finally {
     unmount();
     vi.unstubAllGlobals();
@@ -1198,23 +1180,77 @@ test('app config wizard lists providers and esc returns to menu', async () => {
   }
 });
 
-test('app config wizard adds a provider via form', async () => {
+test('app /connect ignores plaintext provider without credential_ref', async () => {
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET';
     if (url.includes('/api/v1/sessions') && method === 'GET') return listSessionsEmpty;
     if (url.includes('/api/v1/sessions') && method === 'POST') return sessionResponse;
     if (url.includes('/config/model')) return modelConfigResponse;
-    if (url.includes('/api/v1/providers')) {
+    if (url.includes('/api/v1/providers') && method === 'GET') {
       return {
         ok: true,
         status: 200,
-        json: async () => ({
-          name: 'acme',
-          type: 'openai-compatible',
-          base_url: 'http://example.com/v1',
-          default_model: 'model-x',
-        }),
+        json: async () => [
+          { name: 'mock', type: 'mock' },
+          {
+            name: 'deepseek',
+            type: 'openai-compatible',
+            base_url: 'https://api.deepseek.com/v1',
+            credential_ref: null,
+          },
+        ],
       };
+    }
+    if (url.includes('/api/v1/keys') && method === 'GET') {
+      return { ok: true, status: 200, json: async () => ({ configured: ['deepseek'] }) };
+    }
+    return { ok: true, status: 200, json: async () => ({}) };
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('/connect');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('deepseek'));
+    expect(lastFrame()).toContain('未配置');
+    expect(lastFrame() ?? '').not.toContain('✓ 已配置');
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app /connect saves and overwrites provider api key', async () => {
+  let configuredKeys: string[] = [];
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    if (url.includes('/api/v1/sessions') && method === 'GET') return listSessionsEmpty;
+    if (url.includes('/api/v1/sessions') && method === 'POST') return sessionResponse;
+    if (url.includes('/config/model')) return modelConfigResponse;
+    if (url.includes('/api/v1/providers') && method === 'GET') {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [
+          { name: 'mock', type: 'mock' },
+          {
+            name: 'deepseek',
+            type: 'openai-compatible',
+            base_url: 'https://api.deepseek.com/v1',
+            credential_ref: 'deepseek',
+          },
+        ],
+      };
+    }
+    if (url.includes('/api/v1/keys/deepseek') && method === 'POST') {
+      configuredKeys = ['deepseek'];
+      return { ok: true, status: 200, json: async () => ({ configured: true }) };
+    }
+    if (url.includes('/api/v1/keys') && method === 'GET') {
+      return { ok: true, status: 200, json: async () => ({ configured: configuredKeys }) };
     }
     return { ok: true, status: 200, json: async () => ({}) };
   });
@@ -1225,26 +1261,100 @@ test('app config wizard adds a provider via form', async () => {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('/config');
     stdin.write('\r');
-    await waitFor(() => (lastFrame() ?? '').includes('配置向导'));
-    await sleep(200); // 等待 ConfigWizard 的 useInput 订阅建立
-    stdin.write('[B');
+    await waitFor(() => (lastFrame() ?? '').includes('API 连接'));
+    await waitFor(() => (lastFrame() ?? '').includes('deepseek'));
+    await sleep(100);
+
     stdin.write('\r');
-    await waitFor(() => (lastFrame() ?? '').includes('注册 provider'));
-    stdin.write('acme');
-    await sleep(80);
+    await waitFor(() => (lastFrame() ?? '').includes('API Key for deepseek'));
+    stdin.write('sk-first-secret');
+    await sleep(50);
+    expect(lastFrame() ?? '').not.toContain('sk-first-secret');
+    expect(lastFrame()).toContain('•');
     stdin.write('\r');
-    await sleep(80);
+    await waitFor(() => (lastFrame() ?? '').includes('已保存: deepseek'));
+
     stdin.write('\r');
-    await sleep(80);
-    stdin.write('http://example.com/v1');
-    await sleep(80);
+    await waitFor(() => (lastFrame() ?? '').includes('API Key for deepseek'));
+    stdin.write('sk-second-secret');
+    await sleep(50);
     stdin.write('\r');
-    await sleep(80);
-    stdin.write('model-x');
-    await sleep(80);
+    await waitFor(() => (lastFrame() ?? '').includes('已保存: deepseek'));
+
+    const postCalls = fetchMock.mock.calls.filter(
+      (call) =>
+        String(call[0]).includes('/api/v1/keys/deepseek') &&
+        (call[1] as RequestInit)?.method === 'POST',
+    );
+    expect(postCalls).toHaveLength(2);
+    expect(JSON.parse(String((postCalls[0][1] as RequestInit).body))).toEqual({
+      secret: 'sk-first-secret',
+    });
+    expect(JSON.parse(String((postCalls[1][1] as RequestInit).body))).toEqual({
+      secret: 'sk-second-secret',
+    });
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app /connect pastes into api key input', async () => {
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    if (url.includes('/api/v1/sessions') && method === 'GET') return listSessionsEmpty;
+    if (url.includes('/api/v1/sessions') && method === 'POST') return sessionResponse;
+    if (url.includes('/config/model')) return modelConfigResponse;
+    if (url.includes('/api/v1/providers') && method === 'GET') {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [
+          { name: 'mock', type: 'mock' },
+          {
+            name: 'deepseek',
+            type: 'openai-compatible',
+            base_url: 'https://api.deepseek.com/v1',
+            credential_ref: 'deepseek',
+          },
+        ],
+      };
+    }
+    if (url.includes('/api/v1/keys/deepseek') && method === 'POST') {
+      return { ok: true, status: 200, json: async () => ({ configured: true }) };
+    }
+    if (url.includes('/api/v1/keys') && method === 'GET') {
+      return { ok: true, status: 200, json: async () => ({ configured: ['deepseek'] }) };
+    }
+    return { ok: true, status: 200, json: async () => ({}) };
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('/connect');
     stdin.write('\r');
-    await waitFor(() => (lastFrame() ?? '').includes('provider 已注册'), 3000);
-    expect(fetchMock.mock.calls.some((c) => c[0] === 'http://127.0.0.1:8700/api/v1/providers')).toBe(true);
+    await waitFor(() => (lastFrame() ?? '').includes('API 连接'));
+    await waitFor(() => (lastFrame() ?? '').includes('deepseek'));
+    await sleep(100);
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('API Key for deepseek'));
+
+    stdin.write('\x1b[200~sk-pasted-secret\x1b[201~');
+    await waitFor(() => (lastFrame() ?? '').includes('•'));
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('已保存: deepseek'));
+
+    const postCall = fetchMock.mock.calls.find(
+      (call) =>
+        String(call[0]).includes('/api/v1/keys/deepseek') &&
+        (call[1] as RequestInit)?.method === 'POST',
+    );
+    expect(JSON.parse(String((postCall?.[1] as RequestInit)?.body))).toEqual({
+      secret: 'sk-pasted-secret',
+    });
   } finally {
     unmount();
     vi.unstubAllGlobals();
@@ -1310,8 +1420,32 @@ test('mouse click sequence is not injected into input', async () => {
   }
 });
 
-test('wheel does not scroll conversation while config wizard is open', async () => {
-  const fetchMock = urlFetchMock();
+test('wheel does not scroll conversation while connect panel is open', async () => {
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    if (url.includes('/api/v1/sessions') && method === 'GET') return listSessionsEmpty;
+    if (url.includes('/api/v1/sessions') && method === 'POST') return sessionResponse;
+    if (url.includes('/config/model')) return modelConfigResponse;
+    if (url.includes('/api/v1/providers') && method === 'GET') {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [
+          { name: 'mock', type: 'mock' },
+          {
+            name: 'deepseek',
+            type: 'openai-compatible',
+            base_url: 'https://api.deepseek.com/v1',
+            credential_ref: 'deepseek',
+          },
+        ],
+      };
+    }
+    if (url.includes('/api/v1/keys') && method === 'GET') {
+      return { ok: true, status: 200, json: async () => ({ configured: [] }) };
+    }
+    return { ok: true, status: 200, json: async () => ({}) };
+  });
   vi.stubGlobal('fetch', fetchMock);
   const restore = stubWebSocket();
   const { stdin, lastFrame, unmount } = render(<App />);
@@ -1323,10 +1457,10 @@ test('wheel does not scroll conversation while config wizard is open', async () 
     await waitFor(() => (lastFrame() ?? '').includes('鼠标追踪: 开'));
     stdin.write('/config');
     stdin.write('\r');
-    await waitFor(() => (lastFrame() ?? '').includes('配置向导'));
+    await waitFor(() => (lastFrame() ?? '').includes('API 连接'));
     stdin.write('\x1b[<64;5;5M'); // 滚轮上滚
     await sleep(150);
-    expect(lastFrame()).toContain('配置向导');
+    expect(lastFrame()).toContain('API 连接');
   } finally {
     unmount();
     vi.unstubAllGlobals();

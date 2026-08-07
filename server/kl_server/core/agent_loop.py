@@ -248,10 +248,35 @@ class AgentLoop:
                         pass  # 回退 self.provider
                 # Sessions default to the mock model name; fall back to the
                 # global default model, then to the provider's own default.
+                resolved_provider_name = (
+                    self.default_provider()
+                    if self.default_provider is not None
+                    else ""
+                )
+                provider_mismatch = bool(
+                    resolved_provider_name
+                    and session.provider
+                    and session.provider.lower() != resolved_provider_name.lower()
+                )
+                global_model = (
+                    self.default_model() if self.default_model is not None else ""
+                ) or ""
                 model = session.model
-                if not model or model == "mock-model":
-                    global_model = (self.default_model() if self.default_model is not None else "") or ""
-                    model = global_model or (getattr(provider, "model", None) or model)
+                if global_model:
+                    model = global_model
+                elif not model or model == "mock-model" or provider_mismatch:
+                    model = getattr(provider, "model", None) or model
+                request_messages.insert(
+                    1,
+                    {
+                        "role": "system",
+                        "content": (
+                            "当前运行模型: "
+                            f"provider={resolved_provider_name or 'default'}, "
+                            f"model={model}"
+                        ),
+                    },
+                )
                 response = await provider.complete(
                     ProviderRequest(
                         messages=request_messages,

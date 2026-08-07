@@ -51,6 +51,7 @@ export interface ProviderResult {
   type: string;
   base_url?: string;
   default_model?: string;
+  credential_ref?: string | null;
 }
 
 export interface SkillInfo {

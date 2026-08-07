@@ -68,3 +68,54 @@ def test_app_config_loads_models_from_yaml(tmp_path):
         "deepseek-v4-flash",
         "deepseek-v4-pro",
     ]
+
+
+def test_app_config_merges_deepseek_preset_when_missing(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text("", encoding="utf-8")
+
+    config = load_app_config(path)
+
+    assert config.default_provider == "deepseek"
+    provider = config.providers["deepseek"]
+    assert provider.base_url == "https://api.deepseek.com"
+    assert provider.default_model == "deepseek-v4-flash"
+    assert provider.models == ["deepseek-v4-flash", "deepseek-v4-pro"]
+    assert provider.credential_ref is None
+
+
+def test_app_config_user_deepseek_overrides_preset_fields(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "providers:\n"
+        "  deepseek:\n"
+        "    base_url: https://custom.deepseek.com\n"
+        "    default_model: deepseek-v4-pro\n",
+        encoding="utf-8",
+    )
+
+    config = load_app_config(path)
+
+    provider = config.providers["deepseek"]
+    assert provider.base_url == "https://custom.deepseek.com"
+    assert provider.default_model == "deepseek-v4-pro"
+    assert provider.max_context == 20000
+    assert provider.models == ["deepseek-v4-flash", "deepseek-v4-pro"]
+
+
+def test_app_config_merges_existing_capitalized_deepseek(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "providers:\n"
+        "  Deepseek:\n"
+        "    base_url: https://custom.deepseek.com\n"
+        "    default_model: deepseek-v4-pro\n",
+        encoding="utf-8",
+    )
+
+    config = load_app_config(path)
+
+    assert config.default_provider == "Deepseek"
+    provider = config.providers["Deepseek"]
+    assert provider.base_url == "https://custom.deepseek.com"
+    assert provider.max_context == 20000

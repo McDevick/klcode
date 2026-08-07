@@ -92,9 +92,10 @@ class McpServerPayload(BaseModel):
 
 
 def _provider_models(provider_config: ProviderConfig) -> list[str]:
-    return provider_config.models or (
-        [provider_config.default_model] if provider_config.default_model else []
-    )
+    models = list(provider_config.models)
+    if provider_config.default_model and provider_config.default_model not in models:
+        models.insert(0, provider_config.default_model)
+    return models
 
 
 def _model_available(config: AppConfig) -> list[dict]:
@@ -734,6 +735,7 @@ def build_router() -> APIRouter:
                     "type": provider_config.type,
                     "base_url": provider_config.base_url,
                     "default_model": provider_config.default_model,
+                    "credential_ref": provider_config.credential_ref,
                 }
                 for name, provider_config in deps.config.providers.items()
             )
@@ -828,7 +830,11 @@ def build_router() -> APIRouter:
     def list_keys(request: Request):
         deps = getattr(request.app.state, "deps", None)
         if deps is not None:
-            return {"configured": sorted(deps.credentials.safe_snapshot())}
+            refs = set(deps.credentials.safe_snapshot())
+            for name, provider_config in deps.config.providers.items():
+                refs.add(provider_config.credential_ref or name)
+            configured = sorted(ref for ref in refs if deps.credentials.has(ref))
+            return {"configured": configured}
         return {"configured": sorted(keys)}
 
     @router.post("/keys/{ref}")
@@ -836,14 +842,23 @@ def build_router() -> APIRouter:
         deps = getattr(request.app.state, "deps", None)
         if deps is not None:
             deps.credentials.set(ref, payload.secret)
+            provider_config = deps.config.providers.get(ref)
+            if provider_config is not None:
+                provider_config.credential_ref = ref
+                provider_config.api_key = None
+                _persist_config(deps)
             # 刷新已注册 provider 的 api_key：provider 注册时取的 key 可能为空
             # （bootstrap 只从环境变量取），key set 后必须即时生效。
             try:
                 provider = deps.provider_registry.get(ref)
             except KeyError:
                 provider = None
-            if provider is not None and hasattr(provider, "api_key"):
-                provider.api_key = payload.secret
+            if provider is not None:
+                set_api_key = getattr(provider, "set_api_key", None)
+                if set_api_key is not None:
+                    set_api_key(payload.secret)
+                elif hasattr(provider, "api_key"):
+                    provider.api_key = payload.secret
             return {"configured": True}
         keys.add(ref)
         return {"configured": True}

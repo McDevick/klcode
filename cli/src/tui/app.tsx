@@ -4,12 +4,12 @@ import { Header } from './components/header';
 import { Messages } from './components/messages';
 import { InputFooter } from './components/input-footer';
 import { CommandMenu } from './components/command-menu';
-import { ConfigWizard } from './components/config-wizard';
 import { DockedPanel } from './components/docked-panel';
 import { SessionManager } from './components/session-manager';
 import { SkillsMenu } from './components/skills-menu';
 import { McpManager } from './components/mcp-manager';
 import { ModelManager } from './components/model-manager';
+import { ConnectManager } from './components/connect-manager';
 import { ApiClient, DEFAULT_BASE_URL, type SkillInfo } from '../api/client';
 import { connectTaskEvents } from '../api/events';
 import { sendApprovalDecision, type ApprovalDecision } from './screens/approval';
@@ -20,7 +20,8 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { name: '/session', desc: '打开会话管理' },
   { name: '/skills', desc: '查看当前可用 skill' },
   { name: '/mcp', desc: '管理 MCP server' },
-  { name: '/config', desc: '打开配置向导' },
+  { name: '/config', desc: '配置 provider API 连接' },
+  { name: '/connect', desc: '配置 provider API 连接' },
   { name: '/status', desc: '查看当前状态' },
   { name: '/model', desc: '查看/切换模型' },
   { name: '/context', desc: '查看上下文占用' },
@@ -199,7 +200,7 @@ export function App() {
   const [running, setRunning] = useState<RunningTask | null>(null);
   const [approval, setApproval] = useState<ApprovalRequest | null>(null);
   const [approvalIndex, setApprovalIndex] = useState(0);
-  const [configWizardOpen, setConfigWizardOpen] = useState(false);
+  const [connectOpen, setConnectOpen] = useState(false);
   const [sessionManagerOpen, setSessionManagerOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [skills, setSkills] = useState<SkillInfo[]>([]);
@@ -289,7 +290,7 @@ export function App() {
       const text = chunk.toString('utf8');
       const match = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/.exec(text);
       if (match === null) return;
-      if (configWizardOpen) return;
+      if (connectOpen) return;
       if (sessionManagerOpen) return;
       const button = Number(match[1]);
       if (button === 64) {
@@ -302,7 +303,7 @@ export function App() {
     return () => {
       stdin.off('data', onData);
     };
-  }, [configWizardOpen, mouseTracking, sessionManagerOpen]);
+  }, [connectOpen, mouseTracking, sessionManagerOpen]);
 
   useEffect(() => {
     const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
@@ -352,7 +353,7 @@ export function App() {
     const socket = connectTaskEvents(taskId, (event) => {
       setIsOnline(true);
       if (event.event === 'approval_request') {
-        setConfigWizardOpen(false);
+        setConnectOpen(false);
         setSessionManagerOpen(false);
         setSkillsOpen(false);
         setMcpOpen(false);
@@ -503,7 +504,7 @@ export function App() {
     setTaskStatus('idle');
     setRunning(null);
     setApproval(null);
-    setConfigWizardOpen(false);
+    setConnectOpen(false);
     setSessionManagerOpen(false);
     setSkillsOpen(false);
     setMcpOpen(false);
@@ -615,8 +616,8 @@ export function App() {
       setSkillsOpen(false);
       return;
     }
-    if (commandName === '/config') {
-      setConfigWizardOpen(true);
+    if (commandName === '/connect' || commandName === '/config') {
+      setConnectOpen(true);
       return;
     }
     if (commandName === '/model') {
@@ -780,15 +781,22 @@ export function App() {
     command.name.startsWith(inputValue),
   );
   const menuOpen = inputValue.startsWith('/') && !inputValue.includes(' ') && filteredCommands.length > 0;
-  const skillsPanelOpen = skillsOpen && !configWizardOpen && approval === null && !sessionManagerOpen;
-  const mcpPanelOpen = mcpOpen && !configWizardOpen && approval === null && !sessionManagerOpen && !skillsOpen;
+  const skillsPanelOpen = skillsOpen && !connectOpen && approval === null && !sessionManagerOpen;
+  const mcpPanelOpen = mcpOpen && !connectOpen && approval === null && !sessionManagerOpen && !skillsOpen;
   const modelPanelOpen =
     modelManagerOpen &&
-    !configWizardOpen &&
+    !connectOpen &&
     approval === null &&
     !sessionManagerOpen &&
     !skillsOpen &&
     !mcpOpen;
+  const connectPanelOpen =
+    connectOpen &&
+    approval === null &&
+    !sessionManagerOpen &&
+    !skillsOpen &&
+    !mcpOpen &&
+    !modelManagerOpen;
   const { stdout } = useStdout();
   const viewportRows = Math.max(
     1,
@@ -797,10 +805,10 @@ export function App() {
       (skillsPanelOpen ? 9 : 0) -
       (mcpPanelOpen ? 14 : 0) -
       (modelPanelOpen ? 12 : 0) -
-      (menuOpen && !configWizardOpen && approval === null && !sessionManagerOpen && !skillsPanelOpen && !mcpPanelOpen && !modelPanelOpen
+      (connectPanelOpen ? 12 : 0) -
+      (menuOpen && !connectOpen && approval === null && !sessionManagerOpen && !skillsPanelOpen && !mcpPanelOpen && !modelPanelOpen && !connectPanelOpen
         ? 9
-        : 0) -
-      (configWizardOpen ? 12 : 0),
+        : 0),
   );
 
   useInput((input, key) => {
@@ -811,8 +819,8 @@ export function App() {
     if (sessionManagerOpen) {
       return; // 会话管理面板内部处理输入
     }
-    if (configWizardOpen) {
-      return; // 配置向导组件内部处理输入
+    if (connectOpen) {
+      return; // API 连接面板内部处理输入
     }
     if (approval !== null) {
       if (key.upArrow) {
@@ -981,7 +989,7 @@ export function App() {
         viewportRows={viewportRows}
         onScrollTopChange={setScrollTop}
       />
-      {menuOpen && !configWizardOpen && approval === null && !sessionManagerOpen && !skillsPanelOpen && !mcpPanelOpen && !modelPanelOpen ? (
+      {menuOpen && !connectOpen && approval === null && !sessionManagerOpen && !skillsPanelOpen && !mcpPanelOpen && !modelPanelOpen && !connectPanelOpen ? (
         <DockedPanel>
           <CommandMenu
             commands={filteredCommands}
@@ -1012,12 +1020,9 @@ export function App() {
           />
         </DockedPanel>
       ) : null}
-      {configWizardOpen ? (
+      {connectPanelOpen ? (
         <DockedPanel borderColor={theme.surfaceAlt}>
-          <ConfigWizard
-            onClose={() => setConfigWizardOpen(false)}
-            onMessage={(content, kind) => pushMessage('agent', content, kind)}
-          />
+          <ConnectManager onClose={() => setConnectOpen(false)} />
         </DockedPanel>
       ) : null}
       {approval !== null ? (
@@ -1050,7 +1055,7 @@ export function App() {
             onClose={() => setSessionManagerOpen(false)}
           />
         </DockedPanel>
-      ) : (
+      ) : connectPanelOpen || modelPanelOpen || mcpPanelOpen || skillsPanelOpen ? null : (
         <InputFooter
           value={inputValue}
           modelName={modelName}

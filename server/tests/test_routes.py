@@ -406,6 +406,7 @@ async def test_delete_session_cleans_task_manage_state(tmp_path):
 @pytest.mark.asyncio
 async def test_context_status_and_compact(tmp_path):
     client = make_deps_client(tmp_path)
+    client.app.state.deps.config.default_provider = "mock"
     session_id = create_session(client, str(tmp_path)).json()["id"]
     memory = client.app.state.deps.memory
     await memory.add(session_id, "context_summary", [session_id], "some remembered context")
@@ -425,6 +426,7 @@ async def test_context_status_and_compact(tmp_path):
 @pytest.mark.asyncio
 async def test_compact_context_reduces_history_status(tmp_path):
     client = make_deps_client(tmp_path)
+    client.app.state.deps.config.default_provider = "mock"
     session_id = create_session(client, str(tmp_path)).json()["id"]
     task = client.post(
         "/api/v1/tasks",
@@ -770,13 +772,19 @@ def test_config_model_get_returns_current_default(tmp_path):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["provider"] == "mock"
-    assert body["model"] == "mock-model"
+    assert body["provider"] == "deepseek"
+    assert body["model"] == "deepseek-v4-flash"
     assert body["max_context"] == 20000
     assert {
         "provider": "mock",
         "model": "mock-model",
         "base_url": "",
+        "max_context": 20000,
+    } in body["available"]
+    assert {
+        "provider": "deepseek",
+        "model": "deepseek-v4-flash",
+        "base_url": "https://api.deepseek.com",
         "max_context": 20000,
     } in body["available"]
 
@@ -972,3 +980,89 @@ def test_set_key_refreshes_registered_provider_api_key(tmp_path):
 
     assert response.status_code == 200
     assert provider.api_key == "sk-new"
+    assert provider.openai.api_key == "sk-new"
+    config_text = config_path.read_text(encoding="utf-8")
+    assert "credential_ref: deepseek" in config_text
+    assert "sk-new" not in config_text
+
+
+def test_set_key_does_not_persist_secret_on_model_switch(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "default_provider: deepseek\n"
+        "providers:\n"
+        "  deepseek:\n"
+        "    type: openai-compatible\n"
+        "    base_url: https://api.deepseek.com\n"
+        "    default_model: deepseek-chat\n"
+        "    api_key: null\n",
+        encoding="utf-8",
+    )
+    deps = build_app_dependencies(
+        config_path=config_path,
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+    client = TestClient(create_app(deps=deps))
+
+    with client:
+        assert client.post(
+            "/api/v1/keys/deepseek",
+            json={"secret": "sk-protected"},
+        ).status_code == 200
+        assert client.post(
+            "/api/v1/config/model",
+            json={"provider": "deepseek", "model": "deepseek-chat"},
+        ).status_code == 200
+
+    config_text = config_path.read_text(encoding="utf-8")
+    assert "sk-protected" not in config_text
+
+
+class RestartedCredentialStore:
+    def __init__(self):
+        self._secrets = {"deepseek": "sk-restored"}
+
+    def set(self, ref, secret):
+        self._secrets[ref] = secret
+
+    def get(self, ref):
+        return self._secrets.get(ref)
+
+    def has(self, ref):
+        return ref in self._secrets
+
+    def clear(self, ref):
+        self._secrets.pop(ref, None)
+
+    def safe_snapshot(self):
+        return {}
+
+
+def test_list_keys_detects_keyring_keys_after_restart(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "providers:\n"
+        "  deepseek:\n"
+        "    type: openai-compatible\n"
+        "    base_url: https://api.deepseek.com\n"
+        "    default_model: deepseek-chat\n"
+        "    credential_ref: deepseek\n",
+        encoding="utf-8",
+    )
+    deps = build_app_dependencies(
+        config_path=config_path,
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=RestartedCredentialStore(),
+    )
+    client = TestClient(create_app(deps=deps))
+
+    with client:
+        response = client.get("/api/v1/keys")
+
+    assert response.status_code == 200
+    assert response.json() == {"configured": ["deepseek"]}

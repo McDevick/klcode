@@ -34,6 +34,10 @@ class OpenAICompatibleProvider:
             http_client=self.client,
         )
 
+    def set_api_key(self, api_key: str | None) -> None:
+        self.api_key = api_key
+        self.openai.api_key = api_key or "not-needed"
+
     async def complete(self, request: ProviderRequest) -> ProviderResponse:
         model = request.model or self.model
         kwargs: dict = {
@@ -47,7 +51,10 @@ class OpenAICompatibleProvider:
         try:
             response = await self.openai.chat.completions.create(**kwargs)
         except openai.APIStatusError as exc:
-            raise ProviderError(f"provider http error: {exc.status_code}") from exc
+            detail = exc.body if exc.body is not None else exc.message
+            raise ProviderError(
+                f"provider http error: {exc.status_code}: {detail}"
+            ) from exc
         except openai.APITimeoutError as exc:
             raise ProviderError("provider timeout") from exc
         except openai.OpenAIError as exc:

@@ -161,8 +161,9 @@ async def test_openai_compatible_provider_wraps_http_error():
         model="gpt-test",
         client=client,
     )
-    with pytest.raises(ProviderError, match="provider http error: 500"):
+    with pytest.raises(ProviderError, match="provider http error: 500") as exc_info:
         await provider.complete(ProviderRequest(messages=[], model="gpt-test"))
+    assert "boom" in str(exc_info.value)
 
 
 @pytest.mark.asyncio

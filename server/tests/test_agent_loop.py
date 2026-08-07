@@ -345,8 +345,16 @@ async def test_loop_uses_context_assembler():
     assert tools[0]["function"]["name"] == "final"
     # 规则/记忆作为 system 上下文注入，原生 role 历史完整保留在后面。
     assert provider.calls[0].messages[0]["role"] == "system"
-    assert provider.calls[0].messages[1] == {"role": "system", "content": "assembled"}
-    assert provider.calls[0].messages[2] == {"role": "user", "content": "task"}
+    system_messages = [
+        message
+        for message in provider.calls[0].messages
+        if message["role"] == "system"
+    ]
+    assert any(message.get("content") == "assembled" for message in system_messages)
+    assert any(
+        message.get("role") == "user" and message.get("content") == "task"
+        for message in provider.calls[0].messages
+    )
 
 
 @pytest.mark.asyncio
@@ -670,6 +678,109 @@ async def test_loop_uses_global_default_model_when_session_is_mock_placeholder()
     await loop.run(Session(id="s1", workspace="."), "task")
 
     assert provider.calls[0].model == "global-model"
+
+
+@pytest.mark.asyncio
+async def test_loop_uses_current_provider_model_when_session_provider_differs():
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+    providers = ProviderRegistry()
+    provider = MockProvider(responses=["DONE"])
+    provider.model = "current-provider-model"
+    providers.register("p", provider)
+    loop = AgentLoop(
+        provider=MockProvider(responses=["DONE"]),
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=2),
+        provider_registry=providers,
+        default_provider=lambda: "p",
+        default_model=lambda: "",
+    )
+
+    await loop.run(
+        Session(
+            id="s1",
+            workspace=".",
+            provider="old-provider",
+            model="old-session-model",
+        ),
+        "task",
+    )
+
+    assert provider.calls[0].model == "current-provider-model"
+
+
+@pytest.mark.asyncio
+async def test_loop_uses_global_model_when_session_same_provider_has_old_model():
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+    providers = ProviderRegistry()
+    provider = MockProvider(responses=["DONE"])
+    provider.model = "provider-model"
+    providers.register("p", provider)
+    loop = AgentLoop(
+        provider=MockProvider(responses=["DONE"]),
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=2),
+        provider_registry=providers,
+        default_provider=lambda: "p",
+        default_model=lambda: "global-model",
+    )
+
+    await loop.run(
+        Session(
+            id="s1",
+            workspace=".",
+            provider="p",
+            model="old-session-model",
+        ),
+        "task",
+    )
+
+    assert provider.calls[0].model == "global-model"
+
+
+@pytest.mark.asyncio
+async def test_loop_injects_resolved_model_into_system_message_and_tracks_switch():
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+    providers = ProviderRegistry()
+    provider = MockProvider(responses=["DONE", "DONE"])
+    provider.model = "provider-model"
+    providers.register("p", provider)
+    state = {"model": "model-a"}
+    loop = AgentLoop(
+        provider=MockProvider(responses=["DONE"]),
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=2),
+        provider_registry=providers,
+        default_provider=lambda: "p",
+        default_model=lambda: state["model"],
+    )
+
+    await loop.run(
+        Session(id="s1", workspace=".", provider="p", model="old-session-model"),
+        "task",
+    )
+    first_system = [
+        message
+        for message in provider.calls[0].messages
+        if message.get("role") == "system"
+    ]
+    assert any("provider=p" in message["content"] for message in first_system)
+    assert any("model=model-a" in message["content"] for message in first_system)
+
+    state["model"] = "model-b"
+    await loop.run(
+        Session(id="s2", workspace=".", provider="p", model="old-session-model"),
+        "task",
+    )
+    second_system = [
+        message
+        for message in provider.calls[1].messages
+        if message.get("role") == "system"
+    ]
+    assert any("model=model-b" in message["content"] for message in second_system)
 
 
 @pytest.mark.asyncio
