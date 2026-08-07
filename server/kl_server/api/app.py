@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from kl_server.api.routes import build_router
 from kl_server.api.task_events import ApprovalHub, TaskEventBus, WsForwardingLogger
 from kl_server.api.ws import build_ws_router
+from kl_server.storage.database import DatabaseCorruptionError
 
 
 logger = logging.getLogger(__name__)
@@ -96,6 +97,10 @@ def create_app(
     @app.get("/health")
     def health():
         return {"status": "ok"}
+
+    @app.exception_handler(DatabaseCorruptionError)
+    async def database_corruption_handler(request, exc: DatabaseCorruptionError):
+        return JSONResponse(status_code=503, content={"detail": str(exc)})
 
     app.include_router(build_router())
     app.include_router(build_ws_router(auth_token, hitl=hitl, bus=bus, hub=hub))

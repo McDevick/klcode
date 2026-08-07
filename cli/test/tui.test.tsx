@@ -296,6 +296,38 @@ test('app shows feedback_generation event', async () => {
   }
 });
 
+test('app truncates long feedback summary with ellipsis', async () => {
+  const fetchMock = taskFetchMocks();
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('hello');
+    stdin.write('\r');
+    await waitFor(() => FakeWebSocket.instances.length > 0);
+    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    const summary = 'x'.repeat(200);
+    emit(socket, {
+      event: 'feedback_generation',
+      payload: {
+        tool: 'run_tests',
+        category: 'test_failure',
+        summary,
+      },
+    });
+    await waitFor(() =>
+      (lastFrame() ?? '').includes('[Feedback] run_tests: test_failure: '),
+    );
+    expect(lastFrame()).toContain('...');
+    expect(lastFrame() ?? '').not.toContain('x'.repeat(200));
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
 test('slash menu opens on / and arrow selection fills the input', async () => {
   const fetchMock = urlFetchMock();
   vi.stubGlobal('fetch', fetchMock);
@@ -970,7 +1002,7 @@ test('app exits on /exit', async () => {
   }
 });
 
-test('app /model shows current and available models', async () => {
+test('app /model opens provider/model manager', async () => {
   // App 初始化：createSession + getModelConfig；第 3 次 fetch 是 /model 读取
   const fetchMock = vi
     .fn()
@@ -984,9 +1016,86 @@ test('app /model shows current and available models', async () => {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('/model');
     stdin.write('\r');
-    await waitFor(() => (lastFrame() ?? '').includes('当前: mock / mock-model'));
-    expect(lastFrame()).toContain('当前: mock / mock-model');
-    expect(lastFrame()).toContain('mock: mock-model');
+    await waitFor(() => (lastFrame() ?? '').includes('模型管理'));
+    expect(lastFrame()).toContain('当前模型：mock / mock-model');
+    expect(lastFrame()).toContain('Provider：');
+    expect(lastFrame()).toContain('mock');
+    expect(lastFrame()).toContain('mock-model');
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app /model manager switches model and updates header', async () => {
+  const availableConfig = {
+    provider: 'mock',
+    model: 'mock-model',
+    max_context: 20000,
+    available: [
+      { provider: 'mock', model: 'mock-model', base_url: '', max_context: 20000 },
+      {
+        provider: 'deepseek',
+        model: 'deepseek-chat',
+        base_url: 'https://api.deepseek.com/v1',
+        max_context: 20000,
+      },
+    ],
+  };
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    if (url.includes('/api/v1/sessions') && method === 'GET') return listSessionsEmpty;
+    if (url.includes('/api/v1/sessions') && method === 'POST') return sessionResponse;
+    if (url.includes('/config/model') && method === 'GET') {
+      return { ok: true, status: 200, json: async () => availableConfig };
+    }
+    if (url.includes('/config/model') && method === 'POST') {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          provider: 'deepseek',
+          model: 'deepseek-chat',
+          max_context: 20000,
+          available: [
+            {
+              provider: 'deepseek',
+              model: 'deepseek-chat',
+              base_url: 'https://api.deepseek.com/v1',
+              max_context: 20000,
+            },
+          ],
+        }),
+      };
+    }
+    return { ok: true, status: 200, json: async () => ({}) };
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('/model');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('deepseek'));
+    await sleep(100);
+
+    stdin.write('\x1b[B');
+    await sleep(50);
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('deepseek-chat'));
+    expect(lastFrame()).toContain('Model：');
+    stdin.write('\r');
+
+    await waitFor(() => (lastFrame() ?? '').includes('model: deepseek-chat'));
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:8700/api/v1/config/model',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"provider":"deepseek"'),
+      }),
+    );
   } finally {
     unmount();
     vi.unstubAllGlobals();

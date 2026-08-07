@@ -46,3 +46,25 @@ def test_app_config_loads_max_context_from_yaml(tmp_path):
     config = load_app_config(path)
 
     assert config.providers["deepseek"].max_context == 128000
+
+
+def test_app_config_loads_models_from_yaml(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "providers:\n"
+        "  deepseek:\n"
+        "    type: openai-compatible\n"
+        "    base_url: https://api.deepseek.com/v1\n"
+        "    default_model: deepseek-v4-flash\n"
+        "    models:\n"
+        "      - deepseek-v4-flash\n"
+        "      - deepseek-v4-pro\n",
+        encoding="utf-8",
+    )
+
+    config = load_app_config(path)
+
+    assert config.providers["deepseek"].models == [
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
+    ]

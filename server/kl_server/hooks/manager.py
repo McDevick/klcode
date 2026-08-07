@@ -17,6 +17,8 @@ import subprocess
 
 import httpx
 
+from kl_server.core.event_logger import redact_payload
+
 logger = logging.getLogger(__name__)
 
 MAX_ERROR_TEXT = 1000
@@ -120,7 +122,7 @@ class HookManager:
             args,
             shell=shell,
             env=self._command_env(),
-            input=json.dumps(payload),
+            input=json.dumps(redact_payload(payload)),
             text=True,
             encoding="utf-8",
             errors="replace",
@@ -134,7 +136,11 @@ class HookManager:
     def _run_http(self, url: object, payload: dict) -> str:
         if not isinstance(url, str) or not url.strip():
             raise ValueError("http hook 'url' must be a non-empty string")
-        response = httpx.post(url, json=payload, timeout=self.timeout)
+        response = httpx.post(
+            url,
+            json=redact_payload(payload),
+            timeout=self.timeout,
+        )
         response.raise_for_status()
         return _truncate(response.text)
 

@@ -10,6 +10,27 @@ _SENSITIVE_VALUE_RE = re.compile(
 )
 
 
+def redact_value(key: str, value) -> object:
+    if re.search(r"key|secret|token|credential|password|authorization", key, re.I):
+        return "[REDACTED]"
+    if key.lower() in {"command", "env", "environment", "credential_ref"}:
+        return "[REDACTED]"
+    if isinstance(value, dict):
+        return redact_payload(value)
+    if isinstance(value, list):
+        return [redact_value(key, item) for item in value]
+    if isinstance(value, str) and _SENSITIVE_VALUE_RE.search(value):
+        return "[REDACTED]"
+    return value
+
+
+def redact_payload(payload: dict) -> dict:
+    return {
+        key: redact_value(key, value)
+        for key, value in payload.items()
+    }
+
+
 class EventLogger:
     def __init__(self, path: Path):
         self.path = path
@@ -38,20 +59,7 @@ class EventLogger:
             raise RuntimeError(f"failed to write audit log: {self.path}: {exc}") from exc
 
     def _redact(self, payload: dict) -> dict:
-        return {
-            key: self._redact_value(key, value)
-            for key, value in payload.items()
-        }
+        return redact_payload(payload)
 
     def _redact_value(self, key: str, value) -> object:
-        if re.search(r"key|secret|token|credential|password|authorization", key, re.I):
-            return "[REDACTED]"
-        if key.lower() in {"command", "env", "environment", "credential_ref"}:
-            return "[REDACTED]"
-        if isinstance(value, dict):
-            return self._redact(value)
-        if isinstance(value, list):
-            return [self._redact_value(key, item) for item in value]
-        if isinstance(value, str) and _SENSITIVE_VALUE_RE.search(value):
-            return "[REDACTED]"
-        return value
+        return redact_value(key, value)

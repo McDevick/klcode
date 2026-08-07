@@ -91,17 +91,24 @@ class McpServerPayload(BaseModel):
         return self
 
 
+def _provider_models(provider_config: ProviderConfig) -> list[str]:
+    return provider_config.models or (
+        [provider_config.default_model] if provider_config.default_model else []
+    )
+
+
 def _model_available(config: AppConfig) -> list[dict]:
     available = [{"provider": "mock", "model": "mock-model", "base_url": "", "max_context": 20000}]
     for name, provider_config in config.providers.items():
-        available.append(
-            {
-                "provider": name,
-                "model": provider_config.default_model,
-                "base_url": provider_config.base_url,
-                "max_context": provider_config.max_context,
-            }
-        )
+        for model in _provider_models(provider_config):
+            available.append(
+                {
+                    "provider": name,
+                    "model": model,
+                    "base_url": provider_config.base_url,
+                    "max_context": provider_config.max_context,
+                }
+            )
     return available
 
 
@@ -114,7 +121,8 @@ def _model_state(config: AppConfig) -> dict:
             model = "mock-model"
         else:
             provider_config = config.providers.get(provider)
-            model = provider_config.default_model if provider_config else ""
+            models = _provider_models(provider_config) if provider_config else []
+            model = models[0] if models else ""
     max_context = 20000
     if provider != "mock":
         provider_config = config.providers.get(provider)

@@ -1,6 +1,7 @@
 import asyncio
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import patch
 
 import aiosqlite
@@ -8,7 +9,7 @@ import pytest
 from kl_server.core.session_manager import SessionManager
 from kl_server.core.task_manager import TaskManager
 from kl_server.models.task import Session, Task, TaskStatus
-from kl_server.storage.database import Database
+from kl_server.storage.database import Database, DatabaseCorruptionError
 
 
 @pytest.mark.asyncio
@@ -79,6 +80,28 @@ async def test_concurrent_connect_opens_single_connection(tmp_path):
             connect.assert_called_once()
     finally:
         await db.close()
+
+
+@pytest.mark.asyncio
+async def test_corrupt_database_is_backed_up_and_blocks_writes(tmp_path):
+    path = tmp_path / "kl.db"
+    path.write_text("not a sqlite database", encoding="utf-8")
+    db = Database(path)
+    sessions = SessionManager(db)
+
+    with pytest.raises(DatabaseCorruptionError) as exc_info:
+        await db.connect()
+
+    message = str(exc_info.value)
+    assert "backup:" in message
+    assert "writes blocked" in message
+    assert db.corrupt_backup is not None
+    assert Path(db.corrupt_backup).exists()
+
+    with pytest.raises(DatabaseCorruptionError):
+        await db.connect()
+    with pytest.raises(DatabaseCorruptionError):
+        await sessions.create(Session(id="s1", workspace=str(tmp_path)))
 
 
 @pytest.mark.asyncio

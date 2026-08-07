@@ -9,6 +9,7 @@ import { DockedPanel } from './components/docked-panel';
 import { SessionManager } from './components/session-manager';
 import { SkillsMenu } from './components/skills-menu';
 import { McpManager } from './components/mcp-manager';
+import { ModelManager } from './components/model-manager';
 import { ApiClient, DEFAULT_BASE_URL, type SkillInfo } from '../api/client';
 import { connectTaskEvents } from '../api/events';
 import { sendApprovalDecision, type ApprovalDecision } from './screens/approval';
@@ -206,6 +207,7 @@ export function App() {
   const [skillsError, setSkillsError] = useState('');
   const [skillsIndex, setSkillsIndex] = useState(0);
   const [mcpOpen, setMcpOpen] = useState(false);
+  const [modelManagerOpen, setModelManagerOpen] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [menuIndex, setMenuIndex] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
@@ -354,6 +356,7 @@ export function App() {
         setSessionManagerOpen(false);
         setSkillsOpen(false);
         setMcpOpen(false);
+        setModelManagerOpen(false);
         setApprovalIndex(0);
         setApproval({
           actionId: String(event.action_id),
@@ -465,10 +468,12 @@ export function App() {
           summary?: string;
         };
         const summary = String(payload.summary ?? '');
+        const preview =
+          summary.length > 120 ? `${summary.slice(0, 120)}...` : summary;
         pushMessage(
           'agent',
           `${String(payload.tool ?? 'tool')}: ${String(payload.category ?? 'unknown')}${
-            summary ? `: ${summary.slice(0, 120)}` : ''
+            preview ? `: ${preview}` : ''
           }`,
           'feedback',
         );
@@ -502,6 +507,7 @@ export function App() {
     setSessionManagerOpen(false);
     setSkillsOpen(false);
     setMcpOpen(false);
+    setModelManagerOpen(false);
     setMessages([]);
     setScrollTop(0);
     if (message) {
@@ -614,28 +620,19 @@ export function App() {
       return;
     }
     if (commandName === '/model') {
-      const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
       if (args.length === 0) {
-        client
-          .getModelConfig()
-          .then((state) => {
-            const lines = [
-              `当前: ${state.provider} / ${state.model}`,
-              '可用:',
-              ...state.available.map((item) => `  ${item.provider}: ${item.model}`),
-            ];
-            pushMessage('agent', lines.join('\n'), 'info');
-          })
-          .catch((error: unknown) => {
-            pushMessage('agent', `模型配置读取失败: ${String(error)}`, 'error');
-          });
+        setSkillsOpen(false);
+        setMcpOpen(false);
+        setModelManagerOpen(true);
         return;
       }
+      const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
       const provider = args[0];
       const model = args[1];
       client
         .setModelConfig(model ? { provider, model } : { provider })
         .then((state) => {
+          setModelName(state.model);
           pushMessage('agent', `模型已切换: ${state.provider} / ${state.model}`, 'done');
         })
         .catch((error: unknown) => {
@@ -785,6 +782,13 @@ export function App() {
   const menuOpen = inputValue.startsWith('/') && !inputValue.includes(' ') && filteredCommands.length > 0;
   const skillsPanelOpen = skillsOpen && !configWizardOpen && approval === null && !sessionManagerOpen;
   const mcpPanelOpen = mcpOpen && !configWizardOpen && approval === null && !sessionManagerOpen && !skillsOpen;
+  const modelPanelOpen =
+    modelManagerOpen &&
+    !configWizardOpen &&
+    approval === null &&
+    !sessionManagerOpen &&
+    !skillsOpen &&
+    !mcpOpen;
   const { stdout } = useStdout();
   const viewportRows = Math.max(
     1,
@@ -792,7 +796,8 @@ export function App() {
       (sessionManagerOpen ? 14 : 8) -
       (skillsPanelOpen ? 9 : 0) -
       (mcpPanelOpen ? 14 : 0) -
-      (menuOpen && !configWizardOpen && approval === null && !sessionManagerOpen && !skillsPanelOpen && !mcpPanelOpen
+      (modelPanelOpen ? 12 : 0) -
+      (menuOpen && !configWizardOpen && approval === null && !sessionManagerOpen && !skillsPanelOpen && !mcpPanelOpen && !modelPanelOpen
         ? 9
         : 0) -
       (configWizardOpen ? 12 : 0),
@@ -843,6 +848,9 @@ export function App() {
     }
     if (mcpOpen) {
       return; // MCP 管理面板内部处理输入
+    }
+    if (modelManagerOpen) {
+      return; // 模型管理面板内部处理输入
     }
     if (menuOpen) {
       if (key.upArrow) {
@@ -973,7 +981,7 @@ export function App() {
         viewportRows={viewportRows}
         onScrollTopChange={setScrollTop}
       />
-      {menuOpen && !configWizardOpen && approval === null && !sessionManagerOpen && !skillsPanelOpen && !mcpPanelOpen ? (
+      {menuOpen && !configWizardOpen && approval === null && !sessionManagerOpen && !skillsPanelOpen && !mcpPanelOpen && !modelPanelOpen ? (
         <DockedPanel>
           <CommandMenu
             commands={filteredCommands}
@@ -994,6 +1002,14 @@ export function App() {
       {mcpPanelOpen ? (
         <DockedPanel borderColor={theme.surfaceAlt}>
           <McpManager onClose={() => setMcpOpen(false)} />
+        </DockedPanel>
+      ) : null}
+      {modelPanelOpen ? (
+        <DockedPanel borderColor={theme.surfaceAlt}>
+          <ModelManager
+            onClose={() => setModelManagerOpen(false)}
+            onModelChanged={(model) => setModelName(model)}
+          />
         </DockedPanel>
       ) : null}
       {configWizardOpen ? (

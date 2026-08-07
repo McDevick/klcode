@@ -13,6 +13,8 @@ class ProviderConfig(BaseModel):
     api_key: str | None = None
     # 当前模型的最大上下文 token 数；未配置时默认 20k
     max_context: int = 20000
+    # 可选的多模型列表；为空时仍使用 default_model
+    models: list[str] = []
 
 
 class AppConfig(BaseModel):

@@ -155,6 +155,60 @@ def test_sessions_list_starts_empty():
     assert response.json() == []
 
 
+def test_model_config_lists_configured_provider_models(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "default_provider: deepseek\n"
+        "providers:\n"
+        "  deepseek:\n"
+        "    type: openai-compatible\n"
+        "    base_url: https://api.deepseek.com/v1\n"
+        "    default_model: deepseek-v4-flash\n"
+        "    models:\n"
+        "      - deepseek-v4-flash\n"
+        "      - deepseek-v4-pro\n",
+        encoding="utf-8",
+    )
+    deps = build_app_dependencies(
+        config_path=config_path,
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+    client = TestClient(create_app(deps=deps))
+
+    with client:
+        response = client.get("/api/v1/config/model")
+
+    assert response.status_code == 200
+    models = {
+        item["model"]
+        for item in response.json()["available"]
+        if item["provider"] == "deepseek"
+    }
+    assert models == {"deepseek-v4-flash", "deepseek-v4-pro"}
+
+
+def test_corrupt_database_returns_backup_path_and_blocks_writes(tmp_path):
+    deps = build_app_dependencies(
+        config_path=tmp_path / "config.yaml",
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+    (tmp_path / "kl.db").write_text("not a sqlite database", encoding="utf-8")
+    client = TestClient(create_app(deps=deps))
+
+    with client:
+        response = client.get("/api/v1/sessions")
+
+    assert response.status_code == 503
+    assert "backup:" in response.json()["detail"]
+    assert "writes blocked" in response.json()["detail"]
+
+
 def test_skills_endpoint_lists_workspace_skills(tmp_path):
     client = make_deps_client(tmp_path)
     skill_dir = tmp_path / ".kl" / "skills" / "leetcode"

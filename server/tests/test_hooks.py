@@ -35,6 +35,23 @@ def test_command_hook_receives_event(tmp_path):
     assert output[0] == "task_start"
 
 
+def test_command_hook_payload_is_redacted(tmp_path):
+    command = make_command(
+        tmp_path,
+        "import sys, json; print(json.load(sys.stdin)['api_key'])",
+    )
+    manager = HookManager(
+        {"task_start": [{"type": "command", "command": command}]}
+    )
+
+    output = manager.run(
+        "task_start",
+        {"event": "task_start", "api_key": "sk-secret"},
+    )
+
+    assert output[0] == "[REDACTED]"
+
+
 def test_command_hook_outputs_preserve_order(tmp_path):
     script_dir = tmp_path / "hook scripts"
     script_dir.mkdir(exist_ok=True)
@@ -125,9 +142,11 @@ def test_http_hook_posts_payload():
             }
         )
 
-        output = manager.run("approval_request", {"task_id": "t1"})
+        payload = {"task_id": "t1", "api_key": "sk-secret"}
+        output = manager.run("approval_request", payload)
 
         assert CaptureHook.received and CaptureHook.received[-1]["task_id"] == "t1"
+        assert CaptureHook.received[-1]["api_key"] == "[REDACTED]"
         assert output == ["ok"]
     finally:
         server.shutdown()
