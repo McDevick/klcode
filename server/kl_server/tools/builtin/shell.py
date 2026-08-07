@@ -11,6 +11,9 @@ class RunCommandTool(Tool):
     name = "run_command"
     description = "Run a shell command and return exit code, stdout, and stderr as JSON"
     schema = {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}
+    permissions = ["command", "unmanaged_escalation"]
+    sandbox = {"allow": [], "deny": []}
+    timeout = 120.0
 
     async def execute(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         try:

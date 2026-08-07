@@ -84,6 +84,9 @@ class ApplyPatchTool(Tool):
         "properties": {"patch": {"type": "string"}, "path": {"type": "string"}},
         "required": ["patch"],
     }
+    permissions = ["filesystem:write", "patch", "unmanaged_escalation"]
+    sandbox = {"scope": "workspace", "modes": ["write"]}
+    timeout = 30.0
 
     async def execute(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         matches = re.findall(r"^--- (\S+)", args["patch"], re.M)

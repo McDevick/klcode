@@ -18,6 +18,9 @@ class TaskManageTool(Tool):
         },
         "required": ["action"],
     }
+    permissions = ["task_manage"]
+    sandbox = {"scope": "session"}
+    timeout = 30.0
 
     async def _load_state(self, ctx: ToolContext) -> dict:
         store = getattr(ctx, "state_store", None)

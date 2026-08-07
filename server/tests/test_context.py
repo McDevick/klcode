@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 
 from kl_server.core.context import ContextAssembler, LLMSummarizer
@@ -243,6 +245,20 @@ async def test_assembler_falls_back_when_provider_fails(caplog):
     assert result.contains_priority("latest")
     assert result.text.count("latest") == 1
     assert "LLM summarization failed" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_assembler_logs_dropped_sections(caplog):
+    assembler = ContextAssembler(max_tokens=10, token_estimator=len)
+
+    with caplog.at_level(logging.WARNING, logger="kl_server.core.context"):
+        await assembler.build(
+            rules="rules",
+            memory=[],
+            history=["x" * 100, "y" * 100, "latest"],
+        )
+
+    assert "Dropping 2 old history sections" in caplog.text
 
 
 @pytest.mark.asyncio

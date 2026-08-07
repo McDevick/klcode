@@ -35,8 +35,8 @@ class ScopeFence:
 
 class DangerClassifier:
     COMMAND_TOOLS = COMMAND_TOOLS
-    DANGEROUS_TOOLS = {"delete_file", "git_commit"}
-    UNMANAGED_ESCALATION_TOOLS = {"write_file", "run_command", "apply_patch"}
+    DANGEROUS_PERMISSIONS = {"destructive"}
+    UNMANAGED_ESCALATION_PERMISSIONS = {"unmanaged_escalation"}
     CRITICAL_PATTERNS = [
         "rm -rf /",
         "rm -fr /",
@@ -82,10 +82,14 @@ class DangerClassifier:
 
     def classify(self, action: Action, workspace_mode: str = "managed") -> str:
         workspace_mode = normalize_workspace_mode(workspace_mode)
-        if action.tool in self.DANGEROUS_TOOLS:
+        permissions = set(action.permissions or [])
+        if permissions & self.DANGEROUS_PERMISSIONS:
             return "dangerous"
         if action.tool not in self.COMMAND_TOOLS:
-            if workspace_mode == "unmanaged" and action.tool in self.UNMANAGED_ESCALATION_TOOLS:
+            if (
+                workspace_mode == "unmanaged"
+                and permissions & self.UNMANAGED_ESCALATION_PERMISSIONS
+            ):
                 return "dangerous"
             return "normal"
         for source in (action.raw_command, action.args.get("command")):
@@ -95,7 +99,10 @@ class DangerClassifier:
             tokens = command.split()
             if self._is_critical_command(tokens, command):
                 return "critical"
-        if workspace_mode == "unmanaged" and action.tool in self.UNMANAGED_ESCALATION_TOOLS:
+        if (
+            workspace_mode == "unmanaged"
+            and permissions & self.UNMANAGED_ESCALATION_PERMISSIONS
+        ):
             return "dangerous"
         return "normal"
 

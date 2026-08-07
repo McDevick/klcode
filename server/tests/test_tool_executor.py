@@ -293,6 +293,9 @@ class WriteTool(Tool):
     name = "write_file"
     description = "writes a file"
     schema = {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}}
+    permissions = ["filesystem:write", "unmanaged_escalation"]
+    sandbox = {"scope": "workspace", "modes": ["write"]}
+    timeout = 30.0
 
     async def execute(self, args, ctx: ToolContext) -> ToolResult:
         return ToolResult(ok=True, output="wrote")
@@ -370,6 +373,9 @@ class TrackingWriteTool(Tool):
     name = "write_file"
     description = "tracks approval-gated writes"
     schema = {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}}
+    permissions = ["filesystem:write", "unmanaged_escalation"]
+    sandbox = {"scope": "workspace", "modes": ["write"]}
+    timeout = 30.0
 
     def __init__(self):
         self.calls = 0

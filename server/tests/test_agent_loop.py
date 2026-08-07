@@ -322,6 +322,16 @@ class FakeMemory:
         self.added.append((scope, kind, list(tags), content))
 
 
+class MemoryWithPlan(FakeMemory):
+    async def get_state(self, scope, kind):
+        if kind == "subtasks":
+            return '[{"title":"读取文件","status":"pending"}]'
+        return None
+
+    async def set_state(self, scope, kind, content):
+        pass
+
+
 class RecordingMemory:
     def __init__(self):
         self.added: list[tuple[str, str, list[str], str]] = []
@@ -393,6 +403,64 @@ async def test_loop_uses_context_assembler():
         message.get("role") == "user" and message.get("content") == "task"
         for message in provider.calls[0].messages
     )
+
+
+@pytest.mark.asyncio
+async def test_loop_injects_task_plan_into_context():
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+    provider = MockProvider(responses=['{"tool":"final","args":{}}', "DONE"])
+    spy = SpyAssembler()
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=3),
+        context=spy,
+        memory=MemoryWithPlan(),
+    )
+
+    await loop.run(Session(id="s1", workspace="."), "task")
+
+    assert any(
+        "task_plan:" in entry
+        and "读取文件" in entry
+        for entry in spy.last_kwargs["memory"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_loop_layers_project_and_user_rules(tmp_path):
+    project_rules = tmp_path / ".kl" / "rules.md"
+    project_rules.parent.mkdir(parents=True)
+    project_rules.write_text("项目规则内容", encoding="utf-8")
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+    provider = MockProvider(responses=['{"tool":"final","args":{}}', "DONE"])
+    spy = SpyAssembler()
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=3),
+        context=spy,
+        memory=FakeMemory(),
+    )
+
+    await loop.run(
+        Session(
+            id="s1",
+            workspace=str(tmp_path),
+            rules="用户规则内容",
+        ),
+        "task",
+    )
+
+    rules = spy.last_kwargs["rules"]
+    assert "[规则优先级]" in rules
+    assert "用户规则 > 项目规则 > 默认行为" in rules
+    assert "[项目规则]" in rules
+    assert "项目规则内容" in rules
+    assert "[用户规则]" in rules
+    assert "用户规则内容" in rules
 
 
 @pytest.mark.asyncio

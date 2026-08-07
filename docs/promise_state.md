@@ -119,13 +119,13 @@
 | 每段上下文估算 token 用量，按模型预算分配 | ✅ | context.py:209-229 _fit_to_budget（二分截断） |
 | 超预算时经 provider 生成结构化摘要 | ✅ | context.py:16-91 LLMSummarizer + 增量摘要（只摘要新增段） |
 | 当前轮次、工具目录、规则默认不摘要 | ✅ | history[-1] 保留（177）；工具目录走 tools 参数（130-131）；规则在 base_sections（132） |
-| 任务状态作为上下文输入 | ❌ | build() 参数只有 task_id，无任务状态注入 |
+| 任务状态作为上下文输入 | ✅ | task_manage subtasks 注入 context 与压缩摘要 |
 | 摘要写入记忆；原始内容保留日志 | ✅ | agent_loop.py:220-228 context_summary 写记忆；tool_result 事件保留原始 |
 | 摘要失败时结构化 fallback 不崩溃 | ✅ | context.py:156-173/216-218 except → summary="" |
 | token 计量和优先级规则可脱离 LLM 测试 | ✅ | token_estimator 注入 + 纯逻辑（test_context.py） |
 | 记忆按需检索，不全量注入 | ✅ | memory.find(tags) + MEMORY_LIMIT=5（context.py:135-137） |
-| 用户规则 > 项目规则 > 默认行为 | ⚠️ | build 只接收单一 rules 字符串（session.rules），未发现分层合并实现 |
-| fallback 后仍超预算丢弃低价值历史并记录 | ⚠️ | 丢弃 ✓（sections.pop）；"在日志中记录" ✗ |
+| 用户规则 > 项目规则 > 默认行为 | ✅ | .kl/rules.md + AGENTS.md + session.rules 分层注入 |
+| fallback 后仍超预算丢弃低价值历史并记录 | ✅ | context.py 记录 dropping/truncating + context_compressed 事件 |
 
 ## §3.9 Skill、Hook、MCP 与用户工具（核验 2026-08-07，兑现约 90%）
 

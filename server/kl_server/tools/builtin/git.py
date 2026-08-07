@@ -25,6 +25,9 @@ class GitStatusTool(Tool):
     name = "git_status"
     description = "Show git status"
     schema = {"type": "object", "properties": {}}
+    permissions = ["git:read"]
+    sandbox = {"scope": "workspace", "modes": ["read"]}
+    timeout = 30.0
 
     async def execute(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         try:
@@ -37,6 +40,9 @@ class GitDiffTool(Tool):
     name = "git_diff"
     description = "Show working-tree diff"
     schema = {"type": "object", "properties": {}}
+    permissions = ["git:read"]
+    sandbox = {"scope": "workspace", "modes": ["read"]}
+    timeout = 30.0
 
     async def execute(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         try:
@@ -49,6 +55,9 @@ class GitBranchTool(Tool):
     name = "git_branch"
     description = "Create and switch to a branch"
     schema = {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}
+    permissions = ["git:write"]
+    sandbox = {"scope": "workspace", "modes": ["write"]}
+    timeout = 30.0
 
     async def execute(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         try:
@@ -68,6 +77,9 @@ class GitCommitTool(Tool):
         },
         "required": ["message", "paths"],
     }
+    permissions = ["git:write", "destructive"]
+    sandbox = {"scope": "workspace", "modes": ["write"]}
+    timeout = 30.0
 
     async def execute(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         paths = args.get("paths")

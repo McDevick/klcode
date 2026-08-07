@@ -547,3 +547,13 @@ def test_register_builtin_tools_catalog():
         "typecheck",
         "task_manage",
     }
+
+
+def test_builtin_tools_declare_permissions_sandbox_timeout():
+    registry = ToolRegistry()
+    register_builtin_tools(registry)
+
+    for item in registry.catalog():
+        assert item["permissions"], item["name"]
+        assert isinstance(item["sandbox"], dict), item["name"]
+        assert item["timeout"] is not None, item["name"]

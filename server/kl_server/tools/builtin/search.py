@@ -27,6 +27,9 @@ class GrepTool(Tool):
     name = "grep"
     description = "Search file contents by regex inside the workspace"
     schema = {"type": "object", "properties": {"pattern": {"type": "string"}, "path": {"type": "string", "default": "."}}, "required": ["pattern"]}
+    permissions = ["filesystem:read", "search"]
+    sandbox = {"scope": "workspace", "modes": ["read"]}
+    timeout = 60.0
 
     async def execute(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         root = Path(ctx.workspace).resolve()
@@ -64,6 +67,9 @@ class GlobTool(Tool):
     name = "glob"
     description = "Find files matching a glob pattern inside the workspace"
     schema = {"type": "object", "properties": {"pattern": {"type": "string"}}, "required": ["pattern"]}
+    permissions = ["filesystem:read", "search"]
+    sandbox = {"scope": "workspace", "modes": ["read"]}
+    timeout = 60.0
 
     async def execute(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         root = Path(ctx.workspace).resolve()

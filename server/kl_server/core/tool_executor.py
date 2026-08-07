@@ -54,7 +54,18 @@ class ToolExecutor:
 
     async def execute(self, name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         if self.guardrail is not None:
-            action = Action(tool=name, args=args, task_id=ctx.task_id, workspace=ctx.workspace)
+            try:
+                tool = self.registry.get(name)
+            except KeyError:
+                tool = None
+            action = Action(
+                tool=name,
+                args=args,
+                task_id=ctx.task_id,
+                workspace=ctx.workspace,
+                permissions=list(getattr(tool, "permissions", []) if tool is not None else []),
+                sandbox=dict(getattr(tool, "sandbox", {}) if tool is not None else {}),
+            )
             try:
                 decision = self.guardrail.check(action, workspace_mode=ctx.workspace_mode)
             except Exception as exc:

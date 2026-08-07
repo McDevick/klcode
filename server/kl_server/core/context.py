@@ -172,6 +172,13 @@ class ContextAssembler:
                 except Exception:
                     summary = ""
 
+        if self.summarizer is None and len(history) > 1:
+            logger.warning(
+                "Dropping %d old history sections without summary: %s",
+                len(history) - 1,
+                str(history[0])[:200],
+            )
+
         sections = list(base_sections)
         if history:
             sections.append(history[-1])
@@ -222,10 +229,20 @@ class ContextAssembler:
                     sections[-1] = truncated
                     text = "\n\n".join(sections)
                 else:
-                    sections.pop()
+                    dropped = sections.pop()
+                    logger.warning(
+                        "Dropping context section due to budget (%d chars): %s",
+                        len(dropped),
+                        dropped[:200],
+                    )
                     text = "\n\n".join(sections)
                 return text, self._estimate(text)
-            sections.pop()
+            dropped = sections.pop()
+            logger.warning(
+                "Dropping context section due to budget (%d chars): %s",
+                len(dropped),
+                dropped[:200],
+            )
         return "", self._estimate("")
 
     def _estimate(self, text: str) -> int:
@@ -240,6 +257,12 @@ class ContextAssembler:
             else:
                 hi = mid - 1
         text = section[:lo]
+        if len(text) < len(section):
+            logger.warning(
+                "Truncating context section from %d to %d chars",
+                len(section),
+                len(text),
+            )
         return text, self._estimate(text)
 
     def _truncate_section(self, fixed_text: str, section: str, budget: int) -> str:
@@ -251,4 +274,11 @@ class ContextAssembler:
                 lo = mid
             else:
                 hi = mid - 1
-        return section[:lo]
+        result = section[:lo]
+        if len(result) < len(section):
+            logger.warning(
+                "Truncating context section from %d to %d chars",
+                len(section),
+                len(result),
+            )
+        return result

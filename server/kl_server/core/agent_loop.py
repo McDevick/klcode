@@ -2,6 +2,7 @@ import asyncio
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from pathlib import Path
 
 from kl_server.core.feedback import classify_tool_result
 from kl_server.core.tool_executor import ToolExecutor
@@ -121,6 +122,7 @@ class AgentLoop:
         # AgentLoop 在迭代边界 await，使 /pause 真正挂起执行而非只改数据库状态。
         self._pause_events: dict[str, asyncio.Event] = {}
         self._instructions: dict[str, list[str]] = {}
+        self._project_rules_cache: dict[str, str] = {}
 
     def set_paused(self, task_id: str, paused: bool) -> None:
         """Pause (clear gate) or resume (remove gate) a task's execution."""
@@ -133,6 +135,42 @@ class AgentLoop:
 
     def add_instruction(self, task_id: str, instruction: str) -> None:
         self._instructions.setdefault(task_id, []).append(instruction)
+
+    async def _task_plan_text(self, session_id: str) -> str:
+        if self.memory is None or not hasattr(self.memory, "get_state"):
+            return ""
+        raw = await self.memory.get_state(f"session:{session_id}", "subtasks")
+        return f"task_plan: {raw}" if raw else ""
+
+    def _project_rules(self, workspace: str) -> str:
+        if workspace in self._project_rules_cache:
+            return self._project_rules_cache[workspace]
+        parts = []
+        for candidate in (Path(workspace) / ".kl" / "rules.md", Path(workspace) / "AGENTS.md"):
+            if candidate.is_file():
+                try:
+                    text = candidate.read_text(encoding="utf-8").strip()
+                except (OSError, UnicodeDecodeError):
+                    continue
+                if text:
+                    parts.append(text)
+        combined = "\n\n".join(parts)
+        self._project_rules_cache[workspace] = combined
+        return combined
+
+    def _layered_rules(self, session: Session) -> str:
+        parts = [
+            "[规则优先级]\n"
+            "用户规则 > 项目规则 > 默认行为；"
+            "如果用户规则与项目规则冲突，以用户规则为准。"
+        ]
+        project = self._project_rules(session.workspace)
+        user = getattr(session, "rules", "")
+        if project:
+            parts.append(f"[项目规则]\n{project}")
+        if user:
+            parts.append(f"[用户规则]\n{user}")
+        return "\n\n".join(parts)
 
     async def _wait_if_paused(self, task_id: str) -> None:
         """Block until the task is resumed (no-op when not paused)."""
@@ -209,8 +247,11 @@ class AgentLoop:
                         if self.memory is not None
                         else []
                     )
+                    task_plan = await self._task_plan_text(session.id)
+                    if task_plan:
+                        memory_entries.append(task_plan)
                     assembled = await self.context.build(
-                        rules=getattr(session, "rules", ""),
+                        rules=self._layered_rules(session),
                         memory=memory_entries,
                         history=[],
                         task_id=task_id,
@@ -233,7 +274,17 @@ class AgentLoop:
                             context_summary = ""
                         if context_summary:
                             recent_history = history[-4:]
+                            dropped_count = len(history) - len(recent_history)
                             history = recent_history
+                            if self.logger:
+                                self.logger.write(
+                                    "context_compressed",
+                                    {
+                                        "summary": context_summary[:500],
+                                        "dropped_count": dropped_count,
+                                    },
+                                    task_id,
+                                )
                             if self.memory is not None:
                                 try:
                                     await self.memory.add(

@@ -68,7 +68,12 @@ def test_safe_command_is_normal():
 
 def test_delete_file_is_dangerous():
     classifier = DangerClassifier()
-    action = Action(tool="delete_file", args={"path": "a.txt"}, task_id="t1")
+    action = Action(
+        tool="delete_file",
+        args={"path": "a.txt"},
+        task_id="t1",
+        permissions=["filesystem:write", "destructive"],
+    )
     assert classifier.classify(action) == "dangerous"
 
 
@@ -81,8 +86,18 @@ def test_dangerous_command_variants_are_critical():
 
 def test_non_command_tools_are_not_misclassified():
     classifier = DangerClassifier()
-    write = Action(tool="write_file", args={"path": "a.txt", "content": "rm -rf /"}, task_id="t1")
-    patch = Action(tool="apply_patch", args={"patch": "drop database"}, task_id="t1")
+    write = Action(
+        tool="write_file",
+        args={"path": "a.txt", "content": "rm -rf /"},
+        task_id="t1",
+        permissions=["filesystem:write", "unmanaged_escalation"],
+    )
+    patch = Action(
+        tool="apply_patch",
+        args={"patch": "drop database"},
+        task_id="t1",
+        permissions=["filesystem:write", "patch", "unmanaged_escalation"],
+    )
     assert classifier.classify(write) == "normal"
     assert classifier.classify(patch) == "normal"
 
@@ -209,7 +224,12 @@ def test_guardrail_requires_approval_for_dangerous(tmp_path):
         hitl=hitl,
     )
     critical = Action(tool="run_command", args={"command": "rm -rf /"}, task_id="t1")
-    delete = Action(tool="delete_file", args={"path": "a.txt"}, task_id="t2")
+    delete = Action(
+        tool="delete_file",
+        args={"path": "a.txt"},
+        task_id="t2",
+        permissions=["filesystem:write", "destructive"],
+    )
     assert guardrail.check(critical) == "requires_approval"
     assert guardrail.check(delete) == "requires_approval"
     assert hitl.requests
@@ -260,8 +280,18 @@ def test_guardrail_uses_unique_approval_keys(tmp_path):
         danger=DangerClassifier(),
         hitl=hitl,
     )
-    first = Action(tool="delete_file", args={"path": "a.txt"}, task_id="t1")
-    second = Action(tool="delete_file", args={"path": "b.txt"}, task_id="t1")
+    first = Action(
+        tool="delete_file",
+        args={"path": "a.txt"},
+        task_id="t1",
+        permissions=["filesystem:write", "destructive"],
+    )
+    second = Action(
+        tool="delete_file",
+        args={"path": "b.txt"},
+        task_id="t1",
+        permissions=["filesystem:write", "destructive"],
+    )
     assert guardrail.check(first) == "requires_approval"
     assert guardrail.check(second) == "requires_approval"
     assert len(hitl.requests) == 2
@@ -291,7 +321,12 @@ def test_unmanaged_mode_escalates_write_to_approval(tmp_path):
         hitl=HITLManager(),
         workspace_mode="unmanaged",
     )
-    action = Action(tool="write_file", args={"path": "a.py", "content": "x"}, task_id="t1")
+    action = Action(
+        tool="write_file",
+        args={"path": "a.py", "content": "x"},
+        task_id="t1",
+        permissions=["filesystem:write", "unmanaged_escalation"],
+    )
     assert guardrail.check(action) == "requires_approval"
 
 
@@ -303,7 +338,12 @@ def test_managed_mode_keeps_write_normal(tmp_path):
         hitl=HITLManager(),
         workspace_mode="managed",
     )
-    action = Action(tool="write_file", args={"path": "a.py", "content": "x"}, task_id="t1")
+    action = Action(
+        tool="write_file",
+        args={"path": "a.py", "content": "x"},
+        task_id="t1",
+        permissions=["filesystem:write", "unmanaged_escalation"],
+    )
     assert guardrail.check(action) == "allowed"
 
 
@@ -315,7 +355,12 @@ def test_delete_file_always_requires_approval(tmp_path):
         hitl=HITLManager(),
         workspace_mode="managed",
     )
-    action = Action(tool="delete_file", args={"path": "a.txt"}, task_id="t1")
+    action = Action(
+        tool="delete_file",
+        args={"path": "a.txt"},
+        task_id="t1",
+        permissions=["filesystem:write", "destructive"],
+    )
     assert guardrail.check(action) == "requires_approval"
 
 
@@ -327,8 +372,18 @@ def test_unmanaged_escalates_command_and_patch(tmp_path):
         hitl=HITLManager(),
         workspace_mode="unmanaged",
     )
-    run = Action(tool="run_command", args={"command": "pytest -q"}, task_id="t1")
-    patch = Action(tool="apply_patch", args={"patch": "--- a.txt\n+++ b.txt\n@@ -1 +1 @@\n-x\n+y\n"}, task_id="t2")
+    run = Action(
+        tool="run_command",
+        args={"command": "pytest -q"},
+        task_id="t1",
+        permissions=["command", "unmanaged_escalation"],
+    )
+    patch = Action(
+        tool="apply_patch",
+        args={"patch": "--- a.txt\n+++ b.txt\n@@ -1 +1 @@\n-x\n+y\n"},
+        task_id="t2",
+        permissions=["filesystem:write", "patch", "unmanaged_escalation"],
+    )
     assert guardrail.check(run) == "requires_approval"
     assert guardrail.check(patch) == "requires_approval"
 
@@ -341,7 +396,12 @@ def test_git_commit_requires_approval_in_managed_mode(tmp_path):
         hitl=HITLManager(),
         workspace_mode="managed",
     )
-    action = Action(tool="git_commit", args={"paths": ["a.txt"]}, task_id="t1")
+    action = Action(
+        tool="git_commit",
+        args={"paths": ["a.txt"]},
+        task_id="t1",
+        permissions=["git:write", "destructive"],
+    )
     assert guardrail.check(action) == "requires_approval"
 
 

@@ -10,6 +10,8 @@ class Action:
     seq: int = 0
     workspace: str = ""
     raw_command: str | None = None
+    permissions: list[str] = field(default_factory=list)
+    sandbox: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

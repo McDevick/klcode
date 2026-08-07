@@ -9,6 +9,9 @@ class ListDirTool(Tool):
     name = "list_dir"
     description = "List files and directories in a workspace path"
     schema = {"type": "object", "properties": {"path": {"type": "string", "default": "."}}}
+    permissions = ["filesystem:read"]
+    sandbox = {"scope": "workspace", "modes": ["read"]}
+    timeout = 30.0
 
     async def execute(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         root = Path(ctx.workspace).resolve()
@@ -34,6 +37,9 @@ class ReadFileTool(Tool):
         },
         "required": ["path"],
     }
+    permissions = ["filesystem:read"]
+    sandbox = {"scope": "workspace", "modes": ["read"]}
+    timeout = 30.0
 
     async def execute(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         root = Path(ctx.workspace).resolve()
@@ -81,6 +87,9 @@ class WriteFileTool(Tool):
         "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
         "required": ["path", "content"],
     }
+    permissions = ["filesystem:write", "unmanaged_escalation"]
+    sandbox = {"scope": "workspace", "modes": ["write"]}
+    timeout = 30.0
 
     async def execute(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         root = Path(ctx.workspace).resolve()
@@ -99,6 +108,9 @@ class DeleteFileTool(Tool):
     name = "delete_file"
     description = "Delete a file inside the workspace"
     schema = {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}
+    permissions = ["filesystem:write", "destructive"]
+    sandbox = {"scope": "workspace", "modes": ["delete"]}
+    timeout = 30.0
 
     async def execute(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         workspace = Path(ctx.workspace)
@@ -129,6 +141,9 @@ class EditFileTool(Tool):
         },
         "required": ["path"],
     }
+    permissions = ["filesystem:write"]
+    sandbox = {"scope": "workspace", "modes": ["write"]}
+    timeout = 30.0
 
     async def execute(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         root = Path(ctx.workspace).resolve()

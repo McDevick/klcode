@@ -464,6 +464,12 @@ def build_router() -> APIRouter:
         system_tokens = deps.context.estimate_tokens(system_text)
 
         memory_entries = await deps.memory.find([session_id])
+        task_plan = await deps.memory.get_state(
+            f"session:{session_id}",
+            "subtasks",
+        )
+        if task_plan:
+            memory_entries.append(f"task_plan: {task_plan}")
         memory_text = "\n".join(memory_entries[-5:])
         memory_tokens = deps.context.estimate_tokens(memory_text)
 
@@ -498,11 +504,17 @@ def build_router() -> APIRouter:
             raise HTTPException(status_code=404, detail="session not found")
 
         memory_entries = await deps.memory.find([session_id])
+        task_plan = await deps.memory.get_state(
+            f"session:{session_id}",
+            "subtasks",
+        )
         full_history = await _load_session_history(deps, session_id)
         history_messages = full_history[
             len(full_history) - len(await _history_after_compaction(deps, session_id)) :
         ]
         history_texts = list(memory_entries)
+        if task_plan:
+            history_texts.append(f"task_plan: {task_plan}")
         history_texts.extend(
             f"{message.get('type')}: {message.get('content') or message.get('output') or message.get('name')}"
             for message in history_messages
