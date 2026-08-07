@@ -7,7 +7,9 @@ import { CommandMenu } from './components/command-menu';
 import { ConfigWizard } from './components/config-wizard';
 import { DockedPanel } from './components/docked-panel';
 import { SessionManager } from './components/session-manager';
-import { ApiClient, DEFAULT_BASE_URL } from '../api/client';
+import { SkillsMenu } from './components/skills-menu';
+import { McpManager } from './components/mcp-manager';
+import { ApiClient, DEFAULT_BASE_URL, type SkillInfo } from '../api/client';
 import { connectTaskEvents } from '../api/events';
 import { sendApprovalDecision, type ApprovalDecision } from './screens/approval';
 import { theme } from './theme';
@@ -15,6 +17,8 @@ import type { ApprovalRequest, ChatMessage, RunningTask, SlashCommand } from './
 
 const SLASH_COMMANDS: SlashCommand[] = [
   { name: '/session', desc: '打开会话管理' },
+  { name: '/skills', desc: '查看当前可用 skill' },
+  { name: '/mcp', desc: '管理 MCP server' },
   { name: '/config', desc: '打开配置向导' },
   { name: '/status', desc: '查看当前状态' },
   { name: '/model', desc: '查看/切换模型' },
@@ -50,17 +54,16 @@ function quoteToolValue(value: unknown): string {
 function formatToolArgs(args: Record<string, unknown> | undefined): string {
   if (!args) return '';
   const parts: string[] = [];
-  const primary = [
-    typeof args.command === 'string' && args.command
-      ? (['command', args.command] as const)
-      : null,
-    typeof args.path === 'string' && args.path
-      ? (['path', args.path] as const)
-      : null,
-    typeof args.pattern === 'string' && args.pattern
-      ? (['pattern', args.pattern] as const)
-      : null,
-  ].filter((entry): entry is readonly [string, string] => entry !== null);
+  const primary: Array<readonly [string, string]> = [];
+  if (typeof args.command === 'string' && args.command) {
+    primary.push(['command', args.command]);
+  }
+  if (typeof args.path === 'string' && args.path) {
+    primary.push(['path', args.path]);
+  }
+  if (typeof args.pattern === 'string' && args.pattern) {
+    primary.push(['pattern', args.pattern]);
+  }
   if (primary.length > 0) {
     parts.push(quoteToolValue(primary[0][1]));
     for (const [key, value] of primary.slice(1)) {
@@ -159,15 +162,17 @@ function summarizeToolResult(payload: {
   return single.length > 80 ? `${single.slice(0, 80)}…` : single;
 }
 
-function parseTaskManageItems(output: string | null | undefined): Array<{ title: string; done: boolean }> | null {
-  if (!output) return null;
+function parseTaskManageItems(
+  output: string | null | undefined,
+): Array<{ title: string; done: boolean }> | undefined {
+  if (!output) return undefined;
   let parsed: unknown;
   try {
     parsed = JSON.parse(output);
   } catch {
-    return null;
+    return undefined;
   }
-  if (!Array.isArray(parsed)) return null;
+  if (!Array.isArray(parsed)) return undefined;
   const items = parsed
     .map((item) => {
       if (!item || typeof item !== 'object') return null;
@@ -195,12 +200,34 @@ export function App() {
   const [approvalIndex, setApprovalIndex] = useState(0);
   const [configWizardOpen, setConfigWizardOpen] = useState(false);
   const [sessionManagerOpen, setSessionManagerOpen] = useState(false);
+  const [skillsOpen, setSkillsOpen] = useState(false);
+  const [skills, setSkills] = useState<SkillInfo[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
+  const [skillsError, setSkillsError] = useState('');
+  const [skillsIndex, setSkillsIndex] = useState(0);
+  const [mcpOpen, setMcpOpen] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [menuIndex, setMenuIndex] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
   const inputRef = useRef('');
+  const [cursorIndex, setCursorIndex] = useState(0);
+  const cursorRef = useRef(0);
   const nextMessageId = useRef(1);
   const roundRef = useRef(0); // 当前模型轮次（llm_call 事件更新）
+
+  const moveCursor = (next: number) => {
+    const clamped = Math.max(0, Math.min(next, inputRef.current.length));
+    cursorRef.current = clamped;
+    setCursorIndex(clamped);
+  };
+
+  const clearInput = () => {
+    inputRef.current = '';
+    setInputValue('');
+    cursorRef.current = 0;
+    setCursorIndex(0);
+  };
+
   // 调试模式：默认关闭（人话渲染）；开启后显示 [Agent 第N轮] 与原始回复。
   // debugRef 供事件回调读取（避免 useEffect 依赖导致 WebSocket 重连）。
   const [debugMode, setDebugMode] = useState(false);
@@ -325,6 +352,8 @@ export function App() {
       if (event.event === 'approval_request') {
         setConfigWizardOpen(false);
         setSessionManagerOpen(false);
+        setSkillsOpen(false);
+        setMcpOpen(false);
         setApprovalIndex(0);
         setApproval({
           actionId: String(event.action_id),
@@ -429,6 +458,22 @@ export function App() {
         );
         return;
       }
+      if (event.event === 'feedback_generation') {
+        const payload = (event.payload ?? {}) as {
+          tool?: string;
+          category?: string;
+          summary?: string;
+        };
+        const summary = String(payload.summary ?? '');
+        pushMessage(
+          'agent',
+          `${String(payload.tool ?? 'tool')}: ${String(payload.category ?? 'unknown')}${
+            summary ? `: ${summary.slice(0, 120)}` : ''
+          }`,
+          'feedback',
+        );
+        return;
+      }
     });
     return () => {
       socket.close?.();
@@ -455,6 +500,8 @@ export function App() {
     setApproval(null);
     setConfigWizardOpen(false);
     setSessionManagerOpen(false);
+    setSkillsOpen(false);
+    setMcpOpen(false);
     setMessages([]);
     setScrollTop(0);
     if (message) {
@@ -498,7 +545,12 @@ export function App() {
           id: nextMessageId.current++,
           role: 'agent',
           content: item.content ?? '',
-          kind: item.kind === 'error' ? ('error' as const) : ('text' as const),
+          kind:
+            item.kind === 'error'
+              ? ('error' as const)
+              : item.kind === 'feedback'
+                ? ('feedback' as const)
+                : ('text' as const),
         };
       });
       setMessages(mapped);
@@ -529,6 +581,32 @@ export function App() {
     }
     if (commandName === '/session') {
       setSessionManagerOpen(true);
+      return;
+    }
+    if (commandName === '/skills') {
+      setSkillsOpen(true);
+      setMcpOpen(false);
+      setSkillsIndex(0);
+      setSkills([]);
+      setSkillsError('');
+      setSkillsLoading(true);
+      const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
+      client
+        .listSkills()
+        .then((items) => {
+          setSkills(items);
+          setSkillsLoading(false);
+        })
+        .catch((error: unknown) => {
+          setSkills([]);
+          setSkillsError(String(error));
+          setSkillsLoading(false);
+        });
+      return;
+    }
+    if (commandName === '/mcp') {
+      setMcpOpen(true);
+      setSkillsOpen(false);
       return;
     }
     if (commandName === '/config') {
@@ -696,6 +774,7 @@ export function App() {
   const applySlashCommand = (command: SlashCommand) => {
     inputRef.current = `${command.name} `;
     setInputValue(inputRef.current);
+    moveCursor(inputRef.current.length);
     setMenuIndex(0);
   };
 
@@ -704,12 +783,18 @@ export function App() {
     command.name.startsWith(inputValue),
   );
   const menuOpen = inputValue.startsWith('/') && !inputValue.includes(' ') && filteredCommands.length > 0;
+  const skillsPanelOpen = skillsOpen && !configWizardOpen && approval === null && !sessionManagerOpen;
+  const mcpPanelOpen = mcpOpen && !configWizardOpen && approval === null && !sessionManagerOpen && !skillsOpen;
   const { stdout } = useStdout();
   const viewportRows = Math.max(
     1,
     (stdout.rows ?? 24) -
       (sessionManagerOpen ? 14 : 8) -
-      (menuOpen && !configWizardOpen && approval === null && !sessionManagerOpen ? 9 : 0) -
+      (skillsPanelOpen ? 9 : 0) -
+      (mcpPanelOpen ? 14 : 0) -
+      (menuOpen && !configWizardOpen && approval === null && !sessionManagerOpen && !skillsPanelOpen && !mcpPanelOpen
+        ? 9
+        : 0) -
       (configWizardOpen ? 12 : 0),
   );
 
@@ -746,6 +831,19 @@ export function App() {
       }
       return;
     }
+    if (skillsOpen) {
+      if (key.upArrow) {
+        setSkillsIndex((index) => Math.max(0, index - 1));
+      } else if (key.downArrow) {
+        setSkillsIndex((index) => Math.min(skills.length - 1, index + 1));
+      } else if (key.return || key.escape) {
+        setSkillsOpen(false);
+      }
+      return;
+    }
+    if (mcpOpen) {
+      return; // MCP 管理面板内部处理输入
+    }
     if (menuOpen) {
       if (key.upArrow) {
         setMenuIndex((index) => Math.max(0, index - 1));
@@ -760,8 +858,7 @@ export function App() {
         const exact = filteredCommands.find((command) => command.name === inputValue);
         if (exact !== undefined) {
           submitTask(inputValue);
-          inputRef.current = '';
-          setInputValue('');
+          clearInput();
           setMenuIndex(0);
         } else {
           applySlashCommand(filteredCommands[Math.min(menuIndex, filteredCommands.length - 1)]);
@@ -769,28 +866,64 @@ export function App() {
         return;
       }
       if (key.escape) {
-        inputRef.current = '';
-        setInputValue('');
+        clearInput();
         return;
       }
     }
     if (key.return) {
       if (key.shift) {
-        inputRef.current += '\n';
+        const cursor = cursorRef.current;
+        inputRef.current =
+          inputRef.current.slice(0, cursor) + '\n' + inputRef.current.slice(cursor);
         setInputValue(inputRef.current);
+        moveCursor(cursor + 1);
         return;
       }
       submitTask(inputRef.current);
-      inputRef.current = '';
-      setInputValue('');
+      clearInput();
       return;
     }
-    if (key.upArrow) {
-      setScrollTop((current) => current + 1);
+    if (key.upArrow || key.downArrow) {
+      if (inputRef.current.includes('\n')) {
+        const value = inputRef.current;
+        const lines = value.split('\n');
+        const beforeCursor = value.slice(0, cursorRef.current);
+        const currentLine = beforeCursor.split('\n').length - 1;
+        const currentColumn = beforeCursor.length - beforeCursor.lastIndexOf('\n') - 1;
+        const nextLine = currentLine + (key.upArrow ? -1 : 1);
+        if (nextLine >= 0 && nextLine < lines.length) {
+          let offset = 0;
+          for (let index = 0; index < nextLine; index += 1) {
+            offset += lines[index].length + 1;
+          }
+          moveCursor(offset + Math.min(currentColumn, lines[nextLine].length));
+        }
+        return;
+      }
+      if (key.upArrow) {
+        setScrollTop((current) => current + 1);
+      } else {
+        setScrollTop((current) => Math.max(0, current - 1));
+      }
       return;
     }
-    if (key.downArrow) {
-      setScrollTop((current) => Math.max(0, current - 1));
+    if (key.leftArrow) {
+      moveCursor(cursorRef.current - 1);
+      return;
+    }
+    if (key.rightArrow) {
+      moveCursor(cursorRef.current + 1);
+      return;
+    }
+    if (key.home) {
+      const value = inputRef.current;
+      moveCursor(value.lastIndexOf('\n', cursorRef.current - 1) + 1);
+      return;
+    }
+    if (key.end) {
+      const value = inputRef.current;
+      const nextNewline = value.indexOf('\n', cursorRef.current);
+      moveCursor(nextNewline === -1 ? value.length : nextNewline);
       return;
     }
     if (key.pageUp) {
@@ -803,13 +936,31 @@ export function App() {
       setScrollTop((current) => Math.max(0, current - page));
       return;
     }
-    if (key.backspace || key.delete) {
-      inputRef.current = inputRef.current.slice(0, -1);
-      setInputValue(inputRef.current);
+    if (key.backspace) {
+      const cursor = cursorRef.current;
+      if (cursor > 0) {
+        inputRef.current =
+          inputRef.current.slice(0, cursor - 1) + inputRef.current.slice(cursor);
+        setInputValue(inputRef.current);
+        moveCursor(cursor - 1);
+      }
       return;
     }
-    inputRef.current += input;
+    if (key.delete) {
+      const cursor = cursorRef.current;
+      if (cursor < inputRef.current.length) {
+        inputRef.current =
+          inputRef.current.slice(0, cursor) + inputRef.current.slice(cursor + 1);
+        setInputValue(inputRef.current);
+        moveCursor(cursor);
+      }
+      return;
+    }
+    const cursor = cursorRef.current;
+    inputRef.current =
+      inputRef.current.slice(0, cursor) + input + inputRef.current.slice(cursor);
     setInputValue(inputRef.current);
+    moveCursor(cursor + input.length);
   });
 
   return (
@@ -822,12 +973,27 @@ export function App() {
         viewportRows={viewportRows}
         onScrollTopChange={setScrollTop}
       />
-      {menuOpen && !configWizardOpen && approval === null && !sessionManagerOpen ? (
+      {menuOpen && !configWizardOpen && approval === null && !sessionManagerOpen && !skillsPanelOpen && !mcpPanelOpen ? (
         <DockedPanel>
           <CommandMenu
             commands={filteredCommands}
             menuIndex={Math.min(menuIndex, filteredCommands.length - 1)}
           />
+        </DockedPanel>
+      ) : null}
+      {skillsPanelOpen ? (
+        <DockedPanel borderColor={theme.surfaceAlt}>
+          <SkillsMenu
+            skills={skills}
+            menuIndex={skillsIndex}
+            loading={skillsLoading}
+            error={skillsError}
+          />
+        </DockedPanel>
+      ) : null}
+      {mcpPanelOpen ? (
+        <DockedPanel borderColor={theme.surfaceAlt}>
+          <McpManager onClose={() => setMcpOpen(false)} />
         </DockedPanel>
       ) : null}
       {configWizardOpen ? (
@@ -872,6 +1038,16 @@ export function App() {
         <InputFooter
           value={inputValue}
           modelName={modelName}
+          cursorIndex={cursorIndex}
+          onPaste={(text) => {
+            const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+            const cursor = cursorRef.current;
+            inputRef.current =
+              inputRef.current.slice(0, cursor) + normalized + inputRef.current.slice(cursor);
+            setInputValue(inputRef.current);
+            moveCursor(cursor + normalized.length);
+            setMenuIndex(0);
+          }}
         />
       )}
     </Box>

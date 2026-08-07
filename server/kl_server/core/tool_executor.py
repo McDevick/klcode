@@ -15,11 +15,13 @@ class ToolExecutor:
         timeout: float = 60.0,
         max_output_chars: int = 20_000,
         guardrail=None,
+        summarizer=None,
     ):
         self.registry = registry
         self.timeout = timeout
         self.max_output_chars = max_output_chars
         self.guardrail = guardrail
+        self.summarizer = summarizer
         if self.max_output_chars <= 0:
             raise ValueError("max_output_chars must be positive")
 
@@ -86,8 +88,26 @@ class ToolExecutor:
         except Exception as exc:
             message = self._truncate(str(exc) or type(exc).__name__)
             return ToolResult(ok=False, output="", error=message)
+        raw_output = result.output
+        raw_error = result.error
+        truncated_output = self._truncate(raw_output)
+        truncated_error = self._truncate(raw_error) if raw_error is not None else None
+        summary = None
+        if self.summarizer is not None:
+            try:
+                summary = await self.summarizer.summarize(
+                    name,
+                    args,
+                    result,
+                    ctx.task_id,
+                )
+            except Exception:
+                summary = None
         return replace(
             result,
-            output=self._truncate(result.output),
-            error=self._truncate(result.error) if result.error is not None else None,
+            output=truncated_output,
+            error=truncated_error,
+            summary=summary,
+            truncated=len(raw_output) > self.max_output_chars
+            or (summary is not None and summary != raw_output),
         )

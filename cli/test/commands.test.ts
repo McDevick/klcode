@@ -173,6 +173,94 @@ test('config key test calls status route', async () => {
   }
 });
 
+test('config mcp list formats servers and tools', async () => {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => [
+      {
+        name: 'demo',
+        url: 'http://localhost:9999',
+        tools: [
+          {
+            name: 'mcp_demo_echo',
+            remote_name: 'echo',
+            description: 'echo text',
+          },
+        ],
+      },
+    ],
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    const result = await ConfigCommand.run(['mcp', 'list']);
+
+    expect(result).toContain('demo: url http://localhost:9999');
+    expect(result).toContain('(1 tools)');
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${DEFAULT_BASE_URL}/api/v1/mcp`,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test('config mcp add posts command server config', async () => {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      name: 'filesystem',
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-filesystem'],
+      tools: [],
+    }),
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    const result = await ConfigCommand.run([
+      'mcp',
+      'add',
+      'filesystem',
+      'command',
+      'npx',
+      '-y',
+      '@modelcontextprotocol/server-filesystem',
+    ]);
+
+    expect(result).toContain('mcp server added: filesystem');
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${DEFAULT_BASE_URL}/api/v1/mcp`,
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"command":"npx"'),
+      }),
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test('config mcp remove calls delete route', async () => {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 204,
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    const result = await ConfigCommand.run(['mcp', 'remove', 'demo']);
+
+    expect(result).toContain('mcp server removed: demo');
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${DEFAULT_BASE_URL}/api/v1/mcp/demo`,
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 import { SessionCommand } from '../src/commands/session';
 import { ApiClient } from '../src/api/client';
 

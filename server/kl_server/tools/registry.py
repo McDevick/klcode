@@ -15,6 +15,12 @@ class ToolRegistry:
     def get(self, name: str) -> Tool:
         return self._tools[name]
 
+    def all(self) -> list[Tool]:
+        return list(self._tools.values())
+
+    def unregister(self, name: str) -> None:
+        self._tools.pop(name, None)
+
     def catalog(self) -> list[dict[str, Any]]:
         return [
             {"name": tool.name, "description": tool.description, "schema": dict(tool.schema)}

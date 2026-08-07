@@ -44,6 +44,12 @@ class McpTransport:
         result = await self._session.call_tool(name, arguments)
         return result.model_dump(mode="json")
 
+    async def list_tools(self) -> list[dict]:
+        if self._session is None:
+            raise ConnectionError("not connected")
+        result = await self._session.list_tools()
+        return [tool.model_dump(mode="json") for tool in result.tools]
+
     async def close(self):
         if self._session is not None:
             try:

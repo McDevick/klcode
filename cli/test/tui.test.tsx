@@ -265,6 +265,37 @@ test('app submits a task and streams events into messages', async () => {
   }
 });
 
+test('app shows feedback_generation event', async () => {
+  const fetchMock = taskFetchMocks();
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('hello');
+    stdin.write('\r');
+    await waitFor(() => FakeWebSocket.instances.length > 0);
+    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    emit(socket, {
+      event: 'feedback_generation',
+      payload: {
+        tool: 'run_tests',
+        category: 'test_failure',
+        summary: 'assert failed: test_app_basic',
+      },
+    });
+    await waitFor(() =>
+      (lastFrame() ?? '').includes(
+        '[Feedback] run_tests: test_failure: assert failed: test_app_basic',
+      ),
+    );
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
 test('slash menu opens on / and arrow selection fills the input', async () => {
   const fetchMock = urlFetchMock();
   vi.stubGlobal('fetch', fetchMock);
@@ -274,26 +305,120 @@ test('slash menu opens on / and arrow selection fills the input', async () => {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('/');
     // 命令面板出现（测试视口较矮，断言窗口底部靠输入框的可见项）
-    await waitFor(() => (lastFrame() ?? '').includes('/abort'));
-    expect(lastFrame()).toContain('/abort');
+    await waitFor(() => (lastFrame() ?? '').includes('/compact'));
+    expect(lastFrame()).toContain('/compact');
     const menuFrame = lastFrame() ?? '';
-    expect(menuFrame.indexOf('/abort')).toBeLessThan(menuFrame.indexOf('> '));
+    expect(menuFrame.indexOf('/compact')).toBeLessThan(menuFrame.indexOf('> '));
 
-    // 滚动窗口：ArrowDown 一路到 /exit（index 12，共 13 项）后菜单滚动显示底部命令
-    for (let i = 0; i < 12; i += 1) {
+    // 滚动窗口：ArrowDown 一路到 /exit（index 14，共 15 项）后菜单滚动显示底部命令
+    for (let i = 0; i < 14; i += 1) {
       stdin.write('[B');
     }
     await sleep(30);
     expect(lastFrame()).toContain('退出 TUI');
 
     // ArrowDown 回到 index 0（/session），Enter 填入输入框
-    for (let i = 0; i < 12; i += 1) {
+    for (let i = 0; i < 14; i += 1) {
       stdin.write('[A');
     }
     await sleep(30);
     stdin.write('\r');
     await sleep(30);
-    expect(lastFrame()).toContain('/session ');
+    expect(lastFrame()).toContain('/session');
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app /skills opens a command-style skill menu', async () => {
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    if (url.includes('/api/v1/skills') && method === 'GET') {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [
+          { name: 'leetcode', description: '解决 LeetCode C++ 题目' },
+          { name: 'python', description: 'Python 开发' },
+        ],
+      };
+    }
+    if (url.includes('/api/v1/sessions') && method === 'GET') return listSessionsEmpty;
+    if (url.includes('/api/v1/sessions') && method === 'POST') return sessionResponse;
+    if (url.includes('/config/model')) return modelConfigResponse;
+    return { ok: true, status: 200, json: async () => ({}) };
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('/skills');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('leetcode'));
+    expect(lastFrame()).toContain('解决 LeetCode C++ 题目');
+    expect(lastFrame()).toContain('python');
+    expect(lastFrame()).toContain('▸');
+
+    stdin.write('\u001b');
+    await waitFor(() => !(lastFrame() ?? '').includes('leetcode'));
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app /mcp opens manager and deletes selected server', async () => {
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    if (url.includes('/api/v1/mcp/demo') && method === 'DELETE') {
+      return { ok: true, status: 204 };
+    }
+    if (url.includes('/api/v1/mcp') && method === 'GET') {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            name: 'demo',
+            url: 'http://localhost:9999',
+            tools: [
+              {
+                name: 'mcp_demo_echo',
+                remote_name: 'echo',
+                description: 'echo text',
+              },
+            ],
+          },
+        ],
+      };
+    }
+    if (url.includes('/api/v1/sessions') && method === 'GET') return listSessionsEmpty;
+    if (url.includes('/api/v1/sessions') && method === 'POST') return sessionResponse;
+    if (url.includes('/config/model')) return modelConfigResponse;
+    return { ok: true, status: 200, json: async () => ({}) };
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('/mcp');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('demo'));
+    expect(lastFrame()).toContain('mcp_demo_echo');
+
+    stdin.write('d');
+    await sleep(50);
+    stdin.write('d');
+    await waitFor(() => (lastFrame() ?? '').includes('已删除: demo'));
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:8700/api/v1/mcp/demo',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
   } finally {
     unmount();
     vi.unstubAllGlobals();
@@ -733,7 +858,91 @@ test('slash menu filters commands by typed prefix and completes on enter', async
     await sleep(30);
     stdin.write('\r');
     await sleep(30);
-    expect(lastFrame()).toContain('/abort ');
+    expect(lastFrame()).toContain('/abort');
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('bracketed paste keeps multi-line input content', async () => {
+  const fetchMock = urlFetchMock();
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write(
+      '\x1b[200~**输入：**n = 10, t = 2\r\n\r\n**输出：**10\r\n\r\n**解释：**\r\n10 的数位乘积为 0\x1b[201~',
+    );
+    await waitFor(() => (lastFrame() ?? '').includes('**输入：**n = 10, t = 2'));
+    expect(lastFrame()).toContain('**解释：**');
+    expect(lastFrame()).toContain('10 的数位乘积为 0');
+    expect(lastFrame()).toContain('>');
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('input supports cursor movement and in-place editing', async () => {
+  const fetchMock = urlFetchMock();
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+
+    stdin.write('abc');
+    await waitFor(() => (lastFrame() ?? '').includes('abc'));
+    stdin.write('\x1b[D');
+    await sleep(30);
+    stdin.write('\x1b[D');
+    await sleep(30);
+    stdin.write('X');
+    await waitFor(() => (lastFrame() ?? '').includes('aXbc'));
+
+    stdin.write('\x1b[D');
+    await sleep(30);
+    stdin.write('\x7f');
+    await waitFor(() => (lastFrame() ?? '').includes('Xbc'));
+
+    stdin.write('\x1b[1~');
+    await sleep(30);
+    stdin.write('A');
+    await waitFor(() => (lastFrame() ?? '').includes('AXbc'));
+    stdin.write('\x1b[4~');
+    await sleep(30);
+    stdin.write('Z');
+    await waitFor(() => (lastFrame() ?? '').includes('AXbcZ'));
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('input arrow keys move cursor between multiline lines', async () => {
+  const fetchMock = urlFetchMock();
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('\x1b[200~ab\ncd\x1b[201~');
+    await waitFor(() => (lastFrame() ?? '').includes('cd'));
+
+    stdin.write('\x1b[A');
+    await sleep(30);
+    stdin.write('X');
+    await waitFor(() => (lastFrame() ?? '').includes('abX'));
+
+    stdin.write('\x1b[B');
+    await sleep(30);
+    stdin.write('Y');
+    await waitFor(() => (lastFrame() ?? '').includes('cdY'));
   } finally {
     unmount();
     vi.unstubAllGlobals();

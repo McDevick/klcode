@@ -14,6 +14,9 @@ export const ConfigCommand = {
     if (area === 'model') {
       return runModel(subcommand, rest);
     }
+    if (area === 'mcp') {
+      return runMcp(subcommand, rest);
+    }
     return 'opening config wizard';
   },
 };
@@ -110,5 +113,72 @@ async function runKey(subcommand: string | undefined, rest: string[]): Promise<s
     }
     default:
       return 'usage: kl config key set|test|clear|show';
+  }
+}
+
+async function runMcp(subcommand: string | undefined, rest: string[]): Promise<string> {
+  const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
+
+  switch (subcommand) {
+    case 'list': {
+      const servers = await client.listMcpServers();
+      if (servers.length === 0) {
+        return 'no mcp servers configured';
+      }
+      return servers
+        .map((server) => {
+          const transport = server.url
+            ? `url ${server.url}`
+            : `command ${server.command ?? ''} ${(server.args ?? []).join(' ')}`.trim();
+          return `${server.name}: ${transport} (${server.tools?.length ?? 0} tools)`;
+        })
+        .join('\n');
+    }
+    case 'add': {
+      const [name, kind, value, ...args] = rest;
+      if (!name || !kind || !value) {
+        return 'usage: kl config mcp add <name> url <url> | kl config mcp add <name> command <command> [args...]';
+      }
+      const payload =
+        kind === 'url'
+          ? { name, url: value }
+          : kind === 'command'
+            ? { name, command: value, args }
+            : null;
+      if (payload === null) {
+        return 'usage: kl config mcp add <name> url <url> | kl config mcp add <name> command <command> [args...]';
+      }
+      const server = await client.addMcpServer(payload);
+      return `mcp server added: ${server.name} (${server.tools?.length ?? 0} tools)`;
+    }
+    case 'refresh': {
+      const [name] = rest;
+      if (!name) {
+        return 'usage: kl config mcp refresh <name>';
+      }
+      const server = await client.refreshMcpServer(name);
+      return `mcp server refreshed: ${server.name} (${server.tools?.length ?? 0} tools)`;
+    }
+    case 'remove': {
+      const [name] = rest;
+      if (!name) {
+        return 'usage: kl config mcp remove <name>';
+      }
+      await client.removeMcpServer(name);
+      return `mcp server removed: ${name}`;
+    }
+    case 'tools': {
+      const [name] = rest;
+      const servers = await client.listMcpServers();
+      const selected = name
+        ? servers.filter((server) => server.name === name)
+        : servers;
+      const lines = selected.flatMap((server) =>
+        (server.tools ?? []).map((tool) => `${server.name}: ${tool.name} (${tool.remote_name})`),
+      );
+      return lines.length > 0 ? lines.join('\n') : 'no mcp tools';
+    }
+    default:
+      return 'usage: kl config mcp list|tools|add|refresh|remove';
   }
 }

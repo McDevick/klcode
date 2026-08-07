@@ -5,7 +5,7 @@ export interface RunningTask {
   steps: number;
 }
 
-export type MessageKind = 'text' | 'info' | 'error' | 'done' | 'tool';
+export type MessageKind = 'text' | 'info' | 'error' | 'done' | 'tool' | 'feedback';
 
 export interface ChatMessage {
   id: number;

@@ -35,6 +35,21 @@ async def test_summarizer_builds_provider_request():
 
 
 @pytest.mark.asyncio
+async def test_summarizer_builds_tool_output_request():
+    provider = MockProvider(responses=["tool summary"])
+    summarizer = LLMSummarizer(provider, model="mock-model")
+
+    result = await summarizer.summarize_output("exit_code: 1\nfailure", "t1")
+
+    assert result == "tool summary"
+    request = provider.calls[0]
+    content = request.messages[0]["content"]
+    assert "Preserve exact file paths" in content
+    assert "Tool output:" in content
+    assert "exit_code: 1\nfailure" in content
+
+
+@pytest.mark.asyncio
 async def test_summarizer_resolves_callable_provider_and_model():
     provider = MockProvider(responses=["summary", "summary"])
     state = {"model": "model-a"}

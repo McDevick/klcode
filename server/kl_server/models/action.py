@@ -18,3 +18,5 @@ class ToolResult:
     output: str
     error: str | None = None
     meta: dict = field(default_factory=dict)
+    summary: str | None = None
+    truncated: bool = False

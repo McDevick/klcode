@@ -58,6 +58,7 @@ export function buildProgram(): Command {
       process.stdout.write('[?1049h');
       process.on('exit', () => {
         process.stdout.write('[?1000l[?1006l');
+        process.stdout.write('[?2004l');
         process.stdout.write('[?1049l');
       });
       render(React.createElement(App));

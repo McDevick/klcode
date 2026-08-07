@@ -30,6 +30,15 @@ class McpAdapter:
         except Exception as exc:
             return ToolResult(ok=False, output="", error=str(exc))
 
+    async def list_tools(self, server: str) -> list[dict]:
+        config = self.servers.get(server)
+        if config is None:
+            return []
+        transport = self._transports.setdefault(server, McpTransport(config))
+        if transport._session is None:
+            await transport.connect()
+        return await transport.list_tools()
+
     async def close(self):
         for transport in self._transports.values():
             await transport.close()

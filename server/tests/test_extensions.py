@@ -3,7 +3,7 @@ import pytest
 from kl_server.core.agent_loop import AgentLoop, LoopSettings
 from kl_server.core.context import AssembledContext
 from kl_server.core.tool_executor import ToolExecutor
-from kl_server.extensions import McpTool, register_user_tools
+from kl_server.extensions import McpTool, register_mcp_tools, register_user_tools
 from kl_server.models.action import ToolResult
 from kl_server.models.task import Session
 from kl_server.providers.mock import MockProvider
@@ -79,8 +79,23 @@ async def test_loop_injects_skills_and_fires_hooks(tmp_path):
 
 
 class FakeMcpAdapter:
+    servers = {"demo": {}}
+
     async def tool(self, server, name, args):
         return ToolResult(ok=True, output=f"{server}:{name}")
+
+    async def list_tools(self, server):
+        return [
+            {
+                "name": "echo",
+                "description": "echo text",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"text": {"type": "string"}},
+                    "required": ["text"],
+                },
+            }
+        ]
 
 
 @pytest.mark.asyncio
@@ -117,6 +132,27 @@ async def test_mcp_tool_rejects_non_object_args():
 
     assert result.ok is False
     assert "args" in result.error
+
+
+@pytest.mark.asyncio
+async def test_register_mcp_tools_registers_remote_tools():
+    registry = ToolRegistry()
+    adapter = FakeMcpAdapter()
+
+    registered = await register_mcp_tools(registry, adapter)
+
+    assert registered == [
+        {"server": "demo", "tool": "echo", "name": "mcp_demo_echo"}
+    ]
+    catalog = {item["name"]: item for item in registry.catalog()}
+    assert catalog["mcp_demo_echo"]["schema"]["required"] == ["text"]
+    result = await registry.execute(
+        "mcp_demo_echo",
+        {"text": "hi"},
+        ToolContext(workspace="."),
+    )
+    assert result.ok is True
+    assert result.output == "demo:echo"
 
 
 class PluginTool(Tool):

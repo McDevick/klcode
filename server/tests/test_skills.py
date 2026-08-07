@@ -79,6 +79,33 @@ def test_skill_loader_sorts_output(tmp_path):
     assert loader.load(["alpha zeta"]) == "# alpha\n\n# zeta"
 
 
+def test_skill_loader_lists_skills_with_descriptions(tmp_path):
+    skill_dir = tmp_path / "skills"
+    (skill_dir / "alpha").mkdir(parents=True)
+    (skill_dir / "alpha" / "SKILL.md").write_text(
+        "# Alpha\nDo alpha things",
+        encoding="utf-8",
+    )
+    (skill_dir / "zeta").mkdir(parents=True)
+    (skill_dir / "zeta" / "SKILL.md").write_text(
+        "---\ndescription: Do zeta things\n---\n# Zeta",
+        encoding="utf-8",
+    )
+
+    loader = SkillLoader(str(skill_dir))
+
+    assert loader.list() == [
+        {"name": "alpha", "description": "Do alpha things"},
+        {"name": "zeta", "description": "Do zeta things"},
+    ]
+
+
+def test_skill_loader_list_missing_root_returns_empty(tmp_path):
+    loader = SkillLoader(str(tmp_path / "missing"))
+
+    assert loader.list() == []
+
+
 def test_skill_loader_skips_unreadable_document(tmp_path, monkeypatch, caplog):
     skill_dir = tmp_path / "skills"
     markdown = skill_dir / "python" / "SKILL.md"

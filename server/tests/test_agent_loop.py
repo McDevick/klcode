@@ -8,6 +8,7 @@ from kl_server.core.event_logger import EventLogger
 from kl_server.core.guardrail import DangerClassifier, Guardrail, HITLManager, ScopeFence
 from kl_server.core.sandbox import SandboxPolicy
 from kl_server.core.tool_executor import ToolExecutor
+from kl_server.memory.store import MemoryStore
 from kl_server.models.action import ToolResult
 from kl_server.models.task import Session
 from kl_server.providers.base import ProviderResponse, ProviderToolCall
@@ -33,6 +34,11 @@ class CrashTool(Tool):
 
     async def execute(self, args, ctx: ToolContext) -> ToolResult:
         raise RuntimeError("boom")
+
+
+class FailingProvider:
+    async def complete(self, request):
+        raise RuntimeError("api down")
 
 
 def make_loop(registry: ToolRegistry, responses: list[str], max_iterations: int = 3):
@@ -116,20 +122,50 @@ async def test_tool_crash_is_reported_back():
     assert any("boom" in message["content"] for message in _feedback_messages(second_messages))
 
 
-class FailingCommandTool(Tool):
-    name = "run_command"
-    description = "runs a command that fails"
+class FailingTestTool(Tool):
+    name = "run_tests"
+    description = "runs tests that fail"
     schema = {"type": "object", "properties": {}}
 
     async def execute(self, args, ctx: ToolContext) -> ToolResult:
         return ToolResult(ok=True, output='{"exit_code": 1, "stdout": "1 failed", "stderr": ""}')
 
 
+class LongFailingTestTool(Tool):
+    name = "run_tests"
+    description = "returns a long test failure"
+    schema = {"type": "object", "properties": {}}
+
+    async def execute(self, args, ctx: ToolContext) -> ToolResult:
+        return ToolResult(
+            ok=True,
+            output=(
+                '{"exit_code": 1, "stdout": "'
+                + "x" * 2000
+                + ' FINAL FAILED", "stderr": ""}'
+            ),
+        )
+
+
+class BigOutputTool(Tool):
+    name = "big_output"
+    description = "returns a large output"
+    schema = {"type": "object", "properties": {}}
+
+    async def execute(self, args, ctx: ToolContext) -> ToolResult:
+        return ToolResult(ok=True, output="x" * 100_000)
+
+
+class FakeToolSummarizer:
+    async def summarize(self, tool, args, result, task_id):
+        return "summarized tool output"
+
+
 @pytest.mark.asyncio
 async def test_loop_reinjects_feedback_into_history():
     registry = ToolRegistry()
-    registry.register(FailingCommandTool())
-    provider = MockProvider(responses=['{"tool":"run_command","args":{}}', "DONE"])
+    registry.register(FailingTestTool())
+    provider = MockProvider(responses=['{"tool":"run_tests","args":{}}', "DONE"])
     loop = AgentLoop(
         provider=provider,
         tools=ToolExecutor(registry),
@@ -138,6 +174,75 @@ async def test_loop_reinjects_feedback_into_history():
     await loop.run(Session(id="s1", workspace="."), "fix")
     feedback_msgs = _feedback_messages(provider.calls[1].messages)
     assert feedback_msgs and "test_failure" in feedback_msgs[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_loop_injects_retry_budget_signal():
+    registry = ToolRegistry()
+    registry.register(FailingTestTool())
+    provider = MockProvider(
+        responses=[
+            '{"tool":"run_tests","args":{}}',
+            '{"tool":"run_tests","args":{}}',
+            "DONE",
+        ]
+    )
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=5, retry_budget=2),
+    )
+
+    await loop.run(Session(id="s1", workspace="."), "fix")
+
+    third_messages = provider.calls[2].messages
+    assert any(
+        "retry_budget_exhausted" in message["content"]
+        for message in _feedback_messages(third_messages)
+    )
+
+
+@pytest.mark.asyncio
+async def test_loop_memory_keeps_feedback_tail(tmp_path):
+    registry = ToolRegistry()
+    registry.register(LongFailingTestTool())
+    provider = MockProvider(responses=['{"tool":"run_tests","args":{}}', "DONE"])
+    memory = MemoryStore(tmp_path / "memory.db")
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=3),
+        memory=memory,
+    )
+
+    await loop.run(Session(id="s1", workspace="."), "fix")
+
+    feedback_records = await memory.list_by_kind("s1", "feedback")
+    assert feedback_records[-1]["content"].endswith("FINAL FAILED")
+
+
+@pytest.mark.asyncio
+async def test_loop_uses_tool_summary_in_history():
+    registry = ToolRegistry()
+    registry.register(BigOutputTool())
+    executor = ToolExecutor(registry, summarizer=FakeToolSummarizer())
+    provider = MockProvider(responses=['{"tool":"big_output","args":{}}', "DONE"])
+    loop = AgentLoop(
+        provider=provider,
+        tools=executor,
+        settings=LoopSettings(max_iterations=3),
+    )
+
+    await loop.run(Session(id="s1", workspace="."), "task")
+
+    second_messages = provider.calls[1].messages
+    tool_messages = [
+        message
+        for message in second_messages
+        if message.get("role") == "tool"
+    ]
+    assert tool_messages
+    assert tool_messages[0]["content"] == "summarized tool output"
 
 
 class SpyAssembler:
@@ -308,6 +413,30 @@ async def test_loop_writes_events_in_realtime(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_provider_error_writes_feedback_generation(tmp_path):
+    logger = EventLogger(tmp_path / "audit.jsonl")
+    loop = AgentLoop(
+        provider=FailingProvider(),
+        tools=ToolExecutor(ToolRegistry()),
+        settings=LoopSettings(max_iterations=2),
+        logger=logger,
+    )
+
+    with pytest.raises(RuntimeError, match="api down"):
+        await loop.run(Session(id="s1", workspace="."), "task", task_id="s1")
+
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "audit.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    ]
+    feedback_events = [
+        record for record in records if record["event"] == "feedback_generation"
+    ]
+    assert feedback_events
+    assert feedback_events[-1]["payload"]["category"] == "provider_error"
+
+
+@pytest.mark.asyncio
 async def test_loop_logs_ordered_events_with_task_id(tmp_path):
     registry = ToolRegistry()
     registry.register(FinalTool())
@@ -326,6 +455,7 @@ async def test_loop_logs_ordered_events_with_task_id(tmp_path):
     assert event_names[:2] == ["loop_start", "llm_call"]
     assert "llm_result" in event_names
     assert "tool_result" in event_names
+    assert "feedback_generation" in event_names
     assert event_names[-1] == "loop_end"
 
 

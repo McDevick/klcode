@@ -8,6 +8,7 @@ from kl_server.config.loader import load_app_config
 from kl_server.core.agent_loop import AgentLoop, LoopSettings
 from kl_server.core.context import ContextAssembler, LLMSummarizer
 from kl_server.core.event_logger import EventLogger
+from kl_server.core.output_summarizer import OutputSummarizer
 from kl_server.core.guardrail import DangerClassifier, Guardrail, HITLManager, ScopeFence
 from kl_server.core.sandbox import SandboxPolicy
 from kl_server.core.session_manager import SessionManager
@@ -124,6 +125,9 @@ def build_app_dependencies(
             return config.default_model or (getattr(resolved, "model", "") or "")
 
         context.summarizer = LLMSummarizer(_summarizer_provider, _summarizer_model)
+        executor.summarizer = OutputSummarizer(llm_summarizer=context.summarizer)
+    else:
+        executor.summarizer = OutputSummarizer()
     loop = AgentLoop(
         provider=provider,
         tools=executor,

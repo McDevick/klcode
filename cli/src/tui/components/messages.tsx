@@ -54,6 +54,14 @@ export function AgentBubble({ content, kind }: { content: string; kind: ChatMess
       </Box>
     );
   }
+  if (kind === 'feedback') {
+    return (
+      <Box paddingX={1}>
+        {prefix}
+        <Text color={theme.yellow}>[Feedback] {content}</Text>
+      </Box>
+    );
+  }
   return (
     <Box paddingX={1}>
       {prefix}

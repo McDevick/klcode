@@ -63,6 +63,33 @@ class LLMSummarizer:
             raise
         return response.text
 
+    async def summarize_output(self, text: str, task_id: str = "") -> str:
+        prompt = (
+            "You are summarizing a single tool output for an autonomous coding agent.\n"
+            f"Task: {task_id}\n\n"
+            "Preserve exact file paths, line numbers, exit codes, commands, "
+            "error messages, failure cases, and any facts needed to continue.\n"
+            "Do not invent results.\n"
+            "Keep the summary under 800 tokens when possible.\n"
+            "Use Chinese if the source text is Chinese.\n\n"
+            "Tool output:\n"
+            f"{text}"
+        )
+        request = ProviderRequest(
+            messages=[{"role": "user", "content": prompt}],
+            model=self._resolve_model(),
+        )
+        try:
+            response = await self._resolve_provider().complete(request)
+        except Exception:
+            logger.warning(
+                "LLM tool output summarization failed for task %s",
+                task_id,
+                exc_info=True,
+            )
+            raise
+        return response.text
+
 
 @dataclass
 class AssembledContext:

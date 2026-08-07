@@ -1,7 +1,7 @@
 import asyncio
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from kl_server.core.feedback import classify_tool_result
 from kl_server.core.tool_executor import ToolExecutor
@@ -15,6 +15,7 @@ from kl_server.tools.base import ToolContext
 @dataclass
 class LoopSettings:
     max_iterations: int = 10
+    retry_budget: int = 3
 
 
 # Native tool calling: the provider receives the tool catalog via the OpenAI
@@ -160,6 +161,8 @@ class AgentLoop:
     async def run(self, session: Session, task: str, task_id: str = "", workspace_mode: str = "managed") -> str:
         task_id = task_id or session.id
         history: list[dict] = [{"role": "user", "content": task}]
+        category_streak: dict[str, int] = {}
+        budget_warned: set[str] = set()
         if self.logger:
             self.logger.write("loop_start", {"task": task[:500]}, task_id)
         if self.hooks:
@@ -260,12 +263,31 @@ class AgentLoop:
                 if self.logger:
                     self.logger.write("provider_error", {"error": str(exc)[:500]}, task_id)
                     self.logger.write("loop_end", {"reason": "provider_error"}, task_id)
+                    self.logger.write(
+                        "feedback_generation",
+                        {
+                            "tool": "provider",
+                            "category": "provider_error",
+                            "summary": str(exc)[:300],
+                        },
+                        task_id,
+                    )
                 if self.hooks:
                     self.hooks.run(
                         "error",
                         {"reason": "provider_error", "error": str(exc)[:500]},
                     )
                     self.hooks.run("task_end", {"reason": "provider_error"})
+                if self.memory is not None:
+                    try:
+                        await self.memory.add(
+                            session.id,
+                            "feedback",
+                            [session.id, task_id],
+                            f"provider: provider_error: {str(exc)[:400]}",
+                        )
+                    except Exception:
+                        pass
                 raise
             # provider 调用期间可能收到 /pause；在消费结果前再等一次门控，
             # 保证暂停中的任务不会越过结果处理而"偷偷完成"。
@@ -355,7 +377,7 @@ class AgentLoop:
                             "error": result.error,
                             "meta": result.meta,
                             "args": action.args,
-                            "output": result.output[:500],
+                            "output": (result.summary or result.output)[:500],
                         },
                         task_id,
                     )
@@ -431,7 +453,7 @@ class AgentLoop:
                                 "error": result.error,
                                 "meta": result.meta,
                                 "args": action.args,
-                                "output": result.output[:500],
+                                "output": (result.summary or result.output)[:500],
                             },
                             task_id,
                         )
@@ -445,8 +467,40 @@ class AgentLoop:
                             "error",
                             {"tool": action.tool, "error": result.error},
                         )
-                feedback = classify_tool_result(result, action.tool)
-                feedbacks.append(f"{feedback.category.value}: {feedback.summary[-500:]}")
+                feedback = replace(
+                    classify_tool_result(result, action.tool),
+                    raw_ref=f"{task_id}:{call.id}",
+                )
+                feedback_text = f"{feedback.category.value}: {feedback.summary[-500:]}"
+                if not feedbacks or feedbacks[-1] != feedback_text:
+                    feedbacks.append(feedback_text)
+                category = feedback.category.value
+                if category == "success":
+                    category_streak.clear()
+                else:
+                    streak = category_streak.get(category, 0) + 1
+                    category_streak[category] = streak
+                    if (
+                        self.settings.retry_budget > 0
+                        and streak >= self.settings.retry_budget
+                        and category not in budget_warned
+                    ):
+                        budget_warned.add(category)
+                        feedbacks.append(
+                            "retry_budget_exhausted: "
+                            f"{category} repeated {streak} times; "
+                            "stop repeating the same approach and reassess"
+                        )
+                if self.logger:
+                    self.logger.write(
+                        "feedback_generation",
+                        {
+                            "tool": action.tool,
+                            "category": feedback.category.value,
+                            "summary": feedback.summary[:300],
+                        },
+                        task_id,
+                    )
                 if self.hooks:
                     self.hooks.run(
                         "feedback_generation",
@@ -457,7 +511,11 @@ class AgentLoop:
                     )
                 # 原生格式：工具结果按 tool_call_id 回传为 role: tool
                 history.append(
-                    {"role": "tool", "tool_call_id": call.id, "content": result.output}
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.id,
+                        "content": result.summary if result.summary is not None else result.output,
+                    }
                 )
                 if self.memory is not None:
                     try:
@@ -465,7 +523,13 @@ class AgentLoop:
                             session.id,
                             "tool_result",
                             [session.id, task_id],
-                            f"{action.tool}: {feedback.summary[:400]}",
+                            f"{action.tool}: {feedback.summary[-400:]}",
+                        )
+                        await self.memory.add(
+                            session.id,
+                            "feedback",
+                            [session.id, task_id],
+                            f"{action.tool}: {feedback.category.value}: {feedback.summary[-400:]}",
                         )
                     except Exception:
                         if self.logger:

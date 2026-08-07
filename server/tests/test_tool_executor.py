@@ -152,6 +152,29 @@ async def test_executor_truncates_large_output():
     assert result.ok is True
 
 
+class FakeSummarizer:
+    async def summarize(self, tool, args, result, task_id):
+        return "summarized output"
+
+
+@pytest.mark.asyncio
+async def test_executor_attaches_summary_for_large_output():
+    registry = ToolRegistry()
+    registry.register(BigTool())
+    executor = ToolExecutor(
+        registry,
+        max_output_chars=10_000,
+        summarizer=FakeSummarizer(),
+    )
+
+    result = await executor.execute("big", {}, ToolContext(workspace="."))
+
+    assert result.summary == "summarized output"
+    assert result.truncated is True
+    assert result.output.startswith("x")
+    assert result.output.endswith("\n...[truncated]")
+
+
 @pytest.mark.asyncio
 async def test_executor_truncates_large_error():
     registry = ToolRegistry()

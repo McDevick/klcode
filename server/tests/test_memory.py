@@ -12,6 +12,19 @@ async def test_memory_stores_and_finds_by_tag(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_memory_lists_by_kind_in_insert_order(tmp_path):
+    async with MemoryStore(tmp_path / "memory.db") as store:
+        await store.add("s1", "feedback", ["s1"], "first")
+        await store.add("s1", "feedback", ["s1"], "second")
+        await store.add("s1", "tool_result", ["s1"], "tool")
+
+        assert await store.list_by_kind("s1", "feedback") == [
+            {"id": 1, "content": "first", "tags": ["s1"]},
+            {"id": 2, "content": "second", "tags": ["s1"]},
+        ]
+
+
+@pytest.mark.asyncio
 async def test_no_matching_tags_returns_empty(tmp_path):
     async with MemoryStore(tmp_path / "memory.db") as store:
         await store.add("project", "decision", ["auth"], "use tokens")

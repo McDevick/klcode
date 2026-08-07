@@ -2,6 +2,7 @@ import json
 import re
 from pathlib import Path
 
+from kl_server.core.tool_categories import COMMAND_TOOLS
 from kl_server.models.action import Action
 
 
@@ -33,7 +34,7 @@ class ScopeFence:
 
 
 class DangerClassifier:
-    COMMAND_TOOLS = {"run_command", "run_tests", "run_lint", "typecheck"}
+    COMMAND_TOOLS = COMMAND_TOOLS
     DANGEROUS_TOOLS = {"delete_file", "git_commit"}
     UNMANAGED_ESCALATION_TOOLS = {"write_file", "run_command", "apply_patch"}
     CRITICAL_PATTERNS = [

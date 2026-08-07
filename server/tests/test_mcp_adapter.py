@@ -121,6 +121,23 @@ async def test_tool_calls_stdio_mcp_server(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_list_tools_stdio_mcp_server(tmp_path):
+    script = tmp_path / "mcp_server.py"
+    script.write_text(MCP_SERVER_SOURCE, encoding="utf-8")
+    adapter = McpAdapter(
+        {"demo": {"command": sys.executable, "args": [str(script)]}}
+    )
+
+    try:
+        tools = await adapter.list_tools("demo")
+    finally:
+        await adapter.close()
+
+    assert tools[0]["name"] == "echo"
+    assert tools[0]["input_schema"]["required"] == ["text"]
+
+
+@pytest.mark.asyncio
 async def test_tool_reports_not_connected_for_failing_server(tmp_path):
     script = tmp_path / "broken_server.py"
     script.write_text("raise SystemExit(1)\n", encoding="utf-8")

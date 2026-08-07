@@ -24,6 +24,121 @@ def make_deps_client(tmp_path):
     return TestClient(create_app(deps=deps))
 
 
+def test_lifespan_closes_database_and_memory(tmp_path):
+    deps = build_app_dependencies(
+        config_path=tmp_path / "config.yaml",
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+    client = TestClient(create_app(deps=deps))
+    with client:
+        assert client.get("/health").status_code == 200
+
+    assert deps.db.conn is None
+    assert deps.memory.conn is None
+
+
+class TrackingMcpAdapter:
+    def __init__(self):
+        self.closed = False
+
+    async def close(self):
+        self.closed = True
+
+
+class DiscoveryMcpAdapter(TrackingMcpAdapter):
+    servers = {"demo": {}}
+
+    async def list_tools(self, server):
+        return [
+            {
+                "name": "echo",
+                "description": "echo text",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"text": {"type": "string"}},
+                    "required": ["text"],
+                },
+            }
+        ]
+
+
+def test_lifespan_closes_mcp_adapter(tmp_path):
+    deps = build_app_dependencies(
+        config_path=tmp_path / "config.yaml",
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+    tracker = TrackingMcpAdapter()
+    deps.mcp = tracker
+
+    client = TestClient(create_app(deps=deps))
+    with client:
+        assert client.get("/health").status_code == 200
+
+    assert tracker.closed is True
+
+
+def test_lifespan_registers_mcp_tools(tmp_path):
+    deps = build_app_dependencies(
+        config_path=tmp_path / "config.yaml",
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+    deps.mcp = DiscoveryMcpAdapter()
+
+    client = TestClient(create_app(deps=deps))
+    with client:
+        names = {item["name"] for item in deps.tool_registry.catalog()}
+
+    assert "mcp_demo_echo" in names
+    assert deps.mcp.closed is True
+
+
+def test_mcp_management_add_list_refresh_remove(tmp_path):
+    deps = build_app_dependencies(
+        config_path=tmp_path / "config.yaml",
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+    deps.mcp = DiscoveryMcpAdapter()
+
+    client = TestClient(create_app(deps=deps))
+    with client:
+        added = client.post(
+            "/api/v1/mcp",
+            json={"name": "demo", "url": "http://localhost:9999"},
+        )
+        assert added.status_code == 200
+        assert added.json()["name"] == "demo"
+        assert added.json()["tools"][0]["name"] == "mcp_demo_echo"
+
+        listed = client.get("/api/v1/mcp")
+        assert listed.status_code == 200
+        assert listed.json()[0]["url"] == "http://localhost:9999"
+        assert listed.json()[0]["tools"][0]["remote_name"] == "echo"
+
+        refreshed = client.post("/api/v1/mcp/demo/refresh")
+        assert refreshed.status_code == 200
+        assert refreshed.json()["tools"][0]["name"] == "mcp_demo_echo"
+
+        deleted = client.delete("/api/v1/mcp/demo")
+        assert deleted.status_code == 204
+        assert client.get("/api/v1/mcp").json() == []
+        assert not any(
+            item["name"] == "mcp_demo_echo"
+            for item in deps.tool_registry.catalog()
+        )
+
+
 def create_session(client, workspace="C:\\work", name=None):
     payload = {"workspace": workspace}
     if name is not None:
@@ -38,6 +153,23 @@ def test_sessions_list_starts_empty():
 
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_skills_endpoint_lists_workspace_skills(tmp_path):
+    client = make_deps_client(tmp_path)
+    skill_dir = tmp_path / ".kl" / "skills" / "leetcode"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "# LeetCode\n解决 LeetCode C++ 题目",
+        encoding="utf-8",
+    )
+
+    response = client.get("/api/v1/skills")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {"name": "leetcode", "description": "解决 LeetCode C++ 题目"}
+    ]
 
 
 def test_session_create_get_and_list_returns_generated_id():
@@ -178,6 +310,30 @@ async def test_session_history_uses_full_task_summary(tmp_path):
 
     assert history[-1]["content"] == "这是完整回答"
     assert "被截断" not in history[-1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_session_feedback_endpoint_lists_feedback_memory(tmp_path):
+    client = make_deps_client(tmp_path)
+    session_id = create_session(client, str(tmp_path)).json()["id"]
+    memory = client.app.state.deps.memory
+    await memory.add(
+        session_id,
+        "feedback",
+        [session_id],
+        "run_tests: test_failure: assert failed",
+    )
+
+    response = client.get(f"/api/v1/sessions/{session_id}/feedback")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "id": 1,
+            "content": "run_tests: test_failure: assert failed",
+            "tags": [session_id],
+        }
+    ]
 
 
 @pytest.mark.asyncio

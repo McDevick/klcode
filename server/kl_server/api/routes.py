@@ -1,10 +1,11 @@
 import asyncio
 import json
+import re
 from pathlib import Path
 
 import yaml
 from fastapi import APIRouter, HTTPException, Request, Response
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from kl_server.config.config import AppConfig, ProviderConfig
 from kl_server.core.agent_loop import SYSTEM_PROMPT
@@ -70,6 +71,26 @@ class ModelConfigPayload(BaseModel):
     model: str = ""
 
 
+class McpServerPayload(BaseModel):
+    name: str
+    url: str | None = None
+    command: str | None = None
+    args: list[str] = []
+
+    @field_validator("name")
+    @classmethod
+    def _valid_name(cls, value: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", value):
+            raise ValueError("mcp server name may only contain letters, digits, '_' and '-'")
+        return value
+
+    @model_validator(mode="after")
+    def _valid_transport(self):
+        if bool(self.url) == bool(self.command):
+            raise ValueError("mcp server requires exactly one of 'url' or 'command'")
+        return self
+
+
 def _model_available(config: AppConfig) -> list[dict]:
     available = [{"provider": "mock", "model": "mock-model", "base_url": "", "max_context": 20000}]
     for name, provider_config in config.providers.items():
@@ -106,6 +127,45 @@ def _model_state(config: AppConfig) -> dict:
     }
 
 
+def _mcp_server_config(deps, server: str) -> dict | None:
+    config = deps.mcp.servers.get(server)
+    if config is None:
+        return None
+    record = {"name": server}
+    for key in ("command", "url", "args"):
+        if config.get(key) is not None:
+            record[key] = config[key]
+    tools = []
+    for tool in deps.tool_registry.all():
+        if getattr(tool, "server", None) == server:
+            tools.append(
+                {
+                    "name": tool.name,
+                    "remote_name": getattr(tool, "remote_name", tool.name),
+                    "description": tool.description,
+                }
+            )
+    record["tools"] = tools
+    return record
+
+
+def _mcp_servers(deps) -> list[dict]:
+    servers = []
+    for server in deps.mcp.servers:
+        config = _mcp_server_config(deps, server)
+        if config is not None:
+            servers.append(config)
+    return servers
+
+
+async def _refresh_mcp_server(deps, server: str) -> None:
+    from kl_server.extensions import register_mcp_tools, unregister_mcp_tools
+
+    unregister_mcp_tools(deps.tool_registry, server)
+    if server in deps.mcp.servers:
+        await register_mcp_tools(deps.tool_registry, deps.mcp, servers=[server])
+
+
 def _history_message(record: dict) -> dict | None:
     event = record.get("event")
     payload = record.get("payload") or {}
@@ -138,6 +198,12 @@ def _history_message(record: dict) -> dict | None:
             "ok": bool(payload.get("ok")),
             "error": payload.get("error"),
             "output": payload.get("output"),
+        }
+    if event == "feedback_generation":
+        return {
+            "type": "agent",
+            "content": f"{payload.get('tool', 'tool')}: {payload.get('category', 'unknown')}",
+            "kind": "feedback",
         }
     if event == "provider_error":
         return {
@@ -319,6 +385,22 @@ def build_router() -> APIRouter:
             except KeyError:
                 raise HTTPException(status_code=404, detail="session not found")
             return await _load_session_history(deps, session_id)
+        if session_id not in sessions:
+            raise HTTPException(status_code=404, detail="session not found")
+        return []
+
+    @router.get("/sessions/{session_id}/feedback")
+    async def get_session_feedback(session_id: str, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is not None:
+            try:
+                await deps.sessions.get(session_id)
+            except KeyError:
+                raise HTTPException(status_code=404, detail="session not found")
+            memory = getattr(deps, "memory", None)
+            if memory is None or not hasattr(memory, "list_by_kind"):
+                return []
+            return await memory.list_by_kind(session_id, "feedback")
         if session_id not in sessions:
             raise HTTPException(status_code=404, detail="session not found")
         return []
@@ -649,6 +731,59 @@ def build_router() -> APIRouter:
             )
             return listed
         return [{"name": "mock", "type": "mock"}] + providers
+
+    @router.get("/skills")
+    def list_skills(request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        skills = getattr(deps, "skills", None)
+        if deps is not None and skills is not None:
+            return skills.list()
+        return []
+
+    @router.get("/mcp")
+    def list_mcp(request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is None:
+            return []
+        return _mcp_servers(deps)
+
+    @router.post("/mcp")
+    async def add_mcp(payload: McpServerPayload, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is None:
+            raise HTTPException(status_code=501, detail="requires a configured server")
+        config: dict = {}
+        if payload.command is not None:
+            config["command"] = payload.command
+            config["args"] = list(payload.args)
+        else:
+            config["url"] = payload.url
+        deps.mcp.servers[payload.name] = config
+        _persist_config(deps)
+        await _refresh_mcp_server(deps, payload.name)
+        return _mcp_server_config(deps, payload.name)
+
+    @router.post("/mcp/{server}/refresh")
+    async def refresh_mcp(server: str, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is None:
+            raise HTTPException(status_code=501, detail="requires a configured server")
+        if server not in deps.mcp.servers:
+            raise HTTPException(status_code=404, detail="mcp server not found")
+        await _refresh_mcp_server(deps, server)
+        return _mcp_server_config(deps, server)
+
+    @router.delete("/mcp/{server}")
+    async def remove_mcp(server: str, request: Request):
+        deps = getattr(request.app.state, "deps", None)
+        if deps is None:
+            raise HTTPException(status_code=501, detail="requires a configured server")
+        if server not in deps.mcp.servers:
+            raise HTTPException(status_code=404, detail="mcp server not found")
+        deps.mcp.servers.pop(server)
+        _persist_config(deps)
+        await _refresh_mcp_server(deps, server)
+        return Response(status_code=204)
 
     @router.post("/providers")
     async def add_provider(payload: ProviderPayload, request: Request):

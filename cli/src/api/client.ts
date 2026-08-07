@@ -53,6 +53,32 @@ export interface ProviderResult {
   default_model?: string;
 }
 
+export interface SkillInfo {
+  name: string;
+  description: string;
+}
+
+export interface McpToolInfo {
+  name: string;
+  remote_name: string;
+  description: string;
+}
+
+export interface McpServerInfo {
+  name: string;
+  command?: string;
+  url?: string;
+  args?: string[];
+  tools?: McpToolInfo[];
+}
+
+export interface McpServerInput {
+  name: string;
+  command?: string;
+  url?: string;
+  args?: string[];
+}
+
 export interface ProviderInput {
   name: string;
   type: string;
@@ -75,7 +101,7 @@ export interface HealthResult {
 export interface SessionHistoryMessage {
   type: 'user' | 'agent' | 'tool';
   content?: string;
-  kind?: 'text' | 'error';
+  kind?: 'text' | 'error' | 'feedback';
   name?: string;
   args?: Record<string, unknown> | null;
   ok?: boolean;
@@ -254,5 +280,33 @@ export class ApiClient {
 
   listModels(): Promise<Array<{ provider: string; model: string; base_url: string }>> {
     return this.request('/api/v1/models');
+  }
+
+  listSkills(): Promise<SkillInfo[]> {
+    return this.request('/api/v1/skills');
+  }
+
+  listMcpServers(): Promise<McpServerInfo[]> {
+    return this.request('/api/v1/mcp');
+  }
+
+  addMcpServer(payload: McpServerInput): Promise<McpServerInfo> {
+    return this.request('/api/v1/mcp', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    }, 120000);
+  }
+
+  refreshMcpServer(name: string): Promise<McpServerInfo> {
+    return this.request(`/api/v1/mcp/${encodeURIComponent(name)}/refresh`, {
+      method: 'POST',
+    }, 120000);
+  }
+
+  removeMcpServer(name: string): Promise<void> {
+    return this.request(`/api/v1/mcp/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    });
   }
 }

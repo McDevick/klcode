@@ -58,6 +58,23 @@ class MemoryStore:
             if any(tag in json.loads(row["tags"]) for tag in tags)
         ]
 
+    async def list_by_kind(self, scope: str, kind: str) -> list[dict]:
+        conn = await self._connection()
+        cursor = await conn.execute(
+            "SELECT id, content, tags FROM memory "
+            "WHERE scope = ? AND kind = ? ORDER BY id ASC",
+            (scope, kind),
+        )
+        rows = await cursor.fetchall()
+        return [
+            {
+                "id": row["id"],
+                "content": row["content"],
+                "tags": json.loads(row["tags"]),
+            }
+            for row in rows
+        ]
+
     async def get_state(self, scope: str, kind: str) -> str | None:
         conn = await self._connection()
         cursor = await conn.execute(
