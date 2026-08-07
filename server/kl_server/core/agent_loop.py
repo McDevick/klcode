@@ -412,6 +412,11 @@ class AgentLoop:
                     ),
                 )
                 if self.logger:
+                    event_output = result.summary or result.output
+                    if result.truncated and result.references:
+                        event_output += (
+                            "\n[文件引用] " + ", ".join(result.references)
+                        )
                     self.logger.write(
                         "tool_result",
                         {
@@ -420,7 +425,7 @@ class AgentLoop:
                             "error": result.error,
                             "meta": result.meta,
                             "args": action.args,
-                            "output": (result.summary or result.output)[:500],
+                            "output": event_output[:500],
                         },
                         task_id,
                     )
@@ -488,6 +493,11 @@ class AgentLoop:
                     )
                     # 审批通过后补发一条最终结果事件，工具树才能看到真实结果
                     if self.logger:
+                        event_output = result.summary or result.output
+                        if result.truncated and result.references:
+                            event_output += (
+                                "\n[文件引用] " + ", ".join(result.references)
+                            )
                         self.logger.write(
                             "tool_result",
                             {
@@ -496,7 +506,7 @@ class AgentLoop:
                                 "error": result.error,
                                 "meta": result.meta,
                                 "args": action.args,
-                                "output": (result.summary or result.output)[:500],
+                                "output": event_output[:500],
                             },
                             task_id,
                         )
@@ -557,7 +567,14 @@ class AgentLoop:
                     {
                         "role": "tool",
                         "tool_call_id": call.id,
-                        "content": result.summary if result.summary is not None else result.output,
+                        "content": (
+                            (result.summary if result.summary is not None else result.output)
+                            + (
+                                "\n[文件引用] " + ", ".join(result.references)
+                                if result.truncated and result.references
+                                else ""
+                            )
+                        ),
                     }
                 )
                 if self.memory is not None:

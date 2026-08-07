@@ -8,6 +8,22 @@ from kl_server.tools.base import ToolContext
 from kl_server.tools.registry import ToolRegistry
 
 
+def _extract_references(args: dict[str, Any], result: ToolResult) -> list[str]:
+    references = list(getattr(result, "references", []) or [])
+    for key in ("path", "paths"):
+        value = args.get(key)
+        if isinstance(value, str) and value:
+            references.append(value)
+        elif isinstance(value, list):
+            references.extend(str(item) for item in value if item)
+    patch = args.get("patch")
+    if isinstance(patch, str):
+        import re
+
+        references.extend(re.findall(r"^--- (\S+)", patch, re.M))
+    return list(dict.fromkeys(str(ref) for ref in references))
+
+
 class ToolExecutor:
     def __init__(
         self,
@@ -82,7 +98,18 @@ class ToolExecutor:
 
     async def _run(self, name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         try:
-            result = await asyncio.wait_for(self.registry.execute(name, args, ctx), timeout=self.timeout)
+            tool = self.registry.get(name)
+            timeout = getattr(tool, "timeout", None) or self.timeout
+            tool_ctx = replace(
+                ctx,
+                permissions=list(getattr(tool, "permissions", [])),
+                sandbox=dict(getattr(tool, "sandbox", {})),
+                tool_timeout=timeout,
+            )
+            result = await asyncio.wait_for(
+                self.registry.execute(name, args, tool_ctx),
+                timeout=timeout,
+            )
         except asyncio.TimeoutError:
             return ToolResult(ok=False, output="", error="timeout")
         except Exception as exc:
@@ -110,4 +137,5 @@ class ToolExecutor:
             summary=summary,
             truncated=len(raw_output) > self.max_output_chars
             or (summary is not None and summary != raw_output),
+            references=_extract_references(args, result),
         )

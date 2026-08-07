@@ -48,7 +48,7 @@ class ReadFileTool(Tool):
         has_start = "start_line" in args
         has_end = "end_line" in args
         if not has_start and not has_end:
-            return ToolResult(ok=True, output=content)
+            return ToolResult(ok=True, output=content, references=[str(target)])
         start_line = args.get("start_line", 1)
         end_line = args.get("end_line")
         if not isinstance(start_line, int) or start_line < 1:
@@ -70,7 +70,7 @@ class ReadFileTool(Tool):
             return ToolResult(ok=False, output="", error="start_line is beyond end of file")
         actual_end = min(end_line, len(lines))
         output = "\n".join(lines[start_line - 1 : actual_end])
-        return ToolResult(ok=True, output=output)
+        return ToolResult(ok=True, output=output, references=[str(target)])
 
 
 class WriteFileTool(Tool):
@@ -92,7 +92,7 @@ class WriteFileTool(Tool):
             target.write_text(args["content"], encoding="utf-8")
         except OSError as exc:
             return ToolResult(ok=False, output="", error=str(exc))
-        return ToolResult(ok=True, output=str(target))
+        return ToolResult(ok=True, output=str(target), references=[str(target)])
 
 
 class DeleteFileTool(Tool):
@@ -110,7 +110,7 @@ class DeleteFileTool(Tool):
             target.unlink(missing_ok=True)
         except OSError as exc:
             return ToolResult(ok=False, output="", error=str(exc))
-        return ToolResult(ok=True, output=str(target))
+        return ToolResult(ok=True, output=str(target), references=[str(target)])
 
 
 class EditFileTool(Tool):
@@ -221,4 +221,4 @@ class EditFileTool(Tool):
             target.write_text(content, encoding="utf-8")
         except OSError as exc:
             return ToolResult(ok=False, output="", error=str(exc))
-        return ToolResult(ok=True, output=str(target))
+        return ToolResult(ok=True, output=str(target), references=[str(target)])

@@ -15,6 +15,19 @@ class EchoTool(Tool):
         return ToolResult(ok=True, output=args["text"])
 
 
+class RequiredTextTool(Tool):
+    name = "required_text"
+    description = "requires text"
+    schema = {
+        "type": "object",
+        "properties": {"text": {"type": "string"}},
+        "required": ["text"],
+    }
+
+    async def execute(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+        return ToolResult(ok=True, output=args["text"])
+
+
 class OverridingEchoTool(EchoTool):
     description = "overridden echo"
 
@@ -42,6 +55,24 @@ def test_registry_catalog_returns_tool_metadata():
     assert catalog[0]["description"] == tool.description
     assert catalog[0]["schema"] == tool.schema
     assert catalog[0]["schema"] is not tool.schema
+    assert catalog[0]["permissions"] == []
+    assert catalog[0]["sandbox"] == {}
+    assert catalog[0]["timeout"] is None
+
+
+@pytest.mark.asyncio
+async def test_registry_schema_error_returns_structured_result():
+    registry = ToolRegistry()
+    registry.register(RequiredTextTool())
+
+    result = await registry.execute(
+        "required_text",
+        {},
+        ToolContext(workspace="."),
+    )
+
+    assert result.ok is False
+    assert result.error.startswith("schema_error:")
 
 
 @pytest.mark.asyncio

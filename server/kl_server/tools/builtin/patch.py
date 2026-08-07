@@ -111,4 +111,4 @@ class ApplyPatchTool(Tool):
             )
         except (ValueError, OSError, UnicodeDecodeError) as exc:
             return ToolResult(ok=False, output="", error=str(exc))
-        return ToolResult(ok=True, output=str(target))
+        return ToolResult(ok=True, output=str(target), references=[str(target)])

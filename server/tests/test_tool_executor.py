@@ -82,6 +82,44 @@ class SlowTool(Tool):
         return ToolResult(ok=True, output="late")
 
 
+class SlowPerToolTool(Tool):
+    name = "slow_per_tool"
+    description = "sleeps beyond its own timeout"
+    schema = {"type": "object", "properties": {}}
+    timeout = 0.01
+
+    async def execute(self, args, ctx: ToolContext) -> ToolResult:
+        await asyncio.sleep(0.1)
+        return ToolResult(ok=True, output="late")
+
+
+class DeclaringTool(Tool):
+    name = "declaring"
+    description = "records tool declarations"
+    schema = {"type": "object", "properties": {}}
+    permissions = ["filesystem"]
+    sandbox = {"mode": "read"}
+    timeout = 5.0
+    seen_ctx = None
+
+    async def execute(self, args, ctx: ToolContext) -> ToolResult:
+        type(self).seen_ctx = ctx
+        return ToolResult(ok=True, output="ok")
+
+
+class BigFileTool(Tool):
+    name = "big_file"
+    description = "returns huge file output"
+    schema = {"type": "object", "properties": {}}
+
+    async def execute(self, args, ctx: ToolContext) -> ToolResult:
+        return ToolResult(
+            ok=True,
+            output="x" * 100_000,
+            references=["src/a.ts"],
+        )
+
+
 @pytest.mark.asyncio
 async def test_crash_returns_tool_error():
     registry = ToolRegistry()
@@ -152,6 +190,19 @@ async def test_executor_truncates_large_output():
     assert result.ok is True
 
 
+@pytest.mark.asyncio
+async def test_executor_keeps_references_when_truncating():
+    registry = ToolRegistry()
+    registry.register(BigFileTool())
+    executor = ToolExecutor(registry, max_output_chars=10_000)
+
+    result = await executor.execute("big_file", {}, ToolContext(workspace="."))
+
+    assert result.truncated is True
+    assert result.references == ["src/a.ts"]
+    assert result.output.endswith("\n...[truncated]")
+
+
 class FakeSummarizer:
     async def summarize(self, tool, args, result, task_id):
         return "summarized output"
@@ -173,6 +224,36 @@ async def test_executor_attaches_summary_for_large_output():
     assert result.truncated is True
     assert result.output.startswith("x")
     assert result.output.endswith("\n...[truncated]")
+
+
+@pytest.mark.asyncio
+async def test_executor_uses_tool_declared_timeout_and_context():
+    registry = ToolRegistry()
+    registry.register(DeclaringTool())
+    executor = ToolExecutor(registry, timeout=10.0)
+
+    await executor.execute("declaring", {}, ToolContext(workspace="."))
+
+    ctx = DeclaringTool.seen_ctx
+    assert ctx.permissions == ["filesystem"]
+    assert ctx.sandbox == {"mode": "read"}
+    assert ctx.tool_timeout == 5.0
+
+
+@pytest.mark.asyncio
+async def test_executor_honors_tool_declared_timeout():
+    registry = ToolRegistry()
+    registry.register(SlowPerToolTool())
+    executor = ToolExecutor(registry, timeout=10.0)
+
+    result = await executor.execute(
+        "slow_per_tool",
+        {},
+        ToolContext(workspace="."),
+    )
+
+    assert result.ok is False
+    assert result.error == "timeout"
 
 
 @pytest.mark.asyncio

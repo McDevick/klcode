@@ -1,5 +1,7 @@
 from typing import Any
 
+from jsonschema import SchemaError, ValidationError, validate
+
 from kl_server.models.action import ToolResult
 from kl_server.tools.base import Tool, ToolContext
 
@@ -23,9 +25,27 @@ class ToolRegistry:
 
     def catalog(self) -> list[dict[str, Any]]:
         return [
-            {"name": tool.name, "description": tool.description, "schema": dict(tool.schema)}
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "schema": dict(tool.schema),
+                "permissions": list(getattr(tool, "permissions", [])),
+                "sandbox": dict(getattr(tool, "sandbox", {})),
+                "timeout": getattr(tool, "timeout", None),
+            }
             for tool in self._tools.values()
         ]
 
     async def execute(self, name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-        return await self.get(name).execute(args, ctx)
+        tool = self.get(name)
+        try:
+            validate(instance=args, schema=tool.schema)
+        except ValidationError as exc:
+            return ToolResult(ok=False, output="", error=f"schema_error: {exc.message}")
+        except SchemaError as exc:
+            return ToolResult(
+                ok=False,
+                output="",
+                error=f"schema_error: invalid schema: {exc.message}",
+            )
+        return await tool.execute(args, ctx)

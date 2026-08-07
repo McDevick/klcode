@@ -101,6 +101,9 @@ class McpRemoteTool(Tool):
             or tool.get("schema")
             or {"type": "object", "properties": {}}
         )
+        self.permissions = ["mcp"]
+        self.sandbox = {"remote": True}
+        self.timeout = None
 
     async def execute(self, args: dict, ctx: ToolContext) -> ToolResult:
         if not isinstance(args, dict):

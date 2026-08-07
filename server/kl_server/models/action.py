@@ -20,3 +20,4 @@ class ToolResult:
     meta: dict = field(default_factory=dict)
     summary: str | None = None
     truncated: bool = False
+    references: list[str] = field(default_factory=list)

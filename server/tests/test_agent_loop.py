@@ -156,6 +156,19 @@ class BigOutputTool(Tool):
         return ToolResult(ok=True, output="x" * 100_000)
 
 
+class BigReferencedOutputTool(Tool):
+    name = "big_referenced"
+    description = "returns a large referenced output"
+    schema = {"type": "object", "properties": {}}
+
+    async def execute(self, args, ctx: ToolContext) -> ToolResult:
+        return ToolResult(
+            ok=True,
+            output="x" * 100_000,
+            references=["src/a.ts"],
+        )
+
+
 class FakeToolSummarizer:
     async def summarize(self, tool, args, result, task_id):
         return "summarized tool output"
@@ -243,6 +256,31 @@ async def test_loop_uses_tool_summary_in_history():
     ]
     assert tool_messages
     assert tool_messages[0]["content"] == "summarized tool output"
+
+
+@pytest.mark.asyncio
+async def test_loop_keeps_file_references_in_truncated_tool_history():
+    registry = ToolRegistry()
+    registry.register(BigReferencedOutputTool())
+    executor = ToolExecutor(registry)
+    provider = MockProvider(
+        responses=['{"tool":"big_referenced","args":{}}', "DONE"]
+    )
+    loop = AgentLoop(
+        provider=provider,
+        tools=executor,
+        settings=LoopSettings(max_iterations=3),
+    )
+
+    await loop.run(Session(id="s1", workspace="."), "task")
+
+    tool_messages = [
+        message
+        for message in provider.calls[1].messages
+        if message.get("role") == "tool"
+    ]
+    assert tool_messages
+    assert "src/a.ts" in tool_messages[0]["content"]
 
 
 class SpyAssembler:
