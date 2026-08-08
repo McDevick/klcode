@@ -24,6 +24,7 @@ class ProviderResponse:
     text: str  # 模型说的人话（content）；无 tool_calls 时即最终回答
     raw: dict | None = None
     tool_calls: list[ProviderToolCall] | None = None
+    finish_reason: str | None = None
 
 
 class Provider(Protocol):

@@ -396,11 +396,13 @@ async def test_delete_session_cleans_task_manage_state(tmp_path):
     session_id = create_session(client, str(tmp_path)).json()["id"]
     memory = client.app.state.deps.memory
     await memory.set_state(f"session:{session_id}", "subtasks", "[]")
+    await memory.set_state(f"session:{session_id}", "continuation_context", "{}")
 
     deleted = client.delete(f"/api/v1/sessions/{session_id}")
 
     assert deleted.status_code == 204
     assert await memory.get_state(f"session:{session_id}", "subtasks") is None
+    assert await memory.get_state(f"session:{session_id}", "continuation_context") is None
 
 
 @pytest.mark.asyncio
@@ -532,7 +534,8 @@ def test_task_create_rejects_missing_workspace(tmp_path):
     assert "workspace does not exist" in response.json()["detail"]
 
 
-def test_task_instruction_endpoint_adds_to_loop(tmp_path):
+@pytest.mark.asyncio
+async def test_task_instruction_endpoint_adds_to_loop(tmp_path):
     client = make_deps_client(tmp_path)
     session_id = client.post(
         "/api/v1/sessions",
@@ -553,6 +556,11 @@ def test_task_instruction_endpoint_adds_to_loop(tmp_path):
     assert client.app.state.deps.loop._instructions[task["id"]] == [
         "请先运行测试"
     ]
+    notes = await client.app.state.deps.memory.find(
+        [session_id],
+        kinds=["user_note"],
+    )
+    assert notes == ["请先运行测试"]
 
 
 def test_task_create_with_existing_session_succeeds_with_deps(tmp_path):

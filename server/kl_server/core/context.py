@@ -1,6 +1,7 @@
 """Token-budgeted context assembly for the agent loop."""
 
 import logging
+import re
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -9,8 +10,116 @@ from kl_server.providers.base import ProviderRequest
 
 logger = logging.getLogger(__name__)
 
-# 注入上下文的记忆条数上限（最新 N 条）
-MEMORY_LIMIT = 5
+# Phase 1：记忆按 kind 配额注入，tool_result/task 只写库不进上下文。
+MEMORY_KIND_QUOTAS = {
+    "user_note": 2,
+    "feedback": 2,
+    "context_summary": 1,
+}
+KEYWORD_MEMORY_LIMIT = 3
+_MEMORY_TOKEN_RE = re.compile(r"[a-z0-9_]+|[\u4e00-\u9fff]+")
+_MEMORY_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "at",
+    "for",
+    "in",
+    "is",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
+    "with",
+    "请",
+    "帮我",
+    "需要",
+    "可以",
+    "这个",
+    "这些",
+    "继续",
+    "然后",
+    "并且",
+    "我们",
+    "你们",
+    "进行",
+}
+_MEMORY_CHAR_STOPWORDS = {
+    "请",
+    "我",
+    "你",
+    "这",
+    "那",
+}
+
+
+def extract_memory_keywords(task: str, limit: int = 8) -> list[str]:
+    """从任务描述提取稳定、可测试的关键词，不引入分词依赖。"""
+    keywords: list[str] = []
+    text = (task or "").lower()
+
+    def add(token: str) -> None:
+        nonlocal keywords
+        if token in _MEMORY_STOPWORDS or token in keywords:
+            return
+        keywords.append(token)
+
+    for match in _MEMORY_TOKEN_RE.finditer(text):
+        token = match.group(0)
+        if token.isascii():
+            add(token)
+            if len(keywords) >= limit:
+                return keywords
+            continue
+        run = token
+        for stopword in _MEMORY_STOPWORDS:
+            if len(stopword) > 1 and all("\u4e00" <= ch <= "\u9fff" for ch in stopword):
+                run = run.replace(stopword, "")
+        for index in range(len(run) - 1):
+            bigram = run[index : index + 2]
+            if any(char in _MEMORY_CHAR_STOPWORDS for char in bigram):
+                continue
+            add(bigram)
+            if len(keywords) >= limit:
+                return keywords
+    return keywords
+
+
+async def select_memory_entries(
+    memory,
+    tags: list[str],
+    task: str = "",
+    keyword_limit: int = KEYWORD_MEMORY_LIMIT,
+) -> list[str]:
+    """按 kind 配额和任务关键词选择要注入上下文的记忆。"""
+    if memory is None:
+        return []
+    selected: list[str] = []
+    seen: set[str] = set()
+    allowed_kinds = list(MEMORY_KIND_QUOTAS)
+
+    for kind, limit in MEMORY_KIND_QUOTAS.items():
+        entries = await memory.find(tags, kinds=[kind], limit=limit)
+        for entry in entries:
+            if entry not in seen:
+                seen.add(entry)
+                selected.append(entry)
+
+    keywords = extract_memory_keywords(task)
+    if keywords:
+        entries = await memory.find(
+            tags,
+            kinds=allowed_kinds,
+            keywords=keywords,
+            limit=keyword_limit,
+        )
+        for entry in entries:
+            if entry not in seen:
+                seen.add(entry)
+                selected.append(entry)
+    return selected
 
 
 class LLMSummarizer:
@@ -133,8 +242,7 @@ class ContextAssembler:
         if skills:
             base_sections.append(skills)
         if memory:
-            # 取最新若干条记忆（而非只有最后一条），按时间倒序自然排列
-            base_sections.append("\n".join(memory[-MEMORY_LIMIT:]))
+            base_sections.append("\n".join(memory))
 
         budget = max(0, self.max_tokens)
         if history:

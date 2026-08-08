@@ -54,6 +54,43 @@ async def test_openai_compatible_provider_parses_chat_completion():
 
 
 @pytest.mark.asyncio
+async def test_openai_compatible_provider_uses_reasoning_content_and_finish_reason():
+    async def handler(request):
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": None,
+                            "reasoning_content": "thinking text",
+                        },
+                        "finish_reason": "stop",
+                    }
+                ]
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenAICompatibleProvider(
+        base_url="https://example.com/v1",
+        api_key="sk-test",
+        model="gpt-test",
+        client=client,
+    )
+
+    response = await provider.complete(
+        ProviderRequest(
+            messages=[{"role": "user", "content": "hi"}],
+            model="gpt-test",
+        )
+    )
+
+    assert response.text == "thinking text"
+    assert response.finish_reason == "stop"
+
+
+@pytest.mark.asyncio
 async def test_openai_compatible_provider_parses_tool_calls_and_forwards_tools():
     async def handler(request):
         body = json.loads(request.content)

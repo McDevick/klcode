@@ -174,7 +174,7 @@
 | 日志不保存明文凭据、不覆盖历史 | ✅ | 脱敏 + append-only |
 | 日志写入失败时任务停止并提示 | ✅ | write 抛 RuntimeError → 主循环异常 → task FAILED + 错误事件广播 |
 
-## §4 非功能需求（核验 2026-08-08，兑现约 85%）
+## §4 非功能需求（核验 2026-08-08，兑现约 90%）
 
 | 承诺 | 状态 | 证据 |
 |---|---|---|
@@ -190,16 +190,16 @@
 | 远程化 TLS/认证/密钥轮换 | ✅（不实现） | §12 未授权范围，不实现合理 |
 | make test 一键 | ✅ | Makefile |
 | kl init 覆盖全新机器冷启动 | ⚠️ | README 已知限制：kl init 依赖 daemon 已运行（冷启动流程有 gap） |
-| 首次配置 CLI/TUI 引导 | ✅ | config-wizard.tsx + config 命令 |
-| 日志覆盖任务/动作/治理/反馈/审批/摘要/hook/人工干预 | ⚠️ | 治理决策事件 ✓（governance_decision）；审批/人工干预事件仍走 hooks 通道，无独立日志事件 |
+| 首次配置 CLI/TUI 引导 | ✅ | tui/components/connect-manager.tsx（替代已删除的 config-wizard）+ config 命令 |
+| 日志覆盖任务/动作/治理/反馈/审批/摘要/hook/人工干预 | ✅ | 全事件类型齐备：governance_decision（治理）+ approval_request/approval_complete（审批/人工干预，§3.11 已 100%） |
 | 日志可回放 | ✅ | §3.11 |
 | 状态接口：session/task/上下文预算 | ✅ | /status、/sessions、/context |
 | 状态接口：token 用量 | ❌ | Task 模型无 token 用量字段（同 §3.3） |
 | GitHub Actions unit-test job | ✅ | .github/workflows/ci.yml（push+PR、make ci+test） |
 | .gitlab-ci.yml unit-test job | ✅ | 根目录 .gitlab-ci.yml（python:3.11 + node 22） |
 | 分发阶段构建检查和产物检查 | ❌ | ci.yml 仅测试，无构建/产物检查步骤 |
-| 最终交付前 CI pass | ✅（本地） | 本地 444+96 passed；远程 CI 状态未验证 |
-| AGENT_LOG.md 实时维护 | ✅（存在性） | AGENT_LOG.md 84KB 持续维护；"实时记录不补写"规则未从内容深核 |
+| 最终交付前 CI pass | ✅（本地） | 本地 480+103 passed；远程 CI 曾因 npmmirror 502 失败一次（基础设施问题非代码），恢复后重跑通过 |
+| AGENT_LOG.md 实时维护 | ✅（存在性） | AGENT_LOG.md 约 82KB 持续维护；"实时记录不补写"规则未从内容深核 |
 
 ## §6 数据模型（核验 2026-08-08，兑现约 75%）
 
@@ -209,11 +209,11 @@
 | Task：id/session_id/描述/状态/模式/分支或快照/摘要/时间戳 | ✅ | models/task.py:29-38 |
 | Task 含 token 用量、预留 parent_task_id | ❌ | 两字段均缺（subagent 预留未落实） |
 | Action 含治理结果/沙箱结果/审批状态/执行结果 | ⚠️ | Action 已含 permissions/sandbox 声明字段；结果仍在 ToolResult/执行链路，但经 governance_decision 事件独立记录（审计可回放） |
-| Approval：id/action_id/危险等级/原因/结果/用户备注 | ⚠️ | guardrail.py:106-111 ApprovalRequest 仅 action_id/tool/command/state |
+| Approval：id/action_id/危险等级/原因/结果/用户备注 | ⚠️ | ApprovalRequest 仅 action_id/tool/command/state；但审批审计已独立落盘（approval_request 含 level、approval_complete 含 decision），仅"原因文本/用户备注"缺 |
 | Feedback：id/task_id/action_id/类别/摘要/原始输出引用 | ⚠️ | raw_ref 折叠 task_id:call.id（§3.7 已记录） |
 | MemoryEntry：id/scope/类型/标签/内容/token 估算/时间戳 | ⚠️ | store.py add(scope/kind/tags/content)；token 估算字段缺 |
 | EventLog：id/task_id/事件类型/脱敏 payload/时间戳 | ✅ | event_logger.py |
-| WorkspaceSnapshot：路径/校验值 | ⚠️ | snapshot.py 有路径 + .meta；校验值缺 |
+| WorkspaceSnapshot：路径/校验值 | ⚠️ | snapshot.py 有路径 + .meta（restore 时校验归属）；内容校验值缺 |
 | SQLite 存状态/任务/记忆/审计索引 | ✅ | storage/database.py + memory/store.py |
 | 大型输出存文件，库只存引用和摘要 | ✅ | 截断时完整输出落盘 .kl/tool_outputs/（tool_executor _persist_full_output），references + meta.output_file 引用 |
 | 项目数据 .kl/ 并 gitignore | ✅ | .gitignore + README |
@@ -261,6 +261,7 @@
 - 2026-08-08 复核批次（用户修复）：①§3.5 完整输出落盘（tool_outputs/ + references 双语义 + meta.output_file，专项测试）；②§3.6 环境变量清理（sanitize_env 白名单+敏感模式过滤，子进程 env 注入）；③§3.6 超时与资源限制接线（sandbox.timeout min 优先、ctx.sandbox.limits 注入、RLIMIT_CPU/RLIMIT_AS 生效）；④§3.6 治理决策独立日志事件（governance_decision，异常 decision="error"）；⑤§3.6 fail-closed（配置加载失败 deny_all 兜底 + config_error 暴露）——§3.6 兑现率升至约 95%，唯一剩余：审批超时机制。全量缺口从 17 项降至 15 项。
 - 2026-08-08 复核批次二（用户修复）：⑥§3.10 CommandRegistry 独立模块（commands.ts：CommandDef 含 usage/args/aliases/available/handler，注册表 run 做状态+参数校验）；⑦§3.10 双向状态门控（空闲侧 !state.running、任务侧 taskId 门控）；⑧§3.10 /exit 运行中二次确认（专项测试 process.exit spy）；⑨§3.10 参数错误生成式 schema 提示——§3.10 兑现率升至约 90%，仅剩 5 个名义指令（其中 /sessions//provider//key 有功能覆盖）。§3.11 治理决策事件同步更新 ✅。§4 超时/资源限制/脱敏行更新，兑现率约 85%。§6 大型输出落盘 ✅、Action 行更新，兑现率约 75%。全量缺口降至 14 项。
 - 2026-08-08 复核批次三（用户修复）：⑩§3.11 审批事件独立日志（approval_request 含 action_id/tool/args/level、approval_complete 含 decision），专项测试断言请求与决策落盘——§3.11 升至 100%（继 §3.7/§3.8 后第三个全兑现章节）。全量缺口降至 13 项。
+- 2026-08-08 信息同步批次四：§4 日志覆盖行升至 ✅（治理+审批事件齐备，兑现率 90%，剩余 4 项：kl init 冷启动 gap、token 用量状态接口、工具重试上限、CI 构建检查）；§4 引导证据更新为 connect-manager、CI pass 记录更新（npmmirror 502 为基础设施问题）；§6 Approval/WorkspaceSnapshot 行补充审计覆盖说明（校验值仍缺，兑现率 75% 保持）。
 
 ## 全量缺口汇总（2026-08-08 更新：CommandRegistry 已修复移出，交互确认剩 2 项）
 

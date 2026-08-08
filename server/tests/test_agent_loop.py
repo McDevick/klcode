@@ -88,6 +88,23 @@ async def test_loop_treats_json_without_tool_as_final_answer():
     assert len(provider.calls) == 1
 
 
+@pytest.mark.asyncio
+async def test_empty_provider_response_is_not_treated_as_done():
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+    provider = MockProvider(responses=[""])
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=3),
+    )
+
+    with pytest.raises(RuntimeError, match="provider returned empty response"):
+        await loop.run(Session(id="s1", workspace="."), "task")
+
+    assert len(provider.calls) == 1
+
+
 def _feedback_messages(messages: list[dict]) -> list[dict]:
     """收集注入的反馈消息（原生格式下 feedback 为 user 消息）。"""
     return [
@@ -316,7 +333,7 @@ class FakeMemory:
     def __init__(self):
         self.added: list[tuple[str, str, list[str], str]] = []
 
-    async def find(self, tags):
+    async def find(self, tags, kinds=None, keywords=None, limit=None):
         return ["remembered decision"]
 
     async def add(self, scope, kind, tags, content):
@@ -337,7 +354,7 @@ class RecordingMemory:
     def __init__(self):
         self.added: list[tuple[str, str, list[str], str]] = []
 
-    async def find(self, tags):
+    async def find(self, tags, kinds=None, keywords=None, limit=None):
         return []
 
     async def add(self, scope, kind, tags, content):
@@ -367,6 +384,40 @@ async def test_loop_writes_task_and_tool_results_to_memory():
     assert "s1" in task_record[2]
     tool_record = next(record for record in memory.added if record[1] == "tool_result")
     assert "final" in tool_record[3]
+
+
+@pytest.mark.asyncio
+async def test_loop_injects_memory_by_kind_quota_and_excludes_tool_result(tmp_path):
+    memory = MemoryStore(tmp_path / "memory.db")
+    await memory.add("s1", "user_note", ["s1"], "note1")
+    await memory.add("s1", "user_note", ["s1"], "note2")
+    await memory.add("s1", "user_note", ["s1"], "note3")
+    await memory.add("s1", "feedback", ["s1"], "feedback1")
+    await memory.add("s1", "feedback", ["s1"], "feedback2")
+    await memory.add("s1", "feedback", ["s1"], "feedback3")
+    await memory.add("s1", "context_summary", ["s1"], "summary1")
+    await memory.add("s1", "tool_result", ["s1"], "tool-output")
+    provider = MockProvider(responses=["DONE"])
+    spy = SpyAssembler()
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(ToolRegistry()),
+        settings=LoopSettings(max_iterations=2),
+        context=spy,
+        memory=memory,
+    )
+
+    await loop.run(Session(id="s1", workspace="."), "继续重构登录模块")
+
+    entries = spy.last_kwargs["memory"]
+    assert "note2" in entries
+    assert "note3" in entries
+    assert "note1" not in entries
+    assert "feedback2" in entries
+    assert "feedback3" in entries
+    assert "feedback1" not in entries
+    assert "summary1" in entries
+    assert "tool-output" not in entries
 
 
 @pytest.mark.asyncio
@@ -427,6 +478,108 @@ async def test_loop_injects_task_plan_into_context():
         and "读取文件" in entry
         for entry in spy.last_kwargs["memory"]
     )
+
+
+@pytest.mark.asyncio
+async def test_loop_injects_previous_continuation_into_new_task(tmp_path):
+    memory = MemoryStore(tmp_path / "memory.db")
+    await memory.set_state(
+        "session:s1",
+        "continuation_context",
+        json.dumps(
+            {
+                "goal": "重构 login 模块",
+                "files": ["src/auth.py", "tests/test_auth.py"],
+                "completed_steps": ["完成登录函数改造"],
+                "pending_items": ["补充边界测试"],
+                "next_step": "继续补充测试并运行 pytest",
+            },
+            ensure_ascii=False,
+        ),
+    )
+    provider = MockProvider(responses=["DONE"])
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(ToolRegistry()),
+        settings=LoopSettings(max_iterations=2),
+        memory=memory,
+    )
+
+    await loop.run(Session(id="s1", workspace="."), "继续重构")
+
+    user_messages = [
+        message
+        for message in provider.calls[0].messages
+        if message.get("role") == "user"
+    ]
+    assert user_messages
+    assert "[上一任务续接上下文]" in user_messages[0]["content"]
+    assert "目标: 重构 login 模块" in user_messages[0]["content"]
+    assert "src/auth.py" in user_messages[0]["content"]
+    assert "继续补充测试并运行 pytest" in user_messages[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_loop_persists_continuation_with_files_and_pending_plan(tmp_path):
+    memory = MemoryStore(tmp_path / "memory.db")
+    original_plan = json.dumps(
+        {
+            "next_id": 3,
+            "subtasks": [
+                {"id": "1", "title": "读取文件", "status": "done"},
+                {"id": "2", "title": "重构逻辑", "status": "pending"},
+            ],
+        },
+        ensure_ascii=False,
+    )
+    await memory.set_state("session:s1", "subtasks", original_plan)
+    registry = ToolRegistry()
+    registry.register(FinalTool())
+    provider = MockProvider(
+        responses=[
+            '{"tool":"final","args":{"path":"src/a.py"}}',
+            "DONE",
+        ]
+    )
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(registry),
+        settings=LoopSettings(max_iterations=3),
+        memory=memory,
+    )
+
+    await loop.run(Session(id="s1", workspace="."), "继续重构")
+
+    raw = await memory.get_state("session:s1", "continuation_context")
+    assert raw
+    data = json.loads(raw)
+    assert data["outcome"] == "finished"
+    assert data["goal"] == "继续重构"
+    assert "src/a.py" in data["files"]
+    assert any("重构逻辑" in item for item in data["pending_items"])
+    assert any("读取文件" in item for item in data["completed_steps"])
+    assert (await memory.get_state("session:s1", "subtasks")) == original_plan
+
+
+@pytest.mark.asyncio
+async def test_loop_persists_continuation_on_provider_error(tmp_path):
+    memory = MemoryStore(tmp_path / "memory.db")
+    loop = AgentLoop(
+        provider=FailingProvider(),
+        tools=ToolExecutor(ToolRegistry()),
+        settings=LoopSettings(max_iterations=2),
+        memory=memory,
+    )
+
+    with pytest.raises(RuntimeError, match="api down"):
+        await loop.run(Session(id="s1", workspace="."), "失败任务")
+
+    raw = await memory.get_state("session:s1", "continuation_context")
+    assert raw
+    data = json.loads(raw)
+    assert data["outcome"] == "error"
+    assert "api down" in data["error"]
+    assert data["goal"] == "失败任务"
 
 
 @pytest.mark.asyncio
@@ -901,7 +1054,7 @@ async def test_loop_appends_instruction_to_history():
         settings=LoopSettings(max_iterations=2),
     )
 
-    loop.add_instruction("s1", "请先运行测试")
+    await loop.add_instruction("s1", "请先运行测试")
     await loop.run(Session(id="s1", workspace="."), "task")
 
     assert any(
@@ -909,6 +1062,22 @@ async def test_loop_appends_instruction_to_history():
         and message.get("content") == "[追加说明] 请先运行测试"
         for message in provider.calls[0].messages
     )
+
+
+@pytest.mark.asyncio
+async def test_add_instruction_persists_user_note_to_memory(tmp_path):
+    memory = MemoryStore(tmp_path / "memory.db")
+    loop = AgentLoop(
+        provider=MockProvider(responses=["DONE"]),
+        tools=ToolExecutor(ToolRegistry()),
+        settings=LoopSettings(max_iterations=2),
+        memory=memory,
+    )
+
+    await loop.add_instruction("t1", "请先运行测试", session_id="s1")
+
+    notes = await memory.find(["s1"], kinds=["user_note"])
+    assert notes == ["请先运行测试"]
 
 
 @pytest.mark.asyncio

@@ -43,7 +43,7 @@ class FakeHooks:
 
 
 class FakeMemory:
-    async def find(self, tags):
+    async def find(self, tags, kinds=None, keywords=None, limit=None):
         return []
 
 

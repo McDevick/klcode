@@ -4,6 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from kl_server.core.context import select_memory_entries
 from kl_server.core.feedback import classify_tool_result
 from kl_server.core.tool_executor import ToolExecutor
 from kl_server.models.action import Action
@@ -40,6 +41,10 @@ SYSTEM_PROMPT = """你是运行在本地工作区中的自主编码 Agent。
 2. 没有计划时创建；有计划时不要重复创建相同任务。
 3. 每完成一步，立即调用 task_manage(update) 更新状态。
 4. 计划状态在同一 session 内共享，后续任务可以读取和继续。
+5. 如果上下文包含 [上一任务续接上下文]，先判断当前任务是否继续上一任务；
+   若是，优先读取其中的文件和未完成项并继续，不要重新扫描整个仓库。
+6. 任务收尾前必须调用 task_manage(update) 将已完成项置为 done；
+   未完成项必须按真实状态保留，不得标成 done。
 
 ## 审批
 
@@ -78,6 +83,9 @@ SYSTEM_PROMPT = """你是运行在本地工作区中的自主编码 Agent。
    - 是否还有未完成或不确定的部分
 3. 如果任务完成，给出关键结果；如果未完成，给出下一步建议。
 """
+
+CONTINUATION_STATE_KIND = "continuation_context"
+CONTINUATION_MAX_CHARS = 1200
 
 
 def _clean_user_message(text: str) -> str:
@@ -133,14 +141,213 @@ class AgentLoop:
         if event is not None:
             event.set()
 
-    def add_instruction(self, task_id: str, instruction: str) -> None:
+    async def add_instruction(
+        self,
+        task_id: str,
+        instruction: str,
+        session_id: str | None = None,
+    ) -> None:
         self._instructions.setdefault(task_id, []).append(instruction)
+        if session_id is None or self.memory is None:
+            return
+        try:
+            await self.memory.add(
+                session_id,
+                "user_note",
+                [session_id, task_id],
+                instruction,
+            )
+        except Exception:
+            if self.logger:
+                self.logger.write(
+                    "memory_error",
+                    {"kind": "user_note"},
+                    task_id,
+                )
 
     async def _task_plan_text(self, session_id: str) -> str:
         if self.memory is None or not hasattr(self.memory, "get_state"):
             return ""
         raw = await self.memory.get_state(f"session:{session_id}", "subtasks")
         return f"task_plan: {raw}" if raw else ""
+
+    async def _load_continuation(self, session_id: str) -> str:
+        """读取上一任务续接上下文，若记录已损坏则安全回退为空。"""
+        if self.memory is None or not hasattr(self.memory, "get_state"):
+            return ""
+        try:
+            raw = await self.memory.get_state(
+                f"session:{session_id}",
+                CONTINUATION_STATE_KIND,
+            )
+        except Exception:
+            return ""
+        if not raw:
+            return ""
+        try:
+            data = json.loads(raw)
+        except (TypeError, json.JSONDecodeError):
+            return raw[:CONTINUATION_MAX_CHARS]
+        if not isinstance(data, dict):
+            return raw[:CONTINUATION_MAX_CHARS]
+        lines = ["[上一任务续接上下文]"]
+        for key, label in (
+            ("outcome", "上一任务状态"),
+            ("error", "上一任务错误"),
+            ("goal", "目标"),
+            ("files", "已改文件"),
+            ("completed_steps", "进度"),
+            ("pending_items", "未完成项"),
+            ("next_step", "下一步"),
+        ):
+            value = data.get(key)
+            if isinstance(value, list):
+                value = ", ".join(str(item) for item in value)
+            if value:
+                lines.append(f"{label}: {value}")
+        return "\n".join(lines)[:CONTINUATION_MAX_CHARS]
+
+    async def _task_plan_items(self, session_id: str) -> tuple[list[str], list[str]]:
+        """只读 task_manage 计划，返回 (done, pending)，不修改任何状态。"""
+        if self.memory is None or not hasattr(self.memory, "get_state"):
+            return [], []
+        try:
+            raw = await self.memory.get_state(f"session:{session_id}", "subtasks")
+            data = json.loads(raw or "{}")
+        except (TypeError, json.JSONDecodeError):
+            return [], []
+        if not isinstance(data, dict):
+            return [], []
+        subtasks = data.get("subtasks")
+        if not isinstance(subtasks, list):
+            return [], []
+        done: list[str] = []
+        pending: list[str] = []
+        for item in subtasks:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "").strip()
+            item_id = str(item.get("id") or "").strip()
+            label = f"{item_id}: {title}" if item_id else title
+            if item.get("status") == "done":
+                done.append(label)
+            else:
+                pending.append(label)
+        return done, pending
+
+    @staticmethod
+    def _collect_touched_files(history: list[dict]) -> list[str]:
+        files: list[str] = []
+        seen: set[str] = set()
+
+        def add(value: str) -> None:
+            value = value.strip()
+            if value and value not in seen:
+                seen.add(value)
+                files.append(value)
+
+        for message in history:
+            for call in message.get("tool_calls") or []:
+                raw_args = ""
+                if isinstance(call, dict):
+                    function = call.get("function") or {}
+                    raw_args = function.get("arguments", "") if isinstance(function, dict) else ""
+                try:
+                    args = json.loads(raw_args)
+                except (TypeError, json.JSONDecodeError):
+                    args = {}
+                if not isinstance(args, dict):
+                    args = {}
+                for key in ("path", "paths", "file", "files", "target"):
+                    value = args.get(key)
+                    if isinstance(value, str):
+                        add(value)
+                    elif isinstance(value, list):
+                        for item in value:
+                            if isinstance(item, str):
+                                add(item)
+            content = str(message.get("content", ""))
+            for line in content.splitlines():
+                if not line.startswith("[文件引用]"):
+                    continue
+                rest = line[len("[文件引用]") :].strip()
+                for item in rest.split(","):
+                    add(item.strip())
+        return files
+
+    @staticmethod
+    def _recent_success_tools(history: list[dict], limit: int = 10) -> list[str]:
+        results: list[str] = []
+        for message in reversed(history):
+            if message.get("role") != "user":
+                continue
+            content = str(message.get("content", ""))
+            if not content.startswith("feedback:"):
+                continue
+            for line in content.splitlines()[1:]:
+                if line.startswith("success:"):
+                    results.append(line[len("success:") :].strip())
+                    if len(results) >= limit:
+                        return results
+        results.reverse()
+        return results
+
+    @staticmethod
+    def _next_step(history: list[dict], pending: list[str]) -> str:
+        if pending:
+            return "按任务计划继续处理：" + "; ".join(pending[:5])
+        for message in reversed(history):
+            if message.get("role") != "user":
+                continue
+            content = str(message.get("content", ""))
+            if not content.startswith("feedback:"):
+                continue
+            lines = content.splitlines()[1:]
+            if lines:
+                return "根据最近一次反馈继续：" + lines[-1][-300:]
+        return ""
+
+    @staticmethod
+    def _truncate_list(values: list[str], limit: int = 30) -> list[str]:
+        return [value[:200] for value in values[-limit:]]
+
+    async def _persist_continuation(
+        self,
+        session: Session,
+        task: str,
+        history: list[dict],
+        task_id: str,
+        outcome: str,
+        error: BaseException | None = None,
+    ) -> None:
+        if self.memory is None or not hasattr(self.memory, "set_state"):
+            return
+        try:
+            done, pending = await self._task_plan_items(session.id)
+            files = self._collect_touched_files(history)
+            completed = done or self._recent_success_tools(history)
+            record = {
+                "outcome": outcome,
+                "goal": task[:500],
+                "files": self._truncate_list(files),
+                "completed_steps": self._truncate_list(completed),
+                "pending_items": self._truncate_list(pending),
+                "next_step": self._next_step(history, pending)[:500],
+            }
+            if error is not None:
+                record["error"] = str(error)[:500]
+            await self.memory.set_state(
+                f"session:{session.id}",
+                CONTINUATION_STATE_KIND,
+                json.dumps(record, ensure_ascii=False),
+            )
+        except Exception:
+            if self.logger:
+                self.logger.write(
+                    "memory_error",
+                    {"kind": CONTINUATION_STATE_KIND},
+                    task_id,
+                )
 
     def _project_rules(self, workspace: str) -> str:
         if workspace in self._project_rules_cache:
@@ -200,9 +407,73 @@ class AgentLoop:
             )
         return specs
 
-    async def run(self, session: Session, task: str, task_id: str = "", workspace_mode: str = "managed") -> str:
+    async def run(
+        self,
+        session: Session,
+        task: str,
+        task_id: str = "",
+        workspace_mode: str = "managed",
+    ) -> str:
+        """执行任务，并在结束/中断/出错时保存 session 级续接上下文。"""
         task_id = task_id or session.id
-        history: list[dict] = [{"role": "user", "content": task}]
+        continuation = await self._load_continuation(session.id)
+        initial_task = task
+        if continuation:
+            initial_task = f"{task}\n\n{continuation}"
+        history: list[dict] = [{"role": "user", "content": initial_task}]
+        try:
+            result = await self._run_impl(
+                session,
+                task,
+                task_id,
+                workspace_mode,
+                history,
+            )
+        except asyncio.CancelledError:
+            await self._persist_continuation(
+                session,
+                task,
+                history,
+                task_id,
+                "cancelled",
+            )
+            raise
+        except Exception as exc:
+            await self._persist_continuation(
+                session,
+                task,
+                history,
+                task_id,
+                "error",
+                error=exc,
+            )
+            raise
+        else:
+            if result == "NEEDS_APPROVAL":
+                outcome = "needs_approval"
+            elif result == "ABORTED":
+                outcome = "aborted"
+            elif result == "MAX_ITERATIONS":
+                outcome = "max_iterations"
+            else:
+                outcome = "finished"
+            await self._persist_continuation(
+                session,
+                task,
+                history,
+                task_id,
+                outcome,
+            )
+            return result
+
+    async def _run_impl(
+        self,
+        session: Session,
+        task: str,
+        task_id: str,
+        workspace_mode: str,
+        history: list[dict],
+    ) -> str:
         category_streak: dict[str, int] = {}
         budget_warned: set[str] = set()
         if self.logger:
@@ -243,7 +514,11 @@ class AgentLoop:
                 recent_history = history
                 if self.context is not None:
                     memory_entries = (
-                        await self.memory.find([session.id, task_id])
+                        await select_memory_entries(
+                            self.memory,
+                            [session.id, task_id],
+                            task,
+                        )
                         if self.memory is not None
                         else []
                     )
@@ -275,7 +550,7 @@ class AgentLoop:
                         if context_summary:
                             recent_history = history[-4:]
                             dropped_count = len(history) - len(recent_history)
-                            history = recent_history
+                            history[:] = recent_history
                             if self.logger:
                                 self.logger.write(
                                     "context_compressed",
@@ -397,8 +672,20 @@ class AgentLoop:
                         {"name": call.name, "arguments": call.arguments[:200]}
                         for call in tool_calls
                     ]
+                if response.finish_reason:
+                    payload["finish_reason"] = response.finish_reason
                 self.logger.write("llm_result", payload, task_id)
             if not tool_calls:
+                if not text:
+                    finish_reason = getattr(response, "finish_reason", None)
+                    raise RuntimeError(
+                        "provider returned empty response"
+                        + (
+                            f" (finish_reason={finish_reason})"
+                            if finish_reason
+                            else ""
+                        )
+                    )
                 # 无工具调用：模型直接给出最终回答（原生格式没有 DONE 标记）。
                 if self.logger:
                     self.logger.write("loop_end", {"reason": "done"}, task_id)

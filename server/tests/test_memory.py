@@ -60,6 +60,69 @@ async def test_tags_with_commas_are_stored_unambiguously(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_memory_find_filters_by_kind_and_limit(tmp_path):
+    async with MemoryStore(tmp_path / "memory.db") as store:
+        await store.add("s1", "user_note", ["s1"], "n1")
+        await store.add("s1", "user_note", ["s1"], "n2")
+        await store.add("s1", "user_note", ["s1"], "n3")
+        await store.add("s1", "feedback", ["s1"], "f1")
+
+        assert await store.find(["s1"], kinds=["user_note"], limit=2) == ["n3", "n2"]
+        assert await store.find(["s1"], kinds=["feedback"], limit=1) == ["f1"]
+
+
+@pytest.mark.asyncio
+async def test_memory_find_matches_keywords_and_escapes_like_wildcards(tmp_path):
+    async with MemoryStore(tmp_path / "memory.db") as store:
+        await store.add("s1", "user_note", ["s1"], "重构登录模块")
+        await store.add("s1", "user_note", ["s1"], "100% coverage")
+        await store.add("s1", "feedback", ["s1"], "覆盖测试")
+
+        assert await store.find(
+            ["s1"],
+            kinds=["user_note", "feedback"],
+            keywords=["重构"],
+            limit=3,
+        ) == ["重构登录模块"]
+        assert await store.find(
+            ["s1"],
+            kinds=["user_note"],
+            keywords=["100%"],
+            limit=1,
+        ) == ["100% coverage"]
+
+
+@pytest.mark.asyncio
+async def test_memory_migrates_legacy_table_with_created_at(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "memory.db"
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE memory ("
+        "id INTEGER PRIMARY KEY, scope TEXT, kind TEXT, tags TEXT, content TEXT)"
+    )
+    conn.execute(
+        "INSERT INTO memory (scope, kind, tags, content) VALUES (?, ?, ?, ?)",
+        ("s1", "feedback", '["s1"]', "old"),
+    )
+    conn.commit()
+    conn.close()
+
+    store = MemoryStore(path)
+    await store.connect()
+    try:
+        await store.add("s1", "feedback", ["s1"], "new")
+        assert await store.find(
+            ["s1"],
+            kinds=["feedback"],
+            limit=2,
+        ) == ["new", "old"]
+    finally:
+        await store.close()
+
+
+@pytest.mark.asyncio
 async def test_memory_persists_across_reopen(tmp_path):
     path = tmp_path / "memory.db"
     store = MemoryStore(path)

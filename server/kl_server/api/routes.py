@@ -10,7 +10,8 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, field_validator, model_validator
 
 from kl_server.config.config import AppConfig, ProviderConfig
-from kl_server.core.agent_loop import SYSTEM_PROMPT
+from kl_server.core.agent_loop import CONTINUATION_STATE_KIND, SYSTEM_PROMPT
+from kl_server.core.context import select_memory_entries
 from kl_server.core.guardrail import normalize_workspace_mode
 from kl_server.core.snapshot import SnapshotManager
 from kl_server.models.task import Session, Task, TaskStatus
@@ -487,14 +488,23 @@ def build_router() -> APIRouter:
         system_text = SYSTEM_PROMPT
         system_tokens = deps.context.estimate_tokens(system_text)
 
-        memory_entries = await deps.memory.find([session_id])
+        memory_entries = await select_memory_entries(
+            deps.memory,
+            [session_id],
+        )
         task_plan = await deps.memory.get_state(
             f"session:{session_id}",
             "subtasks",
         )
         if task_plan:
             memory_entries.append(f"task_plan: {task_plan}")
-        memory_text = "\n".join(memory_entries[-5:])
+        continuation = await deps.memory.get_state(
+            f"session:{session_id}",
+            CONTINUATION_STATE_KIND,
+        )
+        if continuation:
+            memory_entries.append(f"continuation_context: {continuation}")
+        memory_text = "\n".join(memory_entries)
         memory_tokens = deps.context.estimate_tokens(memory_text)
 
         history_messages = await _history_after_compaction(deps, session_id)
@@ -527,7 +537,10 @@ def build_router() -> APIRouter:
         except KeyError:
             raise HTTPException(status_code=404, detail="session not found")
 
-        memory_entries = await deps.memory.find([session_id])
+        memory_entries = await select_memory_entries(
+            deps.memory,
+            [session_id],
+        )
         task_plan = await deps.memory.get_state(
             f"session:{session_id}",
             "subtasks",
@@ -539,6 +552,12 @@ def build_router() -> APIRouter:
         history_texts = list(memory_entries)
         if task_plan:
             history_texts.append(f"task_plan: {task_plan}")
+        continuation = await deps.memory.get_state(
+            f"session:{session_id}",
+            CONTINUATION_STATE_KIND,
+        )
+        if continuation:
+            history_texts.append(f"continuation_context: {continuation}")
         history_texts.extend(
             f"{message.get('type')}: {message.get('content') or message.get('output') or message.get('name')}"
             for message in history_messages
@@ -610,7 +629,8 @@ def build_router() -> APIRouter:
                 raise HTTPException(status_code=404, detail="session not found")
             memory = getattr(deps, "memory", None)
             if memory is not None and hasattr(memory, "delete_state"):
-                await memory.delete_state(f"session:{session_id}", "subtasks")
+                for kind in ("subtasks", CONTINUATION_STATE_KIND):
+                    await memory.delete_state(f"session:{session_id}", kind)
             return Response(status_code=204)
         if sessions.pop(session_id, None) is None:
             raise HTTPException(status_code=404, detail="session not found")
@@ -722,7 +742,12 @@ def build_router() -> APIRouter:
                 status_code=409,
                 detail=f"cannot add instruction to task in {task.status.value}",
             )
-        deps.loop.add_instruction(task.id, payload.instruction)
+        session = await deps.sessions.get(task.session_id)
+        await deps.loop.add_instruction(
+            task.id,
+            payload.instruction,
+            session.id,
+        )
         return {"task_id": task.id, "status": "instruction_added"}
 
     @router.post("/tasks/{task_id}/abort")

@@ -64,6 +64,8 @@ class OpenAICompatibleProvider:
             raise ProviderError("unexpected provider response")
         message = response.choices[0].message
         content = message.content if isinstance(message.content, str) else ""
+        if not content and isinstance(message.reasoning_content, str):
+            content = message.reasoning_content
         tool_calls: list[ProviderToolCall] | None = None
         if message.tool_calls:
             tool_calls = []
@@ -84,6 +86,7 @@ class OpenAICompatibleProvider:
             text=content,
             raw=response.model_dump(),
             tool_calls=tool_calls,
+            finish_reason=response.choices[0].finish_reason,
         )
 
     @staticmethod

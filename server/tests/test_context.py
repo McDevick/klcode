@@ -2,7 +2,13 @@ import logging
 
 import pytest
 
-from kl_server.core.context import ContextAssembler, LLMSummarizer
+from kl_server.core.context import (
+    ContextAssembler,
+    LLMSummarizer,
+    extract_memory_keywords,
+    select_memory_entries,
+)
+from kl_server.memory.store import MemoryStore
 from kl_server.providers.mock import MockProvider
 
 
@@ -63,6 +69,68 @@ async def test_summarizer_resolves_callable_provider_and_model():
     state["model"] = "model-b"
     await summarizer.summarize(["old"], "t1")
     assert provider.calls[1].model == "model-b"
+
+
+def test_extract_memory_keywords_removes_stopwords():
+    keywords = extract_memory_keywords("请继续重构登录模块，再检查 tests")
+
+    assert "重构" in keywords
+    assert "登录" in keywords
+    assert "模块" in keywords
+    assert "检查" in keywords
+    assert "tests" in keywords
+    assert "继续" not in keywords
+    assert "请继" not in keywords
+
+
+@pytest.mark.asyncio
+async def test_select_memory_entries_applies_kind_quotas(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+    await store.connect()
+    try:
+        await store.add("s1", "user_note", ["s1"], "note1")
+        await store.add("s1", "user_note", ["s1"], "note2")
+        await store.add("s1", "user_note", ["s1"], "note3")
+        await store.add("s1", "feedback", ["s1"], "feedback1")
+        await store.add("s1", "feedback", ["s1"], "feedback2")
+        await store.add("s1", "feedback", ["s1"], "feedback3")
+        await store.add("s1", "context_summary", ["s1"], "summary1")
+        await store.add("s1", "tool_result", ["s1"], "tool-output")
+
+        selected = await select_memory_entries(store, ["s1"])
+
+        assert "note2" in selected
+        assert "note3" in selected
+        assert "note1" not in selected
+        assert "feedback2" in selected
+        assert "feedback3" in selected
+        assert "feedback1" not in selected
+        assert "summary1" in selected
+        assert "tool-output" not in selected
+    finally:
+        await store.close()
+
+
+@pytest.mark.asyncio
+async def test_select_memory_entries_uses_task_keywords(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+    await store.connect()
+    try:
+        await store.add("s1", "user_note", ["s1"], "重构登录模块")
+        await store.add("s1", "feedback", ["s1"], "登录逻辑有误")
+        await store.add("s1", "feedback", ["s1"], "颜色样式无关1")
+        await store.add("s1", "feedback", ["s1"], "颜色样式无关2")
+        await store.add("s1", "feedback", ["s1"], "颜色样式无关3")
+        await store.add("s1", "tool_result", ["s1"], "重构细节")
+
+        selected = await select_memory_entries(store, ["s1"], "继续重构登录模块")
+
+        assert "重构登录模块" in selected
+        assert "登录逻辑有误" in selected
+        assert "颜色样式无关1" not in selected
+        assert "重构细节" not in selected
+    finally:
+        await store.close()
 
 
 @pytest.mark.asyncio
