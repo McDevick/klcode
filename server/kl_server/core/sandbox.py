@@ -26,6 +26,28 @@ _WRAPPERS = {
     "nohup",
     "busybox",
 }
+_SENSITIVE_ENV_RE = re.compile(
+    r"(AWS_|OPENAI|ANTHROPIC|GEMINI|GOOGLE_API|GITHUB|GH_|AZURE|"
+    r"SLACK|DISCORD|TELEGRAM|HUGGING|HF_|KEY|TOKEN|SECRET|PASSWORD|"
+    r"CREDENTIAL|API_KEY)",
+    re.I,
+)
+_BASE_ENV_KEYS = {
+    "PATH",
+    "SYSTEMROOT",
+    "WINDIR",
+    "TEMP",
+    "TMP",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "HOME",
+    "USERPROFILE",
+    "COMSPEC",
+    "PATHEXT",
+    "PYTHONUTF8",
+    "PYTHONIOENCODING",
+}
 
 
 def _normalize_binary(name: str) -> str:
@@ -56,6 +78,20 @@ def _contains_unquoted_shell_metachars(command: str) -> bool:
     return False
 
 
+def _strip_env_assignments(command: str) -> str:
+    match = re.match(r"^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+", command)
+    return command[match.end():] if match else command
+
+
+def sanitize_env(env: dict[str, str] | None = None) -> dict[str, str]:
+    source = dict(os.environ if env is None else env)
+    return {
+        key: value
+        for key, value in source.items()
+        if key in _BASE_ENV_KEYS or not _SENSITIVE_ENV_RE.search(key)
+    }
+
+
 class SandboxPolicy:
     """Command allow/deny policy for the run_command tool.
 
@@ -67,11 +103,28 @@ class SandboxPolicy:
     is rejected.
     """
 
-    def __init__(self, allow: list[str], deny: list[str]):
+    def __init__(
+        self,
+        allow: list[str],
+        deny: list[str],
+        deny_all: bool = False,
+        timeout: float | None = None,
+        max_cpu_seconds: float | None = None,
+        max_memory_mb: int | None = None,
+    ):
         self.allow = {_normalize_binary(item) for item in allow}
         self.deny = {_normalize_binary(item) for item in deny}
+        self.deny_all = deny_all
+        self.timeout = timeout
+        self.max_cpu_seconds = max_cpu_seconds
+        self.max_memory_mb = max_memory_mb
 
     def allow_command(self, command: str) -> bool:
+        if self.deny_all:
+            return False
+        if not command or not command.strip():
+            return False
+        command = _strip_env_assignments(command)
         if not command or not command.strip():
             return False
         if command.lstrip().startswith("@"):
@@ -91,3 +144,17 @@ class SandboxPolicy:
         if binary in self.deny or binary in _WRAPPERS:
             return False
         return not self.allow or binary in self.allow
+
+    def command_timeout(self) -> float | None:
+        return self.timeout
+
+    def resource_limits(self) -> dict:
+        limits = {}
+        if self.max_cpu_seconds is not None:
+            limits["cpu_seconds"] = self.max_cpu_seconds
+        if self.max_memory_mb is not None:
+            limits["memory_mb"] = self.max_memory_mb
+        return limits
+
+    def command_env(self) -> dict[str, str]:
+        return sanitize_env()

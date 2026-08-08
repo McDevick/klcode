@@ -1,6 +1,15 @@
 from pydantic import BaseModel, ConfigDict
 
 
+class SandboxConfig(BaseModel):
+    allow: list[str] = []
+    deny: list[str] = ["rm", "docker"]
+    deny_all: bool = False
+    timeout: float | None = None
+    max_cpu_seconds: float | None = None
+    max_memory_mb: int | None = None
+
+
 class ProviderConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -25,3 +34,4 @@ class AppConfig(BaseModel):
     default_model: str = ""  # 全局默认模型；空则用各 provider 自身的 default_model
     hooks: dict[str, list[dict]] = {}  # 生命周期 hook 配置（command/http），key 为事件名
     mcp: dict[str, dict] = {}  # MCP server 配置，key 为 server 名
+    sandbox: SandboxConfig = SandboxConfig()

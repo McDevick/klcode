@@ -2,7 +2,7 @@ import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
-from kl_server.config.config import AppConfig
+from kl_server.config.config import AppConfig, SandboxConfig
 from kl_server.config.credentials import create_credential_store
 from kl_server.config.loader import load_app_config
 from kl_server.core.agent_loop import AgentLoop, LoopSettings
@@ -56,7 +56,12 @@ def build_app_dependencies(
     log_path,
     credential_store=None,
 ):
-    config = load_app_config(Path(config_path))
+    config_load_error = None
+    try:
+        config = load_app_config(Path(config_path))
+    except Exception as exc:
+        config = AppConfig(sandbox=SandboxConfig(deny_all=True))
+        config_load_error = str(exc)
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     db = Database(db_path)
@@ -77,7 +82,7 @@ def build_app_dependencies(
             fallback_path=db_path.parent / "credentials.bin",
             password=password,
         )
-    config_error = None
+    config_error = config_load_error
     try:
         providers = build_provider_registry(config, credentials)
     except ValueError as exc:
@@ -85,14 +90,33 @@ def build_app_dependencies(
         config_error = str(exc)
     tools = ToolRegistry()
     register_builtin_tools(tools)
+    sandbox_error = None
+    try:
+        sandbox_config = config.sandbox
+        sandbox = SandboxPolicy(
+            allow=sandbox_config.allow,
+            deny=sandbox_config.deny,
+            deny_all=sandbox_config.deny_all,
+            timeout=sandbox_config.timeout,
+            max_cpu_seconds=sandbox_config.max_cpu_seconds,
+            max_memory_mb=sandbox_config.max_memory_mb,
+        )
+    except Exception as exc:
+        sandbox = SandboxPolicy(allow=[], deny=[], deny_all=True)
+        sandbox_error = str(exc)
+    if sandbox_error:
+        config_error = (
+            f"{config_error}; " if config_error else ""
+        ) + f"sandbox config invalid: {sandbox_error}"
     guardrail = Guardrail(
         scope=ScopeFence(workspace),
-        sandbox=SandboxPolicy(allow=[], deny=["rm", "docker"]),
+        sandbox=sandbox,
         danger=DangerClassifier(),
         hitl=HITLManager(),
     )
-    executor = ToolExecutor(tools, guardrail=guardrail)
+    executor = ToolExecutor(tools, guardrail=guardrail, sandbox_policy=sandbox)
     logger = EventLogger(Path(log_path))
+    executor.logger = logger
     memory = MemoryStore(db_path.parent / "memory.db")
     default_max_context = 20000
     default_provider_config = config.providers.get(config.default_provider)

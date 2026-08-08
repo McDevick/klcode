@@ -255,7 +255,8 @@ async def test_loop_uses_tool_summary_in_history():
         if message.get("role") == "tool"
     ]
     assert tool_messages
-    assert tool_messages[0]["content"] == "summarized tool output"
+    assert tool_messages[0]["content"].startswith("summarized tool output")
+    assert "tool_outputs" in tool_messages[0]["content"]
 
 
 @pytest.mark.asyncio

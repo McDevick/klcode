@@ -64,7 +64,7 @@
 | 供应商配置只保存 credential_ref，不保存 key | ⚠️（偏差） | config.py:18-19 允许 api_key 直写且 factory.py:16 优先使用；README 有本地场景说明，但与 SPEC 3.4/§7.1/4.2 冲突 |
 | 模型列表输出 | ✅ | routes.py:814 GET /models、/config/model |
 | 测试连接结果 | ⚠️（弱化） | cli config.ts:44-52 `provider test` 仅检查 provider 存在，不真实调用 LLM |
-| 未配置 key 的付费供应商不可用 | ⚠️（行为粗暴） | factory.py:23-28 缺 key 直接 raise → 服务启动失败，而非"该供应商不可用" |
+| 未配置 key 的付费供应商不可用 | ✅ | factory.py 已删除缺 key raise；缺 key 供应商注册为无 key 实例，运行时调用才失败（不可用语义从启动期推迟到调用期） |
 | 本地 provider 可无 key | ✅ | factory.py:16-22 无 key 也注册（api_key=None） |
 | base URL 必须显式配置 | ✅ | config.py base_url 必填字段 |
 | 配置不合法给出字段级错误 | ✅ | pydantic extra="forbid" + field_validator |
@@ -75,31 +75,31 @@
 | 承诺 | 状态 | 证据 |
 |---|---|---|
 | 统一 Tool 接口：名称、参数 schema | ✅ | tools/base.py:17-23（name/description/schema/execute） |
-| Tool 接口含权限声明、沙箱要求、超时 | ❌ | Protocol 无这些字段；治理/超时由 Guardrail/ToolExecutor 统一处理（"不能绕过治理"功能上成立） |
+| Tool 接口含权限声明、沙箱要求、超时 | ✅ | tools/base.py Protocol 含 permissions/sandbox/timeout；17 个内置工具全量声明；Action 携带声明（models/action.py）；守卫按权限分级（guardrail.py DANGEROUS_PERMISSIONS/UNMANAGED_ESCALATION_PERMISSIONS）；catalog 输出审计 |
 | 内置工具 17 个（SPEC 列表） | ✅（演进） | 16 个保留 + edit_file 新增；mcp_tool 由 MCP 远程工具注册替代（§3.9 机制） |
 | 用户工具 `.kl/tools/<name>/` Python 插件 API | ✅ | plugins/loader.py |
 | 工具描述进入系统提示词 | ✅（等价） | agent_loop.py:138-158 以原生 tools 参数提供，效果等价 |
-| 工具执行有超时和资源限制 | ✅ | core/tool_executor.py:12-26（timeout=60s、max_output_chars=20k） |
-| 大型输出截断并保留文件引用 | ⚠️ | 截断 ✓（truncated 标记）；文件引用 ✗（ToolResult 无引用字段） |
+| 工具执行有超时和资源限制 | ✅ | tool_executor.py 按工具声明 timeout 定制（run_tests 180s/run_command 120s/读写 30s），未声明回退 60s；max_output_chars=20k |
+| 大型输出截断并保留文件引用 | ✅ | 截断时完整输出落盘 .kl/tool_outputs/<task>_<tool>_<uuid>.txt（tool_executor _persist_full_output，OSError 容错），references 含落盘路径 + 操作涉及文件双语义，meta.output_file 记录 |
 | 工具崩溃/超时/权限不足分别返回结构化错误 | ✅ | tool_executor.py:86-90 |
-| schema 错误返回结构化错误 | ⚠️ | 无 harness 级 schema 校验层（registry.execute 直接执行，工具内部自校验） |
+| schema 错误返回结构化错误 | ✅ | tools/registry.py:38-51 jsonschema 执行前校验，ValidationError/SchemaError 区分，统一 schema_error: <message>；jsonschema>=4.0 已入 pyproject |
 
-## §3.6 Guardrail 治理（核验 2026-08-07，兑现约 80%）
+## §3.6 Guardrail 治理（核验 2026-08-08，兑现约 95%，唯一剩余：审批超时）
 
 | 承诺 | 状态 | 证据 |
 |---|---|---|
 | ScopeFence 解析真实路径阻止越界 | ✅ | guardrail.py:17-33（resolve + parents + 空/NUL/drive 防护） |
 | SandboxPolicy 命令白名单/黑名单 | ✅ | core/sandbox.py:59-93（含二进制混淆/未引用元字符防护，超出 SPEC） |
-| SandboxPolicy 环境变量清理 | ❌ | sandbox.py 无 env 清理逻辑 |
-| SandboxPolicy 超时和资源限制 | ⚠️ | 超时/截断在 ToolExecutor（非 SandboxPolicy 自身） |
+| SandboxPolicy 环境变量清理 | ✅ | sandbox.py sanitize_env：_BASE_ENV_KEYS 白名单 + _SENSITIVE_ENV_RE（AWS_/OPENAI/KEY/TOKEN/SECRET/PASSWORD 等）过滤 → command_env() 注入 ctx.sandbox.env → shell.py env= 子进程只拿裁剪环境 |
+| SandboxPolicy 超时和资源限制 | ✅ | SandboxConfig（timeout/max_cpu_seconds/max_memory_mb）→ SandboxPolicy → executor 每工具注入 ctx.sandbox.limits + timeout=min(tool, sandbox) → shell.py RLIMIT_CPU/RLIMIT_AS preexec_fn 生效（POSIX） |
 | DangerClassifier 按动作/路径/命令/影响输出危险等级 | ✅ | guardrail.py:36-100（normal/dangerous/critical + rm -rf 根目标、git push --force 检测） |
 | HITL 状态机：等待批准/拒绝/修改/超时 | ✅（缺超时） | guardrail.py:114-156（pending/approved/rejected/aborted 状态转移） |
 | 审批超时按配置拒绝或冻结任务 | ❌ | HITLManager 无超时机制 |
 | 非 Git 模式默认更严格 | ✅ | guardrail.py:88/98 UNMANAGED_ESCALATION_TOOLS |
 | 治理逻辑不依赖 LLM | ✅ | 纯代码实现 |
-| 每条决策写入行为日志 | ⚠️ | 决策经 tool_result 事件（error="rejected"）与 approval hooks 间接记录，无独立治理决策事件 |
-| delete_file、危险 shell、越界写、发布类命令默认危险 | ✅ | DANGEROUS_TOOLS={delete_file, git_commit} + 命令内容检测 |
-| 配置错误导致策略不可解析时默认拒绝执行 | ⚠️（语义差异） | 配置解析异常直接抛出（启动失败），无"默认拒绝"运行期路径 |
+| 每条决策写入行为日志 | ✅ | tool_executor 每次 guardrail.check 后写独立 governance_decision 事件（tool/decision/args/permissions），异常写 decision="error"；bootstrap 注入 executor.logger |
+| delete_file、危险 shell、越界写、发布类命令默认危险 | ✅ | DANGEROUS_PERMISSIONS={"destructive"}（delete_file/git_commit 声明）+ 命令内容检测（rm -rf 根、git push --force） |
+| 配置错误导致策略不可解析时默认拒绝执行 | ✅ | bootstrap 加载失败 → SandboxConfig(deny_all=True) / SandboxPolicy(deny_all=True) 兜底（fail-closed），错误汇总进 deps.config_error 暴露；默认 deny 含 rm/docker |
 
 ## §3.7 FeedbackSensors 反馈闭环（核验 2026-08-07，兑现约 95%）
 
@@ -112,7 +112,7 @@
 | 失败信息去重、截断、脱敏后回灌 | ✅ | feedback.py:39-56（香农熵脱敏 + 去重 + 末尾截断，本批增强） |
 | 无法解析产物归类 unknown_error 并保留原始引用 | ✅ | feedback.py:108/123/125 + raw_ref（task_id:call.id） |
 
-## §3.8 ContextAssembler 上下文、记忆与压缩（核验 2026-08-07，兑现约 85%）
+## §3.8 ContextAssembler 上下文、记忆与压缩（核验 2026-08-07，兑现 100%）
 
 | 承诺 | 状态 | 证据 |
 |---|---|---|
@@ -134,7 +134,7 @@
 | skill manifest + Markdown 按关键词加载 | ✅ | skills/loader.py:33-63（关键词匹配 SKILL.md） |
 | hook 事件：任务开始/结束、动作前/后、反馈生成、审批请求/完成、错误、中止 | ✅ | agent_loop.py 各 hooks.run 调用点（task_start/task_end/action_before/action_after/feedback_generation/approval_request/approval_complete/error/abort） |
 | hook 支持 command 和 http 两类 | ✅ | hooks/manager.py:86-93 |
-| hook payload 自动脱敏 | ❌ | hooks/manager.py:123/137 直接透传 json.dumps(payload)，无脱敏 |
+| hook payload 自动脱敏 | ✅ | hooks/manager.py:20/125/141 接入 event_logger.redact_payload，command/http 双通道均脱敏 |
 | hook 失败策略可配置：忽略或中止任务 | ✅ | hooks/manager.py:46-57 on_error="ignore"/"abort" |
 | hook 超时按失败策略处理 | ✅ | subprocess/httpx timeout=30s → 异常按 on_error 处理 |
 | MCP stdio + streamable-http 双传输，不可用返回结构化错误 | ✅ | mcp/transport.py、adapter.py（已复核） |
@@ -181,9 +181,9 @@
 | daemon 仅监听 127.0.0.1 | ✅ | main.py:30-31（host=127.0.0.1, port=8700） |
 | TUI 事件延迟秒级可见 | ✅ | WebSocket 事件流推送（ws.py + task_events.py） |
 | 上下文 token 预算 | ✅ | §3.8 |
-| 工具执行超时、重试上限、资源限制 | ⚠️ | 超时 60s + 输出截断 ✓（tool_executor.py）；重试上限 ✗（工具层无重试） |
+| 工具执行超时、重试上限、资源限制 | ⚠️ | 超时按工具声明定制 ✓（tool_executor 读 tool.timeout，60s 回退）+ 输出截断 ✓；重试上限 ✗、CPU/内存资源限制 ✗ |
 | key 优先系统钥匙串 | ✅ | config/credentials.py:36-48（keyring → 加密文件 AESGCM → 内存回退） |
-| 日志/hook payload/工具输出统一脱敏 | ⚠️ | 日志与工具输出进反馈 ✓；hook payload ✗（§3.9） |
+| 日志/hook payload/工具输出统一脱敏 | ✅ | 日志 ✓（event_logger）+ hook payload ✓（redact_payload 接入）+ 工具输出进反馈/日志均脱敏 |
 | daemon 随机本地 token | ✅ | core/auth.py + app.py:87-94 middleware Bearer 校验 |
 | ScopeFence/SandboxPolicy 代码层强制 | ✅ | §3.6 |
 | 用户工具/MCP/hook 显式配置并标记信任边界 | ✅ | .kl/ 配置 + README 安全边界章节 |
@@ -256,32 +256,29 @@
 - 2026-08-07：§3.7–3.9 核对完成。反馈闭环（3.7）兑现度最高（本批已增强熵脱敏与重试预算）；3.8 缺口：任务状态未进上下文、规则分层合并未实现、丢弃记录缺失；3.9 缺口：hook payload 未脱敏（SPEC 明列，与审计日志的脱敏形成不对称）。
 - 2026-08-07：§3.10–3.11 核对完成。CLI 命令全覆盖；TUI 斜杠指令 15/18（缺 /provider /key /tools /hooks /sessions），/exit 无运行中确认，CommandRegistry 简化为数组+if 链；审计日志核心承诺（append-only/脱敏/回放/写失败停任务）全部兑现，缺口为审批与治理决策无独立事件。
 - 2026-08-07：§4/§6/§7/§9 核对完成。安全硬承诺（127.0.0.1/token/钥匙串/ScopeFence）全部兑现；数据模型 8 实体中 Session/EventLog/WorkspaceSnapshot 部分完整，Task 缺 token 用量与 parent_task_id；分发就绪但 make dev 为占位守卫、CI 无构建/产物检查；验收标准 9 条基本满足（kl init 冷启动 gap 为唯一 ⚠️）。
+- 2026-08-07 复核批次（用户修复）：①§3.1 数据损坏保护（quick_check + 备份 + 写阻塞 503）；②§3.2 追加说明（POST /tasks/{id}/instructions + 每轮注入）、workspace 校验（存在/目录/写探针，400 原因）；③§3.4 缺 key 不阻断启动；④§3.5 工具声明字段全闭环（Protocol + 17 内置工具全量声明 + Action 携带 + 守卫按权限分级替代硬编码名单 + catalog 输出）、schema 校验层（jsonschema → schema_error 结构化错误）、references 引用；⑤§3.6 守卫权限分级（DANGEROUS_PERMISSIONS/UNMANAGED_ESCALATION_PERMISSIONS）；⑥§3.8 任务状态进上下文（task_plan 注入）、规则分层（.kl/rules.md + AGENTS.md + session.rules + 显式优先级声明）、丢弃记录（logger + context_compressed 事件）——兑现率升至 100%；⑦§3.9 hook payload 脱敏（redact_payload 接入 command/http 双通道）。
+- 2026-08-07 补充：新增 P2 缺口"完整输出落盘引用"（§6 存储规则），references 现为操作涉及文件，被截断的完整输出不可恢复。
+- 2026-08-08 复核批次（用户修复）：①§3.5 完整输出落盘（tool_outputs/ + references 双语义 + meta.output_file，专项测试）；②§3.6 环境变量清理（sanitize_env 白名单+敏感模式过滤，子进程 env 注入）；③§3.6 超时与资源限制接线（sandbox.timeout min 优先、ctx.sandbox.limits 注入、RLIMIT_CPU/RLIMIT_AS 生效）；④§3.6 治理决策独立日志事件（governance_decision，异常 decision="error"）；⑤§3.6 fail-closed（配置加载失败 deny_all 兜底 + config_error 暴露）——§3.6 兑现率升至约 95%，唯一剩余：审批超时机制。全量缺口从 17 项降至 15 项。
 
-## 全量缺口汇总（按修复优先级）
+## 全量缺口汇总（2026-08-08 更新：环境变量清理、完整输出落盘、治理决策日志已修复移出）
 
 **P0（行为与承诺相反 / 安全）**
-1. 非 Git 快照失败时任务照常执行（§3.2，应拒绝启动）
-2. config.yaml 允许直写 api_key（§3.4/§7.1/§4.2 冲突）
-3. hook payload 未脱敏（§3.9，外发通道无脱敏）
+1. 非 Git 快照失败时任务照常执行（§3.2，应拒绝启动；实现为"快照失败不阻断任务"）
+2. config.yaml 允许直写 api_key（§3.4/§7.1/§4.2 冲突；README 有本地场景说明）
 
 **P1（SPEC 明列缺失）**
-4. Git 任务自动建分支 + 失败回退快照（§3.2）
-5. 连续失败达阈值任务失败保留现场（§3.3，现有仅警告）
-6. 循环级 token 预算停止条件（§3.3/§4.4）
-7. 审批超时机制（§3.6）
-8. SandboxPolicy 环境变量清理（§3.6）
-9. 任务运行中追加说明（§3.2）
-10. 任务状态进上下文（§3.8）
-11. 规则分层合并（§3.8）
-12. /exit 运行中确认、删除二次确认、/session close 运行中检查（§3.1/§3.10）
-13. 工具声明字段（权限/沙箱/超时）（§3.5）
-14. 缺 key 时单个供应商不可用而非整体启动失败（§3.4）
+3. Git 任务自动建分支 + 失败回退快照（§3.2）
+4. 连续失败达阈值任务失败保留现场（§3.3，现有仅警告信号）
+5. 循环级 token 预算停止条件（§3.3/§4.4；Task 无 token 用量字段）
+6. 审批超时机制（§3.6，HITL 无超时，无人值守时任务无限挂起——§3.6 唯一剩余缺口）
+7. /exit 运行中确认、删除 session 二次确认、/session close 运行中检查（§3.1/§3.10）
+8. 工具执行重试上限（§4.1，工具层无重试）
 
 **P2（规格形式/增强）**
-15. CommandRegistry 机制（§3.10，现为数组+if 链）
-16. 5 个斜杠指令缺失（§3.10）
-17. 审批/治理决策独立日志事件（§3.6/§3.11）
-18. 数据模型字段补齐（token 用量/parent_task_id/Action 结果字段/快照校验值等）（§6）
-19. 大输出独立文件存储（§6）
-20. CI 分发构建检查（§4.5）、make dev 接线（§7.2）、kl init 冷启动 gap（§4.3）
-21. schema 校验层（§3.5）、文件引用（§3.5）、provider test 真实连接（§3.4）
+9. CommandRegistry 机制（§3.10，现为数组+if 链；连坐：参数错误 schema 提示、状态门控）
+10. 5 个斜杠指令缺失（§3.10：/provider /key /tools /hooks /sessions）
+11. 审批事件独立日志（§3.11；治理决策事件已修复，审批/人工干预事件仍走 hooks 通道间接体现）
+12. 数据模型字段补齐（token 用量/parent_task_id/Action 结果字段/快照校验值/MemoryEntry token 估算）（§6）
+13. CI 分发构建检查（§4.5）、make dev 接线（§7.2）、kl init 冷启动 gap（§4.3）
+14. provider test 真实连接测试（§3.4，现仅检查 provider 存在）
+15. MCP 远程工具无权限声明（默认 normal 分级；配置即信任可辩护，更保守可强制审批）

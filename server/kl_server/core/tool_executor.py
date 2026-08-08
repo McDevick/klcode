@@ -1,5 +1,8 @@
 import asyncio
+import re
+import uuid
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 from kl_server.models.action import Action
@@ -32,12 +35,16 @@ class ToolExecutor:
         max_output_chars: int = 20_000,
         guardrail=None,
         summarizer=None,
+        logger=None,
+        sandbox_policy=None,
     ):
         self.registry = registry
         self.timeout = timeout
         self.max_output_chars = max_output_chars
         self.guardrail = guardrail
         self.summarizer = summarizer
+        self.logger = logger
+        self.sandbox_policy = sandbox_policy
         if self.max_output_chars <= 0:
             raise ValueError("max_output_chars must be positive")
 
@@ -48,6 +55,24 @@ class ToolExecutor:
         if self.max_output_chars <= len(marker):
             return marker[: self.max_output_chars]
         return text[: self.max_output_chars - len(marker)] + marker
+
+    def _persist_full_output(
+        self,
+        name: str,
+        output: str,
+        ctx: ToolContext,
+    ) -> str | None:
+        try:
+            root = Path(ctx.workspace) / ".kl" / "tool_outputs"
+            root.mkdir(parents=True, exist_ok=True)
+            safe_name = re.sub(r"[^a-zA-Z0-9_-]+", "_", name)[:40]
+            output_path = root / (
+                f"{ctx.task_id or 'task'}_{safe_name}_{uuid.uuid4().hex[:8]}.txt"
+            )
+            output_path.write_text(output, encoding="utf-8", errors="replace")
+            return str(output_path)
+        except OSError:
+            return None
 
     def catalog(self) -> list[dict[str, Any]]:
         return self.registry.catalog()
@@ -70,7 +95,29 @@ class ToolExecutor:
                 decision = self.guardrail.check(action, workspace_mode=ctx.workspace_mode)
             except Exception as exc:
                 message = self._truncate(str(exc) or type(exc).__name__)
+                if self.logger is not None:
+                    self.logger.write(
+                        "governance_decision",
+                        {
+                            "tool": name,
+                            "decision": "error",
+                            "error": message,
+                            "args": args,
+                        },
+                        ctx.task_id,
+                    )
                 return ToolResult(ok=False, output="", error=f"guardrail_error: {message}")
+            if self.logger is not None:
+                self.logger.write(
+                    "governance_decision",
+                    {
+                        "tool": name,
+                        "decision": decision,
+                        "args": args,
+                        "permissions": action.permissions,
+                    },
+                    ctx.task_id,
+                )
             if decision == "rejected":
                 return ToolResult(ok=False, output="", error="rejected")
             if decision == "requires_approval":
@@ -111,10 +158,25 @@ class ToolExecutor:
         try:
             tool = self.registry.get(name)
             timeout = getattr(tool, "timeout", None) or self.timeout
+            sandbox_timeout = None
+            tool_sandbox = dict(getattr(tool, "sandbox", {}))
+            sandbox_policy = self.sandbox_policy
+            if sandbox_policy is None and self.guardrail is not None:
+                sandbox_policy = getattr(self.guardrail, "sandbox", None)
+            if sandbox_policy is not None:
+                sandbox_timeout = sandbox_policy.command_timeout()
+                tool_sandbox["limits"] = sandbox_policy.resource_limits()
+                tool_sandbox["env"] = sandbox_policy.command_env()
+            if sandbox_timeout is not None:
+                timeout = (
+                    min(timeout, sandbox_timeout)
+                    if timeout is not None
+                    else sandbox_timeout
+                )
             tool_ctx = replace(
                 ctx,
                 permissions=list(getattr(tool, "permissions", [])),
-                sandbox=dict(getattr(tool, "sandbox", {})),
+                sandbox=tool_sandbox,
                 tool_timeout=timeout,
             )
             result = await asyncio.wait_for(
@@ -141,6 +203,13 @@ class ToolExecutor:
                 )
             except Exception:
                 summary = None
+        output_file = None
+        if len(raw_output) > self.max_output_chars:
+            output_file = self._persist_full_output(name, raw_output, ctx)
+        references = _extract_references(args, result)
+        if output_file is not None:
+            references.append(output_file)
+            result.meta["output_file"] = output_file
         return replace(
             result,
             output=truncated_output,
@@ -148,5 +217,6 @@ class ToolExecutor:
             summary=summary,
             truncated=len(raw_output) > self.max_output_chars
             or (summary is not None and summary != raw_output),
-            references=_extract_references(args, result),
+            references=references,
+            meta=dict(result.meta),
         )

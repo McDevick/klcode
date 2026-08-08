@@ -168,6 +168,52 @@ def test_bootstrap_sandbox_allows_git_and_curl(tmp_path):
     assert sandbox.allow_command("docker ps") is False
 
 
+def test_bootstrap_invalid_sandbox_config_defaults_to_deny_all(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "sandbox:\n"
+        "  allow: not-a-list\n",
+        encoding="utf-8",
+    )
+    deps = build_app_dependencies(
+        config_path=config_path,
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+
+    sandbox = deps.executor.guardrail.sandbox
+    assert sandbox.deny_all is True
+    assert sandbox.allow_command("pytest -q") is False
+    assert deps.config_error is not None
+
+
+def test_bootstrap_sandbox_config_applies_timeout_and_limits(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "sandbox:\n"
+        "  timeout: 45\n"
+        "  max_cpu_seconds: 120\n"
+        "  max_memory_mb: 1024\n",
+        encoding="utf-8",
+    )
+    deps = build_app_dependencies(
+        config_path=config_path,
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+
+    sandbox = deps.executor.guardrail.sandbox
+    assert sandbox.command_timeout() == 45
+    assert sandbox.resource_limits() == {
+        "cpu_seconds": 120,
+        "memory_mb": 1024,
+    }
+
+
 def test_bootstrap_starts_with_missing_provider_credential(tmp_path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text(

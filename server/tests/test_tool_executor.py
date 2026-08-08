@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 
 import pytest
 from kl_server.core.guardrail import DangerClassifier, Guardrail, HITLManager, ScopeFence
@@ -191,21 +192,53 @@ async def test_executor_truncates_large_output():
 
 
 @pytest.mark.asyncio
-async def test_executor_keeps_references_when_truncating():
+async def test_executor_keeps_references_when_truncating(tmp_path):
     registry = ToolRegistry()
     registry.register(BigFileTool())
     executor = ToolExecutor(registry, max_output_chars=10_000)
 
-    result = await executor.execute("big_file", {}, ToolContext(workspace="."))
+    result = await executor.execute(
+        "big_file",
+        {},
+        ToolContext(workspace=str(tmp_path), task_id="t1"),
+    )
 
     assert result.truncated is True
-    assert result.references == ["src/a.ts"]
+    assert "src/a.ts" in result.references
     assert result.output.endswith("\n...[truncated]")
+
+
+@pytest.mark.asyncio
+async def test_executor_persists_full_output_file(tmp_path):
+    registry = ToolRegistry()
+    registry.register(BigFileTool())
+    executor = ToolExecutor(registry, max_output_chars=10_000)
+
+    result = await executor.execute(
+        "big_file",
+        {},
+        ToolContext(workspace=str(tmp_path), task_id="t1"),
+    )
+
+    output_file = result.meta.get("output_file")
+    assert output_file is not None
+    assert Path(output_file).exists()
+    assert Path(output_file).read_text(encoding="utf-8") == "x" * 100_000
+    assert output_file in result.references
+    assert "src/a.ts" in result.references
 
 
 class FakeSummarizer:
     async def summarize(self, tool, args, result, task_id):
         return "summarized output"
+
+
+class RecordingLogger:
+    def __init__(self):
+        self.events = []
+
+    def write(self, event, payload, task_id=""):
+        self.events.append((event, payload, task_id))
 
 
 @pytest.mark.asyncio
@@ -241,6 +274,31 @@ async def test_executor_uses_tool_declared_timeout_and_context():
 
 
 @pytest.mark.asyncio
+async def test_executor_injects_sandbox_policy_limits_timeout_and_env():
+    registry = ToolRegistry()
+    registry.register(DeclaringTool())
+    policy = SandboxPolicy(
+        allow=[],
+        deny=[],
+        timeout=2.0,
+        max_cpu_seconds=3.0,
+        max_memory_mb=4,
+    )
+    executor = ToolExecutor(
+        registry,
+        timeout=10.0,
+        sandbox_policy=policy,
+    )
+
+    await executor.execute("declaring", {}, ToolContext(workspace="."))
+
+    ctx = DeclaringTool.seen_ctx
+    assert ctx.tool_timeout == 2.0
+    assert ctx.sandbox["limits"] == {"cpu_seconds": 3.0, "memory_mb": 4}
+    assert isinstance(ctx.sandbox["env"], dict)
+
+
+@pytest.mark.asyncio
 async def test_executor_honors_tool_declared_timeout():
     registry = ToolRegistry()
     registry.register(SlowPerToolTool())
@@ -254,6 +312,31 @@ async def test_executor_honors_tool_declared_timeout():
 
     assert result.ok is False
     assert result.error == "timeout"
+
+
+@pytest.mark.asyncio
+async def test_executor_logs_governance_decision(tmp_path):
+    registry = ToolRegistry()
+    registry.register(WriteTool())
+    logger = RecordingLogger()
+    executor = ToolExecutor(
+        registry,
+        guardrail=make_guardrail(tmp_path),
+        logger=logger,
+    )
+
+    result = await executor.execute(
+        "write_file",
+        {"path": "a.py", "content": "x"},
+        ToolContext(workspace=str(tmp_path), workspace_mode="unmanaged"),
+    )
+
+    assert result.error == "requires_approval"
+    assert any(
+        event == "governance_decision"
+        and payload["decision"] == "requires_approval"
+        for event, payload, _task_id in logger.events
+    )
 
 
 @pytest.mark.asyncio

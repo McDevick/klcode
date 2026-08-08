@@ -1,4 +1,4 @@
-from kl_server.core.sandbox import SandboxPolicy
+from kl_server.core.sandbox import SandboxPolicy, sanitize_env
 
 
 def test_sandbox_denies_blacklisted_command():
@@ -82,3 +82,53 @@ def test_sandbox_rejects_all_control_chars():
     policy = SandboxPolicy(allow=[], deny=[])
     assert policy.allow_command("pytest\x1b") is False
     assert policy.allow_command("pytest\t") is False
+
+
+def test_sandbox_strips_env_assignments_before_check():
+    policy = SandboxPolicy(allow=["pytest"], deny=["rm"])
+    assert policy.allow_command("FOO=bar pytest -q") is True
+    assert policy.allow_command("A=1 B=2 rm -rf .") is False
+    assert policy.allow_command("FOO=bar") is False
+
+
+def test_sandbox_deny_all_rejects_everything():
+    policy = SandboxPolicy(allow=["pytest"], deny=[], deny_all=True)
+    assert policy.allow_command("pytest -q") is False
+    assert policy.allow_command("echo hi") is False
+
+
+def test_sandbox_exposes_timeout_and_resource_limits():
+    policy = SandboxPolicy(
+        allow=[],
+        deny=[],
+        timeout=30.0,
+        max_cpu_seconds=120.0,
+        max_memory_mb=2048,
+    )
+    assert policy.command_timeout() == 30.0
+    assert policy.resource_limits() == {
+        "cpu_seconds": 120.0,
+        "memory_mb": 2048,
+    }
+
+
+def test_sanitize_env_removes_credentials_and_keeps_base():
+    clean = sanitize_env(
+        {
+            "AWS_ACCESS_KEY_ID": "secret-aws",
+            "OPENAI_API_KEY": "secret-openai",
+            "GITHUB_TOKEN": "secret-gh",
+            "PATH": "/usr/bin",
+            "SYSTEMROOT": "C:\\Windows",
+            "LANG": "en_US.UTF-8",
+            "OTHER_SETTING": "keep",
+        }
+    )
+
+    assert "AWS_ACCESS_KEY_ID" not in clean
+    assert "OPENAI_API_KEY" not in clean
+    assert "GITHUB_TOKEN" not in clean
+    assert clean["PATH"] == "/usr/bin"
+    assert clean["SYSTEMROOT"] == "C:\\Windows"
+    assert clean["LANG"] == "en_US.UTF-8"
+    assert clean["OTHER_SETTING"] == "keep"
