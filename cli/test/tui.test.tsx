@@ -1814,3 +1814,46 @@ test('app shows plain replies by default and raw rounds in debug mode', async ()
     restore();
   }
 });
+
+test('session manager only shows sessions from current workspace', async () => {
+  let listCount = 0;
+  const otherWorkspace =
+    process.platform === 'win32' ? 'C:\other\project' : '/tmp/other-project';
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    if (url.includes('/api/v1/sessions') && method === 'GET') {
+      listCount += 1;
+      return {
+        ok: true,
+        status: 200,
+        json: async () =>
+          listCount === 1
+            ? []
+            : [
+                { id: 's-local', workspace: process.cwd(), name: 'local', status: 'active' },
+                { id: 's-other', workspace: otherWorkspace, name: 'other', status: 'active' },
+              ],
+      };
+    }
+    if (url.includes('/api/v1/sessions') && method === 'POST') return sessionResponse;
+    if (url.includes('/config/model')) return modelConfigResponse;
+    return { ok: true, status: 200, json: async () => ({}) };
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('/session');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('会话管理'));
+    await waitFor(() => (lastFrame() ?? '').includes('s-local'));
+    expect(lastFrame()).toContain('s-local');
+    expect(lastFrame()).not.toContain('s-other');
+    expect(lastFrame()).not.toContain('other');
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});

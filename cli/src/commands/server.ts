@@ -1,5 +1,12 @@
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { ApiClient, DEFAULT_BASE_URL } from '../api/client';
@@ -52,20 +59,48 @@ function probeEnv(): NodeJS.ProcessEnv {
   };
 }
 
-async function defaultPythonResolver(): Promise<string | null> {
+function venvPythonName(): string {
+  return process.platform === 'win32' ? 'Scripts\\python.exe' : 'bin/python';
+}
+
+/**
+ * 发现项目 venv：cwd 及上两级目录下所有 *venv* 目录（venv/.venv/xxxvenv），
+ * 外加本仓库开发 venv 特判（存在时优先）。README 要求用项目 venv 运行服务端。
+ */
+export function discoverVenvCandidates(): string[] {
+  const candidates: string[] = [];
+  const venvPython = venvPythonName();
+  const devVenv = join(process.cwd(), '.superpowers', 'sdd', 'PLAN', 'venv');
+  if (existsSync(join(devVenv, venvPython))) {
+    candidates.push(devVenv);
+  }
+  for (let depth = 0; depth <= 2; depth += 1) {
+    const dir =
+      depth === 0 ? process.cwd() : join(process.cwd(), ...Array(depth).fill('..'));
+    let entries: string[] = [];
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.toLowerCase().includes('venv')) continue;
+      const candidate = join(dir, entry);
+      if (existsSync(join(candidate, venvPython))) {
+        candidates.push(candidate);
+      }
+    }
+  }
+  return [...new Set(candidates)];
+}
+
+export async function defaultPythonResolver(): Promise<string | null> {
   const env = probeEnv();
-  const venvPython = process.platform === 'win32' ? 'Scripts\\python.exe' : 'bin/python';
+  const venvPython = venvPythonName();
 
   // 优先使用项目 venv：系统 python 可能装有旧版 kl-server（如指向 worktree），
   // README 明确要求用项目 venv 运行服务端。
-  const venvCandidates = [
-    join(process.cwd(), '.superpowers', 'sdd', 'PLAN', 'venv'),
-    join(process.cwd(), 'venv'),
-    join(process.cwd(), '.venv'),
-    join(process.cwd(), '..', 'venv'),
-    join(process.cwd(), '..', '.venv'),
-  ];
-  for (const venv of venvCandidates) {
+  for (const venv of discoverVenvCandidates()) {
     const python = join(venv, venvPython);
     if (!existsSync(python)) continue;
     try {

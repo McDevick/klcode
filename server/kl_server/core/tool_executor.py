@@ -92,7 +92,11 @@ class ToolExecutor:
                 sandbox=dict(getattr(tool, "sandbox", {}) if tool is not None else {}),
             )
             try:
-                decision = self.guardrail.check(action, workspace_mode=ctx.workspace_mode)
+                decision = self.guardrail.check(
+                    action,
+                    workspace_mode=ctx.workspace_mode,
+                    workspace=ctx.workspace,
+                )
             except Exception as exc:
                 message = self._truncate(str(exc) or type(exc).__name__)
                 if self.logger is not None:

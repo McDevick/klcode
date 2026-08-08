@@ -1,8 +1,8 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, expect, test, vi } from 'vitest';
-import { ServerCommand } from '../src/commands/server';
+import { afterEach, describe, expect, test, vi } from 'vitest';
+import { ServerCommand, defaultPythonResolver, discoverVenvCandidates } from '../src/commands/server';
 
 const tempDirs: string[] = [];
 
@@ -160,4 +160,54 @@ test('server status reports stale pid when health fails', async () => {
   } finally {
     vi.unstubAllGlobals();
   }
+});
+
+describe('defaultPythonResolver venv discovery', () => {
+  test('discovers venv directories in cwd and parents, deduped', () => {
+    const root = makeTempDir();
+    const scripts = process.platform === 'win32' ? 'Scripts' : 'bin';
+    const pythonName = process.platform === 'win32' ? 'python.exe' : 'python';
+    mkdirSync(join(root, '.venv', scripts), { recursive: true });
+    writeFileSync(join(root, '.venv', scripts, pythonName), '');
+    mkdirSync(join(root, 'my-venv', scripts), { recursive: true });
+    writeFileSync(join(root, 'my-venv', scripts, pythonName), '');
+    const nested = join(root, 'a', 'b');
+    mkdirSync(nested, { recursive: true });
+
+    const originalCwd = process.cwd();
+    try {
+      process.chdir(nested);
+      const candidates = discoverVenvCandidates();
+
+      expect(candidates).toContain(join(root, '.venv'));
+      expect(candidates).toContain(join(root, 'my-venv'));
+      expect(new Set(candidates).size).toBe(candidates.length);
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
+  test('resolver returns a usable venv python and null when none work', async () => {
+    const root = makeTempDir();
+    const scripts = process.platform === 'win32' ? 'Scripts' : 'bin';
+    const pythonName = process.platform === 'win32' ? 'python.exe' : 'python';
+    mkdirSync(join(root, '.venv', scripts), { recursive: true });
+    writeFileSync(join(root, '.venv', scripts, pythonName), '');
+
+    const originalCwd = process.cwd();
+    try {
+      process.chdir(root);
+      const withEnv = await defaultPythonResolver();
+      // 深度扫描可能命中上层目录的其他可用 venv（如 Temp 下遗留），
+      // 断言返回的必须是存在的、候选列表内的 python。
+      expect(withEnv).toBeTruthy();
+      expect(existsSync(withEnv as string)).toBe(true);
+      const candidates = discoverVenvCandidates();
+      expect(candidates.map((candidate) => join(candidate, scripts, pythonName))).toContain(
+        withEnv,
+      );
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
 });

@@ -61,8 +61,14 @@ export function SessionManager({
     const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
     try {
       const records = await client.listSessions();
-      setSessions(records);
-      setSelectedIndex((index) => Math.min(index, Math.max(0, records.length)));
+      // 只展示当前工作目录的会话：TUI 的工作目录 = session.workspace 语义，
+      // 其他目录的会话（可能误打开导致 agent 跑去别的目录工作）不可见。
+      const currentWorkspace = process.cwd();
+      const filtered = records.filter(
+        (session) => session.workspace === currentWorkspace,
+      );
+      setSessions(filtered);
+      setSelectedIndex((index) => Math.min(index, Math.max(0, filtered.length)));
       setActionIndex(0);
       setError('');
     } catch (err) {

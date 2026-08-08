@@ -18,7 +18,10 @@ class ScopeFence:
     def __init__(self, workspace: str):
         self.root = Path(workspace).resolve()
 
-    def allow(self, path: Path | str) -> bool:
+    def allow(self, path: Path | str, root: Path | str | None = None) -> bool:
+        """检查路径是否在围栏内。``root`` 为 None 时用构造时的工作区根；
+        传入显式根（如 session.workspace）时以该根解析相对路径。"""
+        base = Path(root).resolve() if root is not None else self.root
         try:
             raw = Path(path)
             if isinstance(path, str) and not path:
@@ -27,10 +30,10 @@ class ScopeFence:
                 return False
             if raw.drive and not raw.root:
                 return False
-            candidate = raw.resolve() if raw.is_absolute() else (self.root / raw).resolve()
+            candidate = raw.resolve() if raw.is_absolute() else (base / raw).resolve()
         except (OSError, ValueError, RuntimeError, TypeError):
             return False
-        return candidate == self.root or self.root in candidate.parents
+        return candidate == base or base in candidate.parents
 
 
 class DangerClassifier:
@@ -171,7 +174,14 @@ class Guardrail:
         self.hitl = hitl
         self.workspace_mode = normalize_workspace_mode(workspace_mode)
 
-    def check(self, action: Action, workspace_mode: str | None = None) -> str:
+    def check(
+        self,
+        action: Action,
+        workspace_mode: str | None = None,
+        workspace: str | None = None,
+    ) -> str:
+        """检查动作。``workspace`` 为执行该动作的实际工作区（如 session.workspace），
+        路径围栏以它解析相对路径；缺省时用构造时的 daemon 工作区。"""
         workspace_mode = normalize_workspace_mode(workspace_mode or self.workspace_mode)
         try:
             paths = [action.args.get("path")]
@@ -183,7 +193,7 @@ class Guardrail:
         except (TypeError, ValueError):
             return "rejected"
         for path in paths:
-            if path and not self.scope.allow(path):
+            if path and not self.scope.allow(path, root=workspace):
                 return "rejected"
         command_sources = [action.raw_command, action.args.get("command")]
         for source in command_sources:

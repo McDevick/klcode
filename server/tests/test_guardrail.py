@@ -414,3 +414,73 @@ def test_unknown_workspace_mode_is_rejected(tmp_path):
             hitl=HITLManager(),
             workspace_mode="unknown",
         )
+
+
+def test_scope_fence_resolves_relative_paths_against_explicit_root(tmp_path):
+    daemon_root = tmp_path / "daemon"
+    session_root = tmp_path / "session"
+    daemon_root.mkdir()
+    session_root.mkdir()
+    (session_root / "src").mkdir()
+    (session_root / "src" / "a.ts").write_text("", encoding="utf-8")
+    fence = ScopeFence(str(daemon_root))
+
+    # 显式根（session.workspace）：相对路径基于 session 根解析——守卫检查
+    # agent 实际工作的目录，而不是 daemon 启动目录里的假想路径
+    assert fence.allow("src/a.ts", root=str(session_root)) is True
+    # 显式根下越界（逃逸到 daemon 目录）仍拒绝
+    assert fence.allow("../daemon/secret.txt", root=str(session_root)) is False
+    # 绝对路径逃出显式根拒绝
+    assert fence.allow(str(daemon_root / "secret.txt"), root=str(session_root)) is False
+    # 无显式根：保持构造时根（向后兼容）
+    assert fence.allow("src/a.ts") is True
+
+
+def test_guardrail_check_uses_session_workspace_for_path_fence(tmp_path):
+    daemon_root = tmp_path / "daemon"
+    session_root = tmp_path / "session"
+    daemon_root.mkdir()
+    session_root.mkdir()
+    (session_root / "src").mkdir()
+    (session_root / "src" / "a.ts").write_text("", encoding="utf-8")
+    guardrail = Guardrail(
+        scope=ScopeFence(str(daemon_root)),
+        sandbox=SandboxPolicy(allow=[], deny=[]),
+        danger=DangerClassifier(),
+        hitl=HITLManager(),
+    )
+    in_workspace = Action(
+        tool="write_file",
+        args={"path": "src/a.ts"},
+        task_id="t1",
+        workspace=str(session_root),
+        permissions=["filesystem:write"],
+    )
+    out_of_workspace = Action(
+        tool="write_file",
+        args={"path": "../outside.txt"},
+        task_id="t1",
+        workspace=str(session_root),
+        permissions=["filesystem:write"],
+    )
+
+    # 传 session.workspace：守卫按 agent 实际工作目录检查——session 内放行
+    assert (
+        guardrail.check(
+            in_workspace,
+            workspace_mode="managed",
+            workspace=str(session_root),
+        )
+        == "allowed"
+    )
+    # 越界（逃逸到 session 外）拒绝
+    assert (
+        guardrail.check(
+            out_of_workspace,
+            workspace_mode="managed",
+            workspace=str(session_root),
+        )
+        == "rejected"
+    )
+    # 不传 workspace：保持 daemon 根解析（旧行为兼容，参数可选）
+    assert guardrail.check(in_workspace, workspace_mode="managed") == "allowed"
