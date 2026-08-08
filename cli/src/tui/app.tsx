@@ -10,31 +10,107 @@ import { SkillsMenu } from './components/skills-menu';
 import { McpManager } from './components/mcp-manager';
 import { ModelManager } from './components/model-manager';
 import { ConnectManager } from './components/connect-manager';
+import { CommandRegistry, type CommandArg, type CommandState } from './commands';
 import { ApiClient, DEFAULT_BASE_URL, type SkillInfo } from '../api/client';
 import { connectTaskEvents } from '../api/events';
 import { sendApprovalDecision, type ApprovalDecision } from './screens/approval';
 import { theme } from './theme';
 import type { ApprovalRequest, ChatMessage, RunningTask, SlashCommand } from './types';
 
-const SLASH_COMMANDS: SlashCommand[] = [
-  { name: '/session', desc: '打开会话管理' },
-  { name: '/skills', desc: '查看当前可用 skill' },
-  { name: '/mcp', desc: '管理 MCP server' },
-  { name: '/config', desc: '配置 provider API 连接' },
-  { name: '/connect', desc: '配置 provider API 连接' },
-  { name: '/status', desc: '查看当前状态' },
-  { name: '/model', desc: '查看/切换模型' },
-  { name: '/context', desc: '查看上下文占用' },
-  { name: '/compact', desc: '压缩当前上下文' },
-  { name: '/help', desc: '显示帮助' },
-  { name: '/abort', desc: '中止当前任务' },
-  { name: '/note', desc: '给当前任务追加说明' },
-  { name: '/pause', desc: '暂停任务' },
-  { name: '/continue', desc: '继续任务' },
-  { name: '/debug', desc: '调试模式开关（显示轮次与原始回复）' },
-  { name: '/mouse', desc: '开启滚轮滚动（默认关闭，鼠标随时可选中复制）' },
-  { name: '/exit', desc: '退出 TUI' },
+const COMMAND_META: Array<{
+  name: string;
+  desc: string;
+  usage?: string;
+  args?: CommandArg[];
+  aliases?: string[];
+  available?: (state: CommandState) => boolean;
+}> = [
+  {
+    name: '/session',
+    desc: '打开会话管理',
+    available: (state) => !state.running,
+  },
+  {
+    name: '/skills',
+    desc: '查看当前可用 skill',
+  },
+  {
+    name: '/mcp',
+    desc: '管理 MCP server',
+  },
+  {
+    name: '/config',
+    desc: '配置 provider API 连接',
+    aliases: ['/cfg'],
+    available: (state) => !state.running,
+  },
+  {
+    name: '/connect',
+    desc: '配置 provider API 连接',
+    aliases: ['/conn'],
+    available: (state) => !state.running,
+  },
+  {
+    name: '/status',
+    desc: '查看当前状态',
+  },
+  {
+    name: '/model',
+    desc: '查看/切换模型',
+  },
+  {
+    name: '/context',
+    desc: '查看上下文占用',
+  },
+  {
+    name: '/compact',
+    desc: '压缩当前上下文',
+    available: (state) => !state.running,
+  },
+  {
+    name: '/help',
+    desc: '显示帮助',
+  },
+  {
+    name: '/abort',
+    desc: '中止当前任务',
+    available: (state) => state.taskId !== null,
+  },
+  {
+    name: '/note',
+    desc: '给当前任务追加说明',
+    usage: '/note <说明>',
+    args: [{ name: '说明', required: true }],
+    available: (state) => state.taskId !== null,
+  },
+  {
+    name: '/pause',
+    desc: '暂停任务',
+    available: (state) => state.taskId !== null,
+  },
+  {
+    name: '/continue',
+    desc: '继续任务',
+    available: (state) => state.taskId !== null,
+  },
+  {
+    name: '/debug',
+    desc: '调试模式开关（显示轮次与原始回复）',
+  },
+  {
+    name: '/mouse',
+    desc: '开启滚轮滚动（默认关闭，鼠标随时可选中复制）',
+  },
+  {
+    name: '/exit',
+    desc: '退出 TUI',
+  },
 ];
+
+const SLASH_COMMANDS: SlashCommand[] = COMMAND_META.map((command) => ({
+  name: command.name,
+  desc: command.desc,
+}));
 
 const APPROVAL_OPTIONS = [
   { key: 'approve', label: 'Approve' },
@@ -210,6 +286,7 @@ export function App() {
   const [skillsIndex, setSkillsIndex] = useState(0);
   const [mcpOpen, setMcpOpen] = useState(false);
   const [modelManagerOpen, setModelManagerOpen] = useState(false);
+  const [exitConfirm, setExitConfirm] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [menuIndex, setMenuIndex] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
@@ -377,6 +454,7 @@ export function App() {
         const status = String(event.status);
         setTaskStatus(status);
         setRunning(null);
+        setExitConfirm(false);
         if (status === 'failed') {
           // 显示具体失败原因（provider 错误 / 超轮次 / 审批中止等）
           const detail = String(event.error ?? event.result ?? '未提供具体原因');
@@ -510,6 +588,7 @@ export function App() {
     setSkillsOpen(false);
     setMcpOpen(false);
     setModelManagerOpen(false);
+    setExitConfirm(false);
     setMessages([]);
     setScrollTop(0);
     if (message) {
@@ -571,10 +650,16 @@ export function App() {
     }
   };
 
-  const runSlashCommand = (commandName: string, args: string[]) => {
+  const dispatchSlashCommand = (commandName: string, args: string[]) => {
     if (commandName === '/exit') {
+      if (running !== null && !exitConfirm) {
+        setExitConfirm(true);
+        pushMessage('agent', '任务仍在运行，再次输入 /exit 确认退出', 'error');
+        return;
+      }
       process.exit(0);
     }
+    setExitConfirm(false);
     if (commandName === '/help') {
       pushMessage('agent', SLASH_COMMANDS.map((c) => `${c.name} — ${c.desc}`).join('\n'), 'info');
       return;
@@ -750,6 +835,26 @@ export function App() {
     pushMessage('agent', `未知命令: ${commandName}`, 'error');
   };
 
+  const commandRegistry = new CommandRegistry();
+  for (const meta of COMMAND_META) {
+    commandRegistry.register({
+      ...meta,
+      handler: (_ctx, args) => dispatchSlashCommand(meta.name, args),
+    });
+  }
+
+  const runSlashCommand = (commandName: string, args: string[]) => {
+    const state: CommandState = {
+      running: running !== null,
+      taskId,
+      sessionId,
+    };
+    const result = commandRegistry.run(commandName, args, state);
+    if (!result.ok) {
+      pushMessage('agent', result.error ?? '命令执行失败', 'error');
+    }
+  };
+
   const submitTask = (value: string) => {
     const trimmed = value.trim();
     if (trimmed === '') return;
@@ -759,6 +864,7 @@ export function App() {
       return;
     }
     pushMessage('user', trimmed);
+    setExitConfirm(false);
     if (running !== null) {
       pushMessage('agent', '当前任务仍在运行，请等待结束或使用 /abort', 'info');
       return;

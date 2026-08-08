@@ -143,45 +143,45 @@
 | 用户工具默认受沙箱和审批约束 | ✅ | ToolExecutor 统一 guardrail 检查 |
 | skill 加载失败忽略并记录 | ✅ | skills/loader.py:38-46/58-61 warning 忽略 |
 
-## §3.10 CLI/TUI 与斜杠指令（核验 2026-08-07，兑现约 75%）
+## §3.10 CLI/TUI 与斜杠指令（核验 2026-08-08，兑现约 90%）
 
 | 承诺 | 状态 | 证据 |
 |---|---|---|
 | `kl init` / `kl server start/stop/status` / `kl run` / `kl tui` | ✅ | cli/src/commands/init.ts、server.ts、run.ts；main.ts |
 | `kl config provider add/list/test` | ✅（test 弱化见 §3.4） | cli/src/commands/config.ts:28-55 |
 | `kl config key set/test/clear/show` | ✅ | config.ts:63-106 |
-| TUI 斜杠指令 18 个（/config /provider /model /key /tools /hooks /skills /mcp /sessions /session 系列 /pause /continue /abort /status /help /exit） | ⚠️（15 个，缺 5 个） | app.tsx:18-33 实际 15 个：/session /skills /mcp /config /status /model /context /compact /help /abort /pause /continue /debug /mouse /exit；缺 /provider /key /tools /hooks /sessions（/session 面板替代） |
-| 指令经 CommandRegistry 注册（名称/别名/参数 schema/适用状态/说明/处理器） | ⚠️（简化） | 实现为 SLASH_COMMANDS 数组 + if 链（app.tsx:566-731），无参数 schema/适用状态机制 |
-| /help 自动从注册表生成 | ✅ | app.tsx:570-572 map 生成 |
-| 配置向导：供应商/模型/base URL/key 隐藏输入 | ✅ | tui/components/config-wizard.tsx |
+| TUI 斜杠指令（SPEC 18 个） | ⚠️（17 个实际，缺 5 个名义指令） | 实际 17 个：/session /skills /mcp /config /connect /status /model /context /compact /help /abort /note /pause /continue /debug /mouse /exit；缺 /provider /key /tools /hooks /sessions——/sessions 由 /session 面板覆盖、/provider /key 由 /config 向导+/model 覆盖、/tools /hooks 无覆盖 |
+| 指令经 CommandRegistry 注册（名称/别名/参数 schema/适用状态/说明/处理器） | ✅ | cli/src/tui/commands.ts 独立模块：CommandDef（name/desc/usage/args/aliases/available/handler）+ CommandRegistry（register/resolve/list/run）；app.tsx COMMAND_META 批量注册；/config 别名 /cfg、/connect 别名 /conn |
+| /help 自动从注册表生成 | ✅ | app.tsx 从 COMMAND_META 生成 |
+| 配置向导：供应商/模型/base URL/key 隐藏输入 | ✅ | tui/components/connect-manager.tsx（替代已删除的 config-wizard） |
 | 实时任务视图、审批面板、会话恢复 | ✅ | messages.tsx、approval.tsx、session-manager.tsx |
-| 运行中指令和空闲指令分开限制 | ⚠️ | /abort//pause//continue 有任务存在门控（app.tsx:705-709）；其余指令无状态门控 |
-| /exit 在任务运行时先确认 | ❌ | app.tsx:567-569 直接 process.exit(0)，无运行中检查 |
-| 未知指令给出帮助提示 | ✅ | app.tsx:730 "未知命令" |
-| 参数错误显示该指令 schema | ❌ | 无 schema 机制（同 CommandRegistry 缺口） |
-| 超出 SPEC 的增强（不扣分） | — | /context /compact /debug /mouse、config tools 命令 |
+| 运行中指令和空闲指令分开限制 | ✅ | 双向门控：空闲侧 /session//config//connect//compact 用 available: !state.running；任务侧 /abort//note//pause//continue 用 available: taskId !== null |
+| /exit 在任务运行时先确认 | ✅ | app.tsx 运行中第一次 /exit 提示"再次输入 /exit 确认退出"，第二次才退出（专项测试） |
+| 未知指令给出帮助提示 | ✅ | registry.run 返回"未知命令" |
+| 参数错误显示该指令 schema | ✅ | registry.run 生成式错误："缺少参数 X\n用法: usage"（/note 已启用） |
+| 超出 SPEC 的增强（不扣分） | — | /context /compact /debug /mouse /connect、config tools 命令、别名机制 |
 
-## §3.11 行为日志与审计（核验 2026-08-07，兑现约 85%）
+## §3.11 行为日志与审计（核验 2026-08-08，兑现 100%）
 
 | 承诺 | 状态 | 证据 |
 |---|---|---|
 | 任务/动作/反馈/摘要事件写入 append-only 结构化日志 | ✅ | event_logger.py:18-38（"a" 模式 + flush）；loop_start/llm_call/tool_result/feedback_generation 等事件 |
-| 治理决策事件 | ⚠️ | 决策经 tool_result（error="rejected"）间接记录，无独立治理事件（同 §3.6） |
-| 审批/人工干预事件 | ⚠️ | approval_request/approval_complete 走 hooks 通道，EventLogger 仅 loop_end(reason=needs_approval) 间接体现 |
+| 治理决策事件 | ✅ | tool_executor 写独立 governance_decision 事件（tool/decision/args/permissions） |
+| 审批/人工干预事件 | ✅ | agent_loop 独立写 approval_request（action_id/tool/args/level）+ approval_complete（action_id/decision）审计事件，专项测试锁定 |
 | AGENT_LOG 实时记录（不做完补写） | ✅ | 事件实时 write；AGENT_LOG.md 由开发流程维护 |
 | 凭据、key、敏感环境变量自动脱敏 | ✅ | event_logger.py:46-57（key 名匹配 + 值正则 + command/env/credential_ref 字段全 REDACTED） |
 | 日志支持按 task/session 回放 | ✅ | routes.py:379-446 history/feedback/context 端点 |
 | 日志不保存明文凭据、不覆盖历史 | ✅ | 脱敏 + append-only |
 | 日志写入失败时任务停止并提示 | ✅ | write 抛 RuntimeError → 主循环异常 → task FAILED + 错误事件广播 |
 
-## §4 非功能需求（核验 2026-08-07，兑现约 80%）
+## §4 非功能需求（核验 2026-08-08，兑现约 85%）
 
 | 承诺 | 状态 | 证据 |
 |---|---|---|
 | daemon 仅监听 127.0.0.1 | ✅ | main.py:30-31（host=127.0.0.1, port=8700） |
 | TUI 事件延迟秒级可见 | ✅ | WebSocket 事件流推送（ws.py + task_events.py） |
 | 上下文 token 预算 | ✅ | §3.8 |
-| 工具执行超时、重试上限、资源限制 | ⚠️ | 超时按工具声明定制 ✓（tool_executor 读 tool.timeout，60s 回退）+ 输出截断 ✓；重试上限 ✗、CPU/内存资源限制 ✗ |
+| 工具执行超时、重试上限、资源限制 | ⚠️ | 超时 ✓（tool.timeout 与 sandbox.timeout 取 min）+ 输出截断 ✓ + CPU/内存限制 ✓（RLIMIT_CPU/RLIMIT_AS，POSIX）；重试上限 ✗（工具层无重试） |
 | key 优先系统钥匙串 | ✅ | config/credentials.py:36-48（keyring → 加密文件 AESGCM → 内存回退） |
 | 日志/hook payload/工具输出统一脱敏 | ✅ | 日志 ✓（event_logger）+ hook payload ✓（redact_payload 接入）+ 工具输出进反馈/日志均脱敏 |
 | daemon 随机本地 token | ✅ | core/auth.py + app.py:87-94 middleware Bearer 校验 |
@@ -191,7 +191,7 @@
 | make test 一键 | ✅ | Makefile |
 | kl init 覆盖全新机器冷启动 | ⚠️ | README 已知限制：kl init 依赖 daemon 已运行（冷启动流程有 gap） |
 | 首次配置 CLI/TUI 引导 | ✅ | config-wizard.tsx + config 命令 |
-| 日志覆盖任务/动作/治理/反馈/审批/摘要/hook/人工干预 | ⚠️ | 审批与治理决策事件缺口（§3.6/§3.11） |
+| 日志覆盖任务/动作/治理/反馈/审批/摘要/hook/人工干预 | ⚠️ | 治理决策事件 ✓（governance_decision）；审批/人工干预事件仍走 hooks 通道，无独立日志事件 |
 | 日志可回放 | ✅ | §3.11 |
 | 状态接口：session/task/上下文预算 | ✅ | /status、/sessions、/context |
 | 状态接口：token 用量 | ❌ | Task 模型无 token 用量字段（同 §3.3） |
@@ -201,21 +201,21 @@
 | 最终交付前 CI pass | ✅（本地） | 本地 444+96 passed；远程 CI 状态未验证 |
 | AGENT_LOG.md 实时维护 | ✅（存在性） | AGENT_LOG.md 84KB 持续维护；"实时记录不补写"规则未从内容深核 |
 
-## §6 数据模型（核验 2026-08-07，兑现约 70%）
+## §6 数据模型（核验 2026-08-08，兑现约 75%）
 
 | 承诺 | 状态 | 证据 |
 |---|---|---|
 | Session：id/名称/工作区/provider/model/规则/状态/时间戳 | ✅ | models/task.py:17-25 |
 | Task：id/session_id/描述/状态/模式/分支或快照/摘要/时间戳 | ✅ | models/task.py:29-38 |
 | Task 含 token 用量、预留 parent_task_id | ❌ | 两字段均缺（subagent 预留未落实） |
-| Action 含治理结果/沙箱结果/审批状态/执行结果 | ❌ | models/action.py:5-12 仅基础字段；结果在 ToolResult/执行链路 |
+| Action 含治理结果/沙箱结果/审批状态/执行结果 | ⚠️ | Action 已含 permissions/sandbox 声明字段；结果仍在 ToolResult/执行链路，但经 governance_decision 事件独立记录（审计可回放） |
 | Approval：id/action_id/危险等级/原因/结果/用户备注 | ⚠️ | guardrail.py:106-111 ApprovalRequest 仅 action_id/tool/command/state |
 | Feedback：id/task_id/action_id/类别/摘要/原始输出引用 | ⚠️ | raw_ref 折叠 task_id:call.id（§3.7 已记录） |
 | MemoryEntry：id/scope/类型/标签/内容/token 估算/时间戳 | ⚠️ | store.py add(scope/kind/tags/content)；token 估算字段缺 |
 | EventLog：id/task_id/事件类型/脱敏 payload/时间戳 | ✅ | event_logger.py |
 | WorkspaceSnapshot：路径/校验值 | ⚠️ | snapshot.py 有路径 + .meta；校验值缺 |
 | SQLite 存状态/任务/记忆/审计索引 | ✅ | storage/database.py + memory/store.py |
-| 大型输出存文件，库只存引用和摘要 | ⚠️ | 输出截断后进日志/记忆，无独立输出文件存储 |
+| 大型输出存文件，库只存引用和摘要 | ✅ | 截断时完整输出落盘 .kl/tool_outputs/（tool_executor _persist_full_output），references + meta.output_file 引用 |
 | 项目数据 .kl/ 并 gitignore | ✅ | .gitignore + README |
 | 凭据不进 SQLite 或日志 | ✅ | credentials.master 独立加密文件 |
 
@@ -245,7 +245,7 @@
 | 4. mock-LLM 单测覆盖 5 类机制 | ✅ | test_guardrail/test_feedback/test_agent_loop 等 |
 | 5. 上下文 token 预算，mock 验证摘要和 fallback | ✅ | test_context.py |
 | 6. 行为日志覆盖关键事件且无明文 key | ✅ | §3.11（审批/治理事件缺口见 §3.6） |
-| 7. make test 一键通过 + 双 CI unit-test | ✅ | 本地 444+96 passed；ci.yml/.gitlab-ci.yml 均含 unit-test |
+| 7. make test 一键通过 + 双 CI unit-test | ✅ | 本地 480+103 passed；ci.yml/.gitlab-ci.yml 均含 unit-test |
 | 8. examples/ mock-LLM 机制演示 | ✅ | 4 个演示脚本（guardrail/feedback/context/tool_error） |
 | 9. 文档齐全 | ✅ | SPEC/PLAN/SPEC_PROCESS/AGENT_LOG/REFLECTION/README |
 
@@ -259,8 +259,10 @@
 - 2026-08-07 复核批次（用户修复）：①§3.1 数据损坏保护（quick_check + 备份 + 写阻塞 503）；②§3.2 追加说明（POST /tasks/{id}/instructions + 每轮注入）、workspace 校验（存在/目录/写探针，400 原因）；③§3.4 缺 key 不阻断启动；④§3.5 工具声明字段全闭环（Protocol + 17 内置工具全量声明 + Action 携带 + 守卫按权限分级替代硬编码名单 + catalog 输出）、schema 校验层（jsonschema → schema_error 结构化错误）、references 引用；⑤§3.6 守卫权限分级（DANGEROUS_PERMISSIONS/UNMANAGED_ESCALATION_PERMISSIONS）；⑥§3.8 任务状态进上下文（task_plan 注入）、规则分层（.kl/rules.md + AGENTS.md + session.rules + 显式优先级声明）、丢弃记录（logger + context_compressed 事件）——兑现率升至 100%；⑦§3.9 hook payload 脱敏（redact_payload 接入 command/http 双通道）。
 - 2026-08-07 补充：新增 P2 缺口"完整输出落盘引用"（§6 存储规则），references 现为操作涉及文件，被截断的完整输出不可恢复。
 - 2026-08-08 复核批次（用户修复）：①§3.5 完整输出落盘（tool_outputs/ + references 双语义 + meta.output_file，专项测试）；②§3.6 环境变量清理（sanitize_env 白名单+敏感模式过滤，子进程 env 注入）；③§3.6 超时与资源限制接线（sandbox.timeout min 优先、ctx.sandbox.limits 注入、RLIMIT_CPU/RLIMIT_AS 生效）；④§3.6 治理决策独立日志事件（governance_decision，异常 decision="error"）；⑤§3.6 fail-closed（配置加载失败 deny_all 兜底 + config_error 暴露）——§3.6 兑现率升至约 95%，唯一剩余：审批超时机制。全量缺口从 17 项降至 15 项。
+- 2026-08-08 复核批次二（用户修复）：⑥§3.10 CommandRegistry 独立模块（commands.ts：CommandDef 含 usage/args/aliases/available/handler，注册表 run 做状态+参数校验）；⑦§3.10 双向状态门控（空闲侧 !state.running、任务侧 taskId 门控）；⑧§3.10 /exit 运行中二次确认（专项测试 process.exit spy）；⑨§3.10 参数错误生成式 schema 提示——§3.10 兑现率升至约 90%，仅剩 5 个名义指令（其中 /sessions//provider//key 有功能覆盖）。§3.11 治理决策事件同步更新 ✅。§4 超时/资源限制/脱敏行更新，兑现率约 85%。§6 大型输出落盘 ✅、Action 行更新，兑现率约 75%。全量缺口降至 14 项。
+- 2026-08-08 复核批次三（用户修复）：⑩§3.11 审批事件独立日志（approval_request 含 action_id/tool/args/level、approval_complete 含 decision），专项测试断言请求与决策落盘——§3.11 升至 100%（继 §3.7/§3.8 后第三个全兑现章节）。全量缺口降至 13 项。
 
-## 全量缺口汇总（2026-08-08 更新：环境变量清理、完整输出落盘、治理决策日志已修复移出）
+## 全量缺口汇总（2026-08-08 更新：CommandRegistry 已修复移出，交互确认剩 2 项）
 
 **P0（行为与承诺相反 / 安全）**
 1. 非 Git 快照失败时任务照常执行（§3.2，应拒绝启动；实现为"快照失败不阻断任务"）
@@ -271,14 +273,12 @@
 4. 连续失败达阈值任务失败保留现场（§3.3，现有仅警告信号）
 5. 循环级 token 预算停止条件（§3.3/§4.4；Task 无 token 用量字段）
 6. 审批超时机制（§3.6，HITL 无超时，无人值守时任务无限挂起——§3.6 唯一剩余缺口）
-7. /exit 运行中确认、删除 session 二次确认、/session close 运行中检查（§3.1/§3.10）
+7. 删除 session 二次确认、/session close 运行中检查（§3.1；/exit 运行中确认已修复）
 8. 工具执行重试上限（§4.1，工具层无重试）
 
 **P2（规格形式/增强）**
-9. CommandRegistry 机制（§3.10，现为数组+if 链；连坐：参数错误 schema 提示、状态门控）
-10. 5 个斜杠指令缺失（§3.10：/provider /key /tools /hooks /sessions）
-11. 审批事件独立日志（§3.11；治理决策事件已修复，审批/人工干预事件仍走 hooks 通道间接体现）
-12. 数据模型字段补齐（token 用量/parent_task_id/Action 结果字段/快照校验值/MemoryEntry token 估算）（§6）
-13. CI 分发构建检查（§4.5）、make dev 接线（§7.2）、kl init 冷启动 gap（§4.3）
-14. provider test 真实连接测试（§3.4，现仅检查 provider 存在）
-15. MCP 远程工具无权限声明（默认 normal 分级；配置即信任可辩护，更保守可强制审批）
+9. 5 个斜杠指令名义缺失（§3.10：/provider /key /tools /hooks /sessions——/sessions 由 /session 面板覆盖、/provider /key 由 /config 向导+/model 覆盖、/tools /hooks 无覆盖）
+10. 数据模型字段补齐（token 用量/parent_task_id/Action 结果字段/快照校验值/MemoryEntry token 估算）（§6；其中大型输出落盘已修复）
+11. CI 分发构建检查（§4.5）、make dev 接线（§7.2）、kl init 冷启动 gap（§4.3）
+12. provider test 真实连接测试（§3.4，现仅检查 provider 存在）
+13. MCP 远程工具无权限声明（默认 normal 分级；配置即信任可辩护，更保守可强制审批）

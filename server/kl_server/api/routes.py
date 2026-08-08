@@ -249,6 +249,30 @@ def _history_message(record: dict) -> dict | None:
             "content": f"[追加说明] {payload.get('instruction', '')}",
             "kind": "text",
         }
+    if event == "governance_decision":
+        return {
+            "type": "agent",
+            "content": (
+                f"治理决策: {payload.get('tool', '')}: "
+                f"{payload.get('decision', '')}"
+            ),
+            "kind": "info",
+        }
+    if event == "approval_request":
+        return {
+            "type": "agent",
+            "content": (
+                f"审批请求: {payload.get('tool', '')} "
+                f"({payload.get('level', '')})"
+            ),
+            "kind": "info",
+        }
+    if event == "approval_complete":
+        return {
+            "type": "agent",
+            "content": f"审批结果: {payload.get('decision', '')}",
+            "kind": "info",
+        }
     if event == "provider_error":
         return {
             "type": "agent",

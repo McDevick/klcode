@@ -482,6 +482,18 @@ class AgentLoop:
                     )
                 if result.error == "requires_approval":
                     action_id = result.meta.get("action_id") or f"{task_id}:{action.tool}"
+                    approval_level = result.meta.get("level", "requires_approval")
+                    if self.logger:
+                        self.logger.write(
+                            "approval_request",
+                            {
+                                "action_id": action_id,
+                                "tool": action.tool,
+                                "args": action.args,
+                                "level": approval_level,
+                            },
+                            task_id,
+                        )
                     if self.hooks:
                         self.hooks.run(
                             "approval_request",
@@ -506,6 +518,15 @@ class AgentLoop:
                             "level": result.meta.get("level", ""),
                         },
                     )
+                    if self.logger:
+                        self.logger.write(
+                            "approval_complete",
+                            {
+                                "action_id": action_id,
+                                "decision": decision,
+                            },
+                            task_id,
+                        )
                     if self.hooks:
                         self.hooks.run(
                             "approval_complete",

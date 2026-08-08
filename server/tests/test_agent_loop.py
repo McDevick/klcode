@@ -1033,6 +1033,15 @@ async def test_approved_action_logs_final_tool_result(tmp_path):
     assert results[0]["payload"]["error"] == "requires_approval"
     assert results[1]["payload"]["ok"] is True
     assert results[1]["payload"]["output"] == '{"exit_code": 0, "stdout": "ok", "stderr": ""}'
+    approval_requests = [
+        r for r in records if r["event"] == "approval_request"
+    ]
+    approval_completes = [
+        r for r in records if r["event"] == "approval_complete"
+    ]
+    assert approval_requests
+    assert approval_completes
+    assert approval_completes[-1]["payload"]["decision"] == "approve"
 
 
 @pytest.mark.asyncio

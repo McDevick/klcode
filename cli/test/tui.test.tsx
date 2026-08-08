@@ -885,6 +885,82 @@ test('app /note appends instruction to current task', async () => {
   }
 });
 
+test('app /exit requires confirmation while task is running', async () => {
+  const fetchMock = taskFetchMocks();
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('hello');
+    stdin.write('\r');
+    await waitFor(() => FakeWebSocket.instances.length > 0);
+
+    stdin.write('/exit');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('再次输入 /exit 确认退出'));
+    expect(exitSpy).not.toHaveBeenCalled();
+
+    stdin.write('/exit');
+    stdin.write('\r');
+    await waitFor(() => exitSpy.mock.calls.length > 0);
+    expect(exitSpy).toHaveBeenCalledWith(0);
+  } finally {
+    exitSpy.mockRestore();
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app command registry reports missing required args', async () => {
+  const fetchMock = taskFetchMocks();
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('hello');
+    stdin.write('\r');
+    await waitFor(() => FakeWebSocket.instances.length > 0);
+
+    stdin.write('/note');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('缺少参数 说明'));
+    expect(lastFrame()).toContain('/note <说明>');
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app blocks management commands while task is running', async () => {
+  const fetchMock = taskFetchMocks();
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('hello');
+    stdin.write('\r');
+    await waitFor(() => FakeWebSocket.instances.length > 0);
+
+    for (const command of ['/session', '/config', '/compact', '/connect']) {
+      stdin.write(command);
+      stdin.write('\r');
+      await waitFor(() =>
+        (lastFrame() ?? '').includes(`${command}: 当前状态不可用`),
+      );
+    }
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
 test('typing a full slash command executes it instead of filling the menu', async () => {
   const fetchMock = urlFetchMock();
   vi.stubGlobal('fetch', fetchMock);
