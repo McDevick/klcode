@@ -330,6 +330,21 @@ class CompressContext:
         return "compressed summary"
 
 
+class BucketCompressContext(CompressContext):
+    async def compact_messages(self, history, task_id):
+        return [
+            {"role": "user", "content": "[历史摘要] bucket"},
+            {
+                "role": "tool",
+                "content": "[文件引用] .kl/tool_outputs/old.txt",
+            },
+            {
+                "role": "user",
+                "content": "feedback:\ntest_failure: bad2",
+            },
+        ], "bucket summary"
+
+
 class FakeMemory:
     def __init__(self):
         self.added: list[tuple[str, str, list[str], str]] = []
@@ -661,6 +676,29 @@ async def test_loop_injects_compressed_context_summary():
         "Previous context summary" in str(message.get("content", ""))
         for message in first_messages
     )
+
+
+@pytest.mark.asyncio
+async def test_loop_applies_bucket_compaction_result():
+    provider = MockProvider(responses=["DONE"])
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(ToolRegistry()),
+        settings=LoopSettings(max_iterations=2),
+        context=BucketCompressContext(),
+    )
+
+    await loop.run(Session(id="s1", workspace="."), "task")
+
+    messages = provider.calls[0].messages
+    contents = [
+        str(message.get("content", ""))
+        for message in messages
+    ]
+    assert any("Previous context summary" in content for content in contents)
+    assert any("[文件引用] .kl/tool_outputs/old.txt" in content for content in contents)
+    assert any("bad2" in content for content in contents)
+    assert not any("bad1" in content for content in contents)
 
 
 @pytest.mark.asyncio

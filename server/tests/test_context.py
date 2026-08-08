@@ -435,6 +435,76 @@ async def test_summarizer_failure_keeps_latest_history_once():
 
 
 @pytest.mark.asyncio
+async def test_compact_messages_bucketizes_history():
+    class BucketSummarizer:
+        async def summarize(self, segments, task_id):
+            return "bucket summary"
+
+    assembler = ContextAssembler(max_tokens=100)
+    assembler.summarizer = BucketSummarizer()
+    history = [
+        {"role": "user", "content": "task1"},
+        {"role": "assistant", "content": "old assistant 1"},
+        {"role": "user", "content": "继续1"},
+        {"role": "assistant", "content": "old assistant 2"},
+        {"role": "user", "content": "继续2"},
+        {"role": "assistant", "content": "old assistant 3"},
+        {
+            "role": "tool",
+            "content": "old tool result\n[文件引用] .kl/tool_outputs/old.txt",
+        },
+        {"role": "user", "content": "feedback:\nsuccess: ok"},
+        {"role": "user", "content": "feedback:\ntest_failure: bad1"},
+        {"role": "user", "content": "feedback:\ntest_failure: bad2"},
+        {"role": "assistant", "content": "recent assistant 1"},
+        {"role": "user", "content": "继续 recent"},
+        {"role": "assistant", "content": "recent assistant 2"},
+        {
+            "role": "tool",
+            "content": "recent tool result\n[文件引用] .kl/tool_outputs/recent.txt",
+        },
+    ]
+
+    compacted, summary = await assembler.compact_messages(history, "t1")
+
+    assert summary == "bucket summary"
+    text = "\n".join(str(message.get("content", "")) for message in compacted)
+    assert "old assistant 1" not in text
+    assert "old assistant 2" not in text
+    assert "old assistant 3" not in text
+    assert "[文件引用] .kl/tool_outputs/old.txt" in text
+    assert "recent tool result" in text
+    assert text.count("test_failure:") == 1
+    assert "bad2" in text
+    assert "bad1" not in text
+
+
+@pytest.mark.asyncio
+async def test_compact_messages_falls_back_to_recent_history():
+    class FailingSummarizer:
+        async def summarize(self, segments, task_id):
+            raise RuntimeError("summary failed")
+
+    assembler = ContextAssembler(max_tokens=100)
+    assembler.summarizer = FailingSummarizer()
+    history = [
+        {"role": "user", "content": "task1"},
+        {"role": "assistant", "content": "old assistant 1"},
+        {"role": "assistant", "content": "old assistant 2"},
+        {"role": "assistant", "content": "old assistant 3"},
+        {"role": "assistant", "content": "old assistant 4"},
+        {"role": "assistant", "content": "recent assistant"},
+    ]
+
+    compacted, summary = await assembler.compact_messages(history, "t1")
+
+    assert summary == ""
+    text = "\n".join(str(message.get("content", "")) for message in compacted)
+    assert "old assistant 1" not in text
+    assert "recent assistant" in text
+
+
+@pytest.mark.asyncio
 async def test_context_uses_injected_token_estimator():
     assembler = ContextAssembler(max_tokens=10, token_estimator=len)
     result = await assembler.build(

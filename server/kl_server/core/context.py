@@ -18,6 +18,8 @@ MEMORY_KIND_QUOTAS = {
     "context_summary": 1,
 }
 KEYWORD_MEMORY_LIMIT = 3
+RECENT_HISTORY_MESSAGES = 4
+RECENT_TOOL_RESULTS = 2
 _MEMORY_TOKEN_RE = re.compile(r"[a-z0-9_]+|[\u4e00-\u9fff]+")
 _MEMORY_STOPWORDS = {
     "a",
@@ -317,6 +319,84 @@ class ContextAssembler:
         if not history or self.summarizer is None:
             return ""
         return await self.summarizer.summarize(history, task_id)
+
+    @staticmethod
+    def _feedback_category(content: str) -> str:
+        for line in str(content or "").splitlines()[1:]:
+            if ":" in line:
+                return line.split(":", 1)[0].strip()
+        return ""
+
+    @staticmethod
+    def _tool_reference_message(message: dict) -> dict | None:
+        content = str(message.get("content", ""))
+        marker = "[文件引用]"
+        if marker not in content:
+            return None
+        for line in content.splitlines():
+            if not line.startswith(marker):
+                continue
+            for reference in line[len(marker) :].split(","):
+                reference = reference.strip()
+                if ".kl" in reference or "tool_outputs" in reference:
+                    return {**message, "content": f"[文件引用] {reference}"}
+        return None
+
+    async def compact_messages(
+        self,
+        history: list[dict],
+        task_id: str,
+    ) -> tuple[list[dict], str]:
+        """按 A 对话/决策、B 工具结果、C 反馈三桶压缩运行时 history。"""
+        conversation_indices: list[int] = []
+        tool_indices: list[int] = []
+        feedback_latest: dict[str, int] = {}
+
+        for index, message in enumerate(history):
+            role = message.get("role")
+            content = str(message.get("content", ""))
+            if role == "tool":
+                tool_indices.append(index)
+            elif role == "user" and content.startswith("feedback:"):
+                feedback_latest[self._feedback_category(content)] = index
+            else:
+                conversation_indices.append(index)
+
+        recent_history = set(
+            range(max(0, len(history) - RECENT_HISTORY_MESSAGES), len(history))
+        )
+        old_conversation = [
+            history[index]
+            for index in conversation_indices
+            if index not in recent_history
+        ]
+        summary = ""
+        if old_conversation and self.summarizer is not None:
+            segments = [
+                f"{message.get('role')}: {message.get('content', '')}"
+                for message in old_conversation
+            ]
+            try:
+                summary = await self.summarizer.summarize(segments, task_id)
+            except Exception:
+                summary = ""
+
+        recent_tools = set(tool_indices[-RECENT_TOOL_RESULTS:])
+        keep: dict[int, dict] = {
+            index: history[index]
+            for index in recent_history | recent_tools
+        }
+        for index in tool_indices:
+            if index in recent_tools:
+                continue
+            reference = self._tool_reference_message(history[index])
+            if reference is not None:
+                keep[index] = reference
+        for index in feedback_latest.values():
+            keep[index] = history[index]
+
+        compacted = [keep[index] for index in sorted(keep)]
+        return compacted, summary
 
     def _read_summary_state(self, task_id: str) -> tuple[int, str] | None:
         if task_id not in self._summary_state:

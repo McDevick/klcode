@@ -582,18 +582,22 @@ class AgentLoop:
                         ),
                     )
                     should_compress = getattr(self.context, "should_compress", None)
+                    compact_messages = getattr(self.context, "compact_messages", None)
                     compact_history = getattr(self.context, "compact_history", None)
                     if should_compress is not None and should_compress(history_texts):
                         try:
-                            if compact_history is not None:
+                            if compact_messages is not None:
+                                recent_history, context_summary = (
+                                    await compact_messages(history, task_id)
+                                )
+                            elif compact_history is not None:
                                 context_summary = await compact_history(
                                     history_texts,
                                     task_id,
                                 )
                         except Exception:
                             context_summary = ""
-                        if context_summary:
-                            recent_history = history[-4:]
+                        if context_summary or len(recent_history) < len(history):
                             dropped_count = len(history) - len(recent_history)
                             history[:] = recent_history
                             if self.logger:
