@@ -189,7 +189,7 @@
 | 用户工具/MCP/hook 显式配置并标记信任边界 | ✅ | .kl/ 配置 + README 安全边界章节 |
 | 远程化 TLS/认证/密钥轮换 | ✅（不实现） | §12 未授权范围，不实现合理 |
 | make test 一键 | ✅ | Makefile |
-| kl init 覆盖全新机器冷启动 | ⚠️ | README 已知限制：kl init 依赖 daemon 已运行（冷启动流程有 gap） |
+| kl init 覆盖全新机器冷启动 | ✅ | 连接被拒时自动拉起 daemon（复用 server start 探测/拉起逻辑）→ 轮询 /health 就绪 → 重试；仅网络错误触发，HTTP 错误不启动 |
 | 首次配置 CLI/TUI 引导 | ✅ | tui/components/connect-manager.tsx（替代已删除的 config-wizard）+ config 命令 |
 | 日志覆盖任务/动作/治理/反馈/审批/摘要/hook/人工干预 | ✅ | 全事件类型齐备：governance_decision（治理）+ approval_request/approval_complete（审批/人工干预，§3.11 已 100%） |
 | 日志可回放 | ✅ | §3.11 |
@@ -197,7 +197,7 @@
 | 状态接口：token 用量 | ❌ | Task 模型无 token 用量字段（同 §3.3） |
 | GitHub Actions unit-test job | ✅ | .github/workflows/ci.yml（push+PR、make ci+test） |
 | .gitlab-ci.yml unit-test job | ✅ | 根目录 .gitlab-ci.yml（python:3.11 + node 22） |
-| 分发阶段构建检查和产物检查 | ❌ | ci.yml 仅测试，无构建/产物检查步骤 |
+| 分发阶段构建检查和产物检查 | ✅ | ci.yml dist-check job（needs unit-test）：python -m build server（wheel/sdist）+ zipfile 断言 kl_server 包；cli npm run build + node dist/main.js --help 可运行性 |
 | 最终交付前 CI pass | ✅（本地） | 本地 480+103 passed；远程 CI 曾因 npmmirror 502 失败一次（基础设施问题非代码），恢复后重跑通过 |
 | AGENT_LOG.md 实时维护 | ✅（存在性） | AGENT_LOG.md 约 82KB 持续维护；"实时记录不补写"规则未从内容深核 |
 
@@ -262,6 +262,7 @@
 - 2026-08-08 复核批次二（用户修复）：⑥§3.10 CommandRegistry 独立模块（commands.ts：CommandDef 含 usage/args/aliases/available/handler，注册表 run 做状态+参数校验）；⑦§3.10 双向状态门控（空闲侧 !state.running、任务侧 taskId 门控）；⑧§3.10 /exit 运行中二次确认（专项测试 process.exit spy）；⑨§3.10 参数错误生成式 schema 提示——§3.10 兑现率升至约 90%，仅剩 5 个名义指令（其中 /sessions//provider//key 有功能覆盖）。§3.11 治理决策事件同步更新 ✅。§4 超时/资源限制/脱敏行更新，兑现率约 85%。§6 大型输出落盘 ✅、Action 行更新，兑现率约 75%。全量缺口降至 14 项。
 - 2026-08-08 复核批次三（用户修复）：⑩§3.11 审批事件独立日志（approval_request 含 action_id/tool/args/level、approval_complete 含 decision），专项测试断言请求与决策落盘——§3.11 升至 100%（继 §3.7/§3.8 后第三个全兑现章节）。全量缺口降至 13 项。
 - 2026-08-08 信息同步批次四：§4 日志覆盖行升至 ✅（治理+审批事件齐备，兑现率 90%，剩余 4 项：kl init 冷启动 gap、token 用量状态接口、工具重试上限、CI 构建检查）；§4 引导证据更新为 connect-manager、CI pass 记录更新（npmmirror 502 为基础设施问题）；§6 Approval/WorkspaceSnapshot 行补充审计覆盖说明（校验值仍缺，兑现率 75% 保持）。
+- 2026-08-08 修复批次五：①§4.3 kl init 冷启动自动拉起（连接被拒 → server start → 轮询 /health → 重试；仅网络错误触发，+3 测试）；②§4.5 CI dist-check job（wheel/sdist 构建 + zipfile 包内容断言 + cli build + --help 可运行性，本地全链路验证）；③max_iterations 默认值 10→20（bootstrap 显式覆盖删除，单一来源）——§4 兑现率升至约 95%，剩余 2 项：token 用量状态接口、工具重试上限。全量缺口 13 → 11 项。
 
 ## 全量缺口汇总（2026-08-08 更新：CommandRegistry 已修复移出，交互确认剩 2 项）
 
@@ -280,6 +281,6 @@
 **P2（规格形式/增强）**
 9. 5 个斜杠指令名义缺失（§3.10：/provider /key /tools /hooks /sessions——/sessions 由 /session 面板覆盖、/provider /key 由 /config 向导+/model 覆盖、/tools /hooks 无覆盖）
 10. 数据模型字段补齐（token 用量/parent_task_id/Action 结果字段/快照校验值/MemoryEntry token 估算）（§6；其中大型输出落盘已修复）
-11. CI 分发构建检查（§4.5）、make dev 接线（§7.2）、kl init 冷启动 gap（§4.3）
+11. make dev 接线（§7.2，仍为占位守卫）
 12. provider test 真实连接测试（§3.4，现仅检查 provider 存在）
 13. MCP 远程工具无权限声明（默认 normal 分级；配置即信任可辩护，更保守可强制审批）

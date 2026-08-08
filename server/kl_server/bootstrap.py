@@ -154,7 +154,7 @@ def build_app_dependencies(
     loop = AgentLoop(
         provider=provider,
         tools=executor,
-        settings=LoopSettings(max_iterations=20),
+        settings=LoopSettings(),
         logger=logger,
         context=context,
         memory=memory,

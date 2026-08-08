@@ -22,7 +22,7 @@ from kl_server.tools.base import ToolContext
 
 @dataclass
 class LoopSettings:
-    max_iterations: int = 10
+    max_iterations: int = 20
     retry_budget: int = 3
 
 

@@ -26,3 +26,52 @@ jobs:
 
       - name: Run tests
         run: make test
+
+  # 分发阶段：构建检查 + 产物检查（SPEC §4.5）
+  dist-check:
+    runs-on: ubuntu-latest
+    needs: unit-test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: make ci
+
+      - name: Build server package (wheel + sdist)
+        run: python -m build server
+
+      - name: Verify server artifacts
+        run: |
+          ls -la server/dist/
+          python - <<'EOF'
+          import glob, zipfile
+          wheels = glob.glob("server/dist/*.whl")
+          sdists = glob.glob("server/dist/*.tar.gz")
+          assert wheels, "no wheel artifact"
+          assert sdists, "no sdist artifact"
+          with zipfile.ZipFile(wheels[0]) as archive:
+              names = archive.namelist()
+              assert any(name.startswith("kl_server/") for name in names), (
+                  f"wheel missing kl_server package: {names[:10]}"
+              )
+          print("server artifacts ok:", wheels[0], sdists[0])
+          EOF
+
+      - name: Build CLI bundle
+        run: cd cli && npm run build
+
+      - name: Verify CLI artifacts
+        run: |
+          test -f cli/dist/main.js
+          node cli/dist/main.js --help | head -20
