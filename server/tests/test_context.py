@@ -8,6 +8,7 @@ from kl_server.core.context import (
     extract_memory_keywords,
     select_memory_entries,
 )
+from kl_server.core.instruction_sediment import save_user_instruction
 from kl_server.memory.store import MemoryStore
 from kl_server.providers.mock import MockProvider
 
@@ -129,6 +130,30 @@ async def test_select_memory_entries_uses_task_keywords(tmp_path):
         assert "登录逻辑有误" in selected
         assert "颜色样式无关1" not in selected
         assert "重构细节" not in selected
+    finally:
+        await store.close()
+
+
+@pytest.mark.asyncio
+async def test_select_memory_entries_skips_sedimented_user_note(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+    await store.connect()
+    try:
+        await save_user_instruction(
+            store,
+            "s1",
+            "t1",
+            "不要修改 README",
+        )
+        await store.add("s1", "user_note", ["s1"], "不要修改 README")
+
+        selected = await select_memory_entries(
+            store,
+            ["s1"],
+            session_id="s1",
+        )
+
+        assert "不要修改 README" not in selected
     finally:
         await store.close()
 

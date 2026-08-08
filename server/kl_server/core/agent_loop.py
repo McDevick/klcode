@@ -6,6 +6,12 @@ from pathlib import Path
 
 from kl_server.core.context import select_memory_entries
 from kl_server.core.feedback import classify_tool_result
+from kl_server.core.instruction_sediment import (
+    SEDIMENT_TASK_DESCRIPTIONS,
+    format_user_instructions,
+    load_user_instructions,
+    save_user_instruction,
+)
 from kl_server.core.tool_executor import ToolExecutor
 from kl_server.models.action import Action
 from kl_server.models.task import Session
@@ -157,13 +163,25 @@ class AgentLoop:
                 [session_id, task_id],
                 instruction,
             )
+            await save_user_instruction(
+                self.memory,
+                session_id,
+                task_id,
+                instruction,
+            )
         except Exception:
             if self.logger:
                 self.logger.write(
                     "memory_error",
-                    {"kind": "user_note"},
+                    {"kind": "user_note/user_instructions"},
                     task_id,
                 )
+
+    async def _user_instructions_text(self, session_id: str) -> str:
+        if self.memory is None:
+            return ""
+        records = await load_user_instructions(self.memory, session_id)
+        return format_user_instructions(records)
 
     async def _task_plan_text(self, session_id: str) -> str:
         if self.memory is None or not hasattr(self.memory, "get_state"):
@@ -417,9 +435,30 @@ class AgentLoop:
         """执行任务，并在结束/中断/出错时保存 session 级续接上下文。"""
         task_id = task_id or session.id
         continuation = await self._load_continuation(session.id)
+        if self.memory is not None and SEDIMENT_TASK_DESCRIPTIONS:
+            try:
+                await save_user_instruction(
+                    self.memory,
+                    session.id,
+                    task_id,
+                    task,
+                )
+            except Exception:
+                if self.logger:
+                    self.logger.write(
+                        "memory_error",
+                        {"kind": "user_instructions"},
+                        task_id,
+                    )
+        instruction_text = await self._user_instructions_text(session.id)
         initial_task = task
-        if continuation:
-            initial_task = f"{task}\n\n{continuation}"
+        context_blocks = [
+            block
+            for block in (continuation, instruction_text)
+            if block
+        ]
+        if context_blocks:
+            initial_task = f"{task}\n\n" + "\n\n".join(context_blocks)
         history: list[dict] = [{"role": "user", "content": initial_task}]
         try:
             result = await self._run_impl(
@@ -518,10 +557,16 @@ class AgentLoop:
                             self.memory,
                             [session.id, task_id],
                             task,
+                            session_id=session.id,
                         )
                         if self.memory is not None
                         else []
                     )
+                    instruction_text = await self._user_instructions_text(session.id)
+                    if instruction_text:
+                        memory_entries.append(
+                            "用户指令沉淀:\n" + instruction_text
+                        )
                     task_plan = await self._task_plan_text(session.id)
                     if task_plan:
                         memory_entries.append(task_plan)

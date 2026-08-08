@@ -397,12 +397,14 @@ async def test_delete_session_cleans_task_manage_state(tmp_path):
     memory = client.app.state.deps.memory
     await memory.set_state(f"session:{session_id}", "subtasks", "[]")
     await memory.set_state(f"session:{session_id}", "continuation_context", "{}")
+    await memory.set_state(f"session:{session_id}", "user_instructions", "[]")
 
     deleted = client.delete(f"/api/v1/sessions/{session_id}")
 
     assert deleted.status_code == 204
     assert await memory.get_state(f"session:{session_id}", "subtasks") is None
     assert await memory.get_state(f"session:{session_id}", "continuation_context") is None
+    assert await memory.get_state(f"session:{session_id}", "user_instructions") is None
 
 
 @pytest.mark.asyncio

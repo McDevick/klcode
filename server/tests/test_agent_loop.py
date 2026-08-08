@@ -6,6 +6,7 @@ from kl_server.core.agent_loop import AgentLoop, LoopSettings
 from kl_server.core.context import AssembledContext
 from kl_server.core.event_logger import EventLogger
 from kl_server.core.guardrail import DangerClassifier, Guardrail, HITLManager, ScopeFence
+from kl_server.core.instruction_sediment import load_user_instructions
 from kl_server.core.sandbox import SandboxPolicy
 from kl_server.core.tool_executor import ToolExecutor
 from kl_server.memory.store import MemoryStore
@@ -1078,6 +1079,58 @@ async def test_add_instruction_persists_user_note_to_memory(tmp_path):
 
     notes = await memory.find(["s1"], kinds=["user_note"])
     assert notes == ["请先运行测试"]
+
+
+@pytest.mark.asyncio
+async def test_add_instruction_sediments_classified_note(tmp_path):
+    memory = MemoryStore(tmp_path / "memory.db")
+    loop = AgentLoop(
+        provider=MockProvider(responses=["DONE"]),
+        tools=ToolExecutor(ToolRegistry()),
+        settings=LoopSettings(max_iterations=2),
+        memory=memory,
+    )
+
+    await loop.add_instruction("t1", "不要修改 README", session_id="s1")
+
+    records = await load_user_instructions(memory, "s1")
+    assert len(records) == 1
+    assert records[0]["text"] == "不要修改 README"
+    assert records[0]["category"] == "constraint"
+    assert records[0]["source_task"] == "t1"
+
+
+@pytest.mark.asyncio
+async def test_loop_sediments_task_description_and_injects(tmp_path):
+    memory = MemoryStore(tmp_path / "memory.db")
+    spy = SpyAssembler()
+    provider = MockProvider(responses=["DONE"])
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(ToolRegistry()),
+        settings=LoopSettings(max_iterations=2),
+        context=spy,
+        memory=memory,
+    )
+
+    await loop.run(
+        Session(id="s1", workspace="."),
+        "先重构登录，再运行测试",
+    )
+
+    records = await load_user_instructions(memory, "s1")
+    assert any(record["text"] == "先重构登录，再运行测试" for record in records)
+    first_user = next(
+        message
+        for message in provider.calls[0].messages
+        if message.get("role") == "user"
+    )
+    assert "[用户流程]" in first_user["content"]
+    assert "任务 s1 提出" in first_user["content"]
+    assert any(
+        "用户指令沉淀" in entry
+        for entry in spy.last_kwargs["memory"]
+    )
 
 
 @pytest.mark.asyncio

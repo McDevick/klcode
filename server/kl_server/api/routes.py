@@ -13,6 +13,11 @@ from kl_server.config.config import AppConfig, ProviderConfig
 from kl_server.core.agent_loop import CONTINUATION_STATE_KIND, SYSTEM_PROMPT
 from kl_server.core.context import select_memory_entries
 from kl_server.core.guardrail import normalize_workspace_mode
+from kl_server.core.instruction_sediment import (
+    USER_INSTRUCTIONS_STATE_KIND,
+    format_user_instructions,
+    load_user_instructions,
+)
 from kl_server.core.snapshot import SnapshotManager
 from kl_server.models.task import Session, Task, TaskStatus
 from kl_server.providers.base import ProviderRequest
@@ -491,6 +496,7 @@ def build_router() -> APIRouter:
         memory_entries = await select_memory_entries(
             deps.memory,
             [session_id],
+            session_id=session_id,
         )
         task_plan = await deps.memory.get_state(
             f"session:{session_id}",
@@ -504,6 +510,11 @@ def build_router() -> APIRouter:
         )
         if continuation:
             memory_entries.append(f"continuation_context: {continuation}")
+        instruction_text = format_user_instructions(
+            await load_user_instructions(deps.memory, session_id)
+        )
+        if instruction_text:
+            memory_entries.append("用户指令沉淀:\n" + instruction_text)
         memory_text = "\n".join(memory_entries)
         memory_tokens = deps.context.estimate_tokens(memory_text)
 
@@ -540,6 +551,7 @@ def build_router() -> APIRouter:
         memory_entries = await select_memory_entries(
             deps.memory,
             [session_id],
+            session_id=session_id,
         )
         task_plan = await deps.memory.get_state(
             f"session:{session_id}",
@@ -558,6 +570,11 @@ def build_router() -> APIRouter:
         )
         if continuation:
             history_texts.append(f"continuation_context: {continuation}")
+        instruction_text = format_user_instructions(
+            await load_user_instructions(deps.memory, session_id)
+        )
+        if instruction_text:
+            history_texts.append("用户指令沉淀:\n" + instruction_text)
         history_texts.extend(
             f"{message.get('type')}: {message.get('content') or message.get('output') or message.get('name')}"
             for message in history_messages
@@ -629,7 +646,11 @@ def build_router() -> APIRouter:
                 raise HTTPException(status_code=404, detail="session not found")
             memory = getattr(deps, "memory", None)
             if memory is not None and hasattr(memory, "delete_state"):
-                for kind in ("subtasks", CONTINUATION_STATE_KIND):
+                for kind in (
+                    "subtasks",
+                    CONTINUATION_STATE_KIND,
+                    USER_INSTRUCTIONS_STATE_KIND,
+                ):
                     await memory.delete_state(f"session:{session_id}", kind)
             return Response(status_code=204)
         if sessions.pop(session_id, None) is None:

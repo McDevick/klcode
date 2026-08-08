@@ -6,6 +6,7 @@ from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from kl_server.core.instruction_sediment import load_user_instructions
 from kl_server.providers.base import ProviderRequest
 
 logger = logging.getLogger(__name__)
@@ -92,6 +93,7 @@ async def select_memory_entries(
     tags: list[str],
     task: str = "",
     keyword_limit: int = KEYWORD_MEMORY_LIMIT,
+    session_id: str | None = None,
 ) -> list[str]:
     """按 kind 配额和任务关键词选择要注入上下文的记忆。"""
     if memory is None:
@@ -99,11 +101,18 @@ async def select_memory_entries(
     selected: list[str] = []
     seen: set[str] = set()
     allowed_kinds = list(MEMORY_KIND_QUOTAS)
+    sedimented_texts: set[str] = set()
+    if session_id is not None:
+        records = await load_user_instructions(memory, session_id)
+        sedimented_texts = {
+            str(record.get("text", ""))
+            for record in records
+        }
 
     for kind, limit in MEMORY_KIND_QUOTAS.items():
         entries = await memory.find(tags, kinds=[kind], limit=limit)
         for entry in entries:
-            if entry not in seen:
+            if entry not in seen and entry not in sedimented_texts:
                 seen.add(entry)
                 selected.append(entry)
 
@@ -116,7 +125,7 @@ async def select_memory_entries(
             limit=keyword_limit,
         )
         for entry in entries:
-            if entry not in seen:
+            if entry not in seen and entry not in sedimented_texts:
                 seen.add(entry)
                 selected.append(entry)
     return selected
