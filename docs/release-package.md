@@ -58,6 +58,7 @@ npm pack --dry-run
 
 - `README.md`
 - `docs/check.md`
+- `docs/release-test.md`：发布前测试与检查清单
 - `docs/server-redesign.md`
 - `docs/context-redesign.md`
 - `LICENSE`（MIT）
@@ -148,6 +149,7 @@ server/__pycache__/
 - [ ] `cd cli && npm run build && npm run check:server-version` 成功
 - [ ] `npm pack --dry-run` 只包含 `dist` 和 package metadata
 - [ ] 测试全量通过：`server` 与 `cli`
+- [ ] 按 `docs/release-test.md` 完成发布前预发布检查
 - [x] 示例配置 `examples/config.example.yaml` 已包含
 - [ ] 发布包内没有 `.kl`、密钥、数据库、日志、venv、node_modules
 - [x] `LICENSE` 与 `RELEASE_NOTES.md` 已包含

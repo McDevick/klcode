@@ -31,17 +31,23 @@
 - 审批事件双通道覆盖问题：TUI 不再因嵌套 payload 显示 `undefined`。
 - hook payload 自动脱敏，command/http 双通道生效。
 - MCP tool 返回 `isError=true` 时保留真实错误文本，不再折叠成固定错误标记。
+- session/task ID 改为数据库原子序列，避免并发创建冲突。
+- 运行中的 session 禁止 close/delete，TUI 删除会话增加二次确认。
+- daemon 重启后 stale 任务自动标记 failed，不再永久卡在非终态。
+- 上下文压缩失败时执行确定性裁剪并落盘快照，不再静默丢历史。
+- 命令类工具不再在工具层截断 stdout/stderr，完整输出统一落盘。
+- 历史脱敏保留命令结构，只脱敏真实密钥；历史回放按 task 分片，不再全量扫描 audit。
+- 删除 session 时级联清理 memory、tool_outputs 与历史分片。
+- WS 重连会补发最近任务事件，客户端按 event_id 去重。
+- MCP 发现失败会在 /mcp 与 TUI 中展示 status/error。
 
 ### Known Issues
 
 - `run_command` 当前不是 OS 级文件系统沙箱，默认 allow 为空时仍可能执行任意本机命令；正式发布前应改为显式 allowlist 或接入进程隔离。
 - 凭据保护存在本地文件读取风险：keyring 不可用时主密码与密文同存 `~/.kl`，且配置允许明文 `api_key`；API Key 建议通过 `/connect` 保存。
-- Git 任务不会自动创建任务分支；非 Git 快照失败时任务仍会继续执行。
-- daemon 重启后非终态任务不会自动恢复或标记失败。
-- 运行时上下文压缩失败时可能丢弃旧历史。
-- 命令类工具的输出在执行层先截断到 8000 字符，“完整输出落盘”无法恢复开头内容。
-- 审计日志对 `command` 字段整体脱敏，重新打开历史会话时工具参数显示为 `[REDACTED]`。
-- `docs/promise_state.md` 仍在同步中，部分历史核对记录早于 server-redesign 实施。
+- Git 任务不会自动创建任务分支；非 Git 快照失败时任务仍会继续执行（P1-8，当前版本不处理）。
+- 上下文 token 预算仍使用估算，没有真实 tokenizer/usage 和循环级硬停止（P1-6，当前版本不处理）。
+- command/http hook 仍同步执行，慢 hook 可能阻塞事件循环（P1-7，当前版本不处理）。
 
 ### Upgrade Notes
 

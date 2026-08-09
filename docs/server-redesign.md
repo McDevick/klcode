@@ -113,7 +113,7 @@ kl server start 分支：
 |---|---|
 | `cli/src/commands/server.ts` | daemon.json 读写（pid/source/started_at）；start 分支接管逻辑；stale 探测；`KL_DAEMON_SOURCE` 环境变量传递；**自举逻辑**（~/.kl/venv 检测 → 创建 + 安装 → PATH 探测 → 报错） |
 | `cli/src/tui/app.tsx` | 连接失败（网络错误）→ 自动拉起（复用 init 的 serverStart 逻辑）→ 轮询 /health → 重试 |
-| `cli/src/api/events.ts` | **WS 断线自动重连**（指数退避 1s/2s/4s…封顶 30s，重连后恢复事件流）——防"TUI 假死 + 服务端误回收" |
+| `cli/src/api/events.ts` | **WS 断线自动重连**（指数退避 1s/2s/4s…封顶 30s）；服务端保留最近任务事件并在重连后补发，客户端按 event_id 去重——防"TUI 假死 + 服务端误回收 + 丢事件" |
 | `cli/src/commands/run.ts` | 同 tui：连接失败自动拉起 |
 | `server/kl_server/main.py` | 路径显式化：config/db/audit 改用 `~/.kl/` 全局路径（不再依赖 cwd）；lifespan 空闲监控任务：读取 KL_DAEMON_SOURCE；周期检查运行中任务数 + WS 连接数；空闲 N 分钟 → 优雅退出 |
 | `server/kl_server/config/loader.py` | 单一全局配置源（`~/.kl/config.yaml`），移除项目目录配置读取 |

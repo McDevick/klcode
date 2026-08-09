@@ -68,7 +68,7 @@
    - 桶 A：保留最近 N 轮，旧桶交给 LLMSummarizer（保留现有增量摘要）
    - 桶 B：只留最近 K 个完整结果，更早的替换为 `~/.kl/tool_outputs/<file>` 引用（复用已有落盘机制）
    - 桶 C：同类（同 category）只留最新一条
-3. 摘要失败 fallback：桶 A 保留最近 4 轮原始（现状行为，不回归）
+3. 摘要失败 fallback：确定性裁剪保留最近消息，旧上下文快照写入全局 tool_outputs，并注入 `read_tool_output` 引用；快照失败才保留完整历史
 
 - 验证：test_agent_loop（压缩后三桶内容断言：A 有摘要、B 只剩引用、C 去重）
 

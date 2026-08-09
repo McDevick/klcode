@@ -17,8 +17,8 @@
 | 一个 session 多个 task | ✅ | tasks.session_id 外键 |
 | 删除 session 不删除共享项目记忆 | ✅ | routes.py:531-533 只清 session 级状态 |
 | session id 不存在返回明确错误 | ✅ | routes.py:490/512/529 → 404 |
-| 删除 session 必须二次确认 | ❌ | session-manager.tsx:106 直接删除，无确认 UI |
-| 运行任务时 `/session close` 要求先暂停/中止 | ❌ | routes.py:506-521 直接置 closed，不检查任务状态 |
+| 删除 session 必须二次确认 | ✅ | TUI 删除会话需要二次确认，route 对 active task 返回 409 |
+| 运行任务时 `/session close` 要求先暂停/中止 | ✅ | routes.py close/delete 对 running/awaiting/paused 任务返回 409 |
 | 数据损坏时提示备份路径并阻止写入 | ✅ | database.py quick_check + API 503 detail 含 backup 路径 |
 
 ## §3.2 Task 任务（核验 2026-08-07，兑现约 55%）
@@ -169,7 +169,7 @@
 | 治理决策事件 | ✅ | tool_executor 写独立 governance_decision 事件（tool/decision/args/permissions） |
 | 审批/人工干预事件 | ✅ | agent_loop 独立写 approval_request（action_id/tool/args/level）+ approval_complete（action_id/decision）审计事件，专项测试锁定 |
 | AGENT_LOG 实时记录（不做完补写） | ✅ | 事件实时 write；AGENT_LOG.md 由开发流程维护 |
-| 凭据、key、敏感环境变量自动脱敏 | ✅ | event_logger.py:46-57（key 名匹配 + 值正则 + command/env/credential_ref 字段全 REDACTED） |
+| 凭据、key、敏感环境变量自动脱敏 | ✅ | event_logger.py（key 名匹配 + 值正则；command 保留命令结构并只脱敏敏感值；env/credential_ref 全 REDACTED） |
 | 日志支持按 task/session 回放 | ✅ | routes.py:379-446 history/feedback/context 端点 |
 | 日志不保存明文凭据、不覆盖历史 | ✅ | 脱敏 + append-only |
 | 日志写入失败时任务停止并提示 | ✅ | write 抛 RuntimeError → 主循环异常 → task FAILED + 错误事件广播 |
@@ -198,7 +198,7 @@
 | GitHub Actions unit-test job | ✅ | .github/workflows/ci.yml（push+PR、make ci+test） |
 | .gitlab-ci.yml unit-test job | ✅ | 根目录 .gitlab-ci.yml（python:3.11 + node 22） |
 | 分发阶段构建检查和产物检查 | ✅ | ci.yml dist-check job（needs unit-test）：python -m build server（wheel/sdist）+ zipfile 断言 kl_server 包；cli npm run build + node dist/main.js --help 可运行性 |
-| 最终交付前 CI pass | ✅（本地） | 本地 480+103 passed；远程 CI 曾因 npmmirror 502 失败一次（基础设施问题非代码），恢复后重跑通过 |
+| 最终交付前 CI pass | ✅（本地） | 本地 538+124 passed；远程 CI 曾因 npmmirror 502 失败一次（基础设施问题非代码），恢复后重跑通过 |
 | AGENT_LOG.md 实时维护 | ✅（存在性） | AGENT_LOG.md 约 82KB 持续维护；"实时记录不补写"规则未从内容深核 |
 
 ## §6 数据模型（核验 2026-08-08，兑现约 75%）
@@ -245,7 +245,7 @@
 | 4. mock-LLM 单测覆盖 5 类机制 | ✅ | test_guardrail/test_feedback/test_agent_loop 等 |
 | 5. 上下文 token 预算，mock 验证摘要和 fallback | ✅ | test_context.py |
 | 6. 行为日志覆盖关键事件且无明文 key | ✅ | §3.11（审批/治理事件缺口见 §3.6） |
-| 7. make test 一键通过 + 双 CI unit-test | ✅ | 本地 480+103 passed；ci.yml/.gitlab-ci.yml 均含 unit-test |
+| 7. make test 一键通过 + 双 CI unit-test | ✅ | 本地 538+124 passed；ci.yml/.gitlab-ci.yml 均含 unit-test |
 | 8. examples/ mock-LLM 机制演示 | ✅ | 4 个演示脚本（guardrail/feedback/context/tool_error） |
 | 9. 文档齐全 | ✅ | SPEC/PLAN/SPEC_PROCESS/AGENT_LOG/REFLECTION/README |
 
@@ -267,8 +267,9 @@
 - 2026-08-09 修复批次七：P2-6 文档与行为对齐。默认 provider 统一说明为 deepseek，/connect 优先配置 API，/model 可切换 mock；README/promise_state 的审批超时与 provider test 状态已同步。
 - 2026-08-09 修复批次八：工具输出统一迁移到 ~/.kl/tool_outputs，支持 storage 配置、MANIFEST.jsonl 元数据和保留策略；服务端启动不再创建项目 .kl/tool_outputs。
 - 2026-08-09 修复批次九：新增 read_tool_output 内置工具，可从全局 tool_outputs 读取登记过的完整输出；manifest 支持 available/deleted_at，清理时写入 tombstone。
+- 2026-08-09 修复批次十：完成 P1-1..P1-5 与 P2-1..P2-5。覆盖 session/task 生命周期、daemon stale 恢复、压缩 fallback、命令完整输出、历史回放、原子 ID、WS 重连补发、MCP 错误透传、session 级联清理。
 
-## 全量缺口汇总（2026-08-08 更新：CommandRegistry 已修复移出，交互确认剩 2 项）
+## 全量缺口汇总（2026-08-09 更新：P1-1..P1-5、P2-1..P2-5 已修复移出）
 
 **P0（行为与承诺相反 / 安全）**
 1. 非 Git 快照失败时任务照常执行（§3.2，应拒绝启动；实现为"快照失败不阻断任务"）
@@ -278,10 +279,9 @@
 3. Git 任务自动建分支 + 失败回退快照（§3.2）
 4. 连续失败达阈值任务失败保留现场（§3.3，现有仅警告信号）
 5. 循环级 token 预算停止条件（§3.3/§4.4；Task 无 token 用量字段）
-6. /session close 运行中检查与删除二次确认已修复（§3.1；另 /exit 运行中确认已修复）
-7. 工具执行重试上限（§4.1，工具层无重试）
+6. 工具执行重试上限（§4.1，工具层无重试）
 
 **P2（规格形式/增强）**
-8. 5 个斜杠指令名义缺失（§3.10：/provider /key /tools /hooks /sessions——/sessions 由 /session 面板覆盖、/provider /key 由 /config 向导+/model 覆盖、/tools /hooks 无覆盖）
-9. 数据模型字段补齐（token 用量/parent_task_id/Action 结果字段/快照校验值/MemoryEntry token 估算）（§6；其中大型输出落盘已修复）
-10. MCP 远程工具无权限声明（默认 normal 分级；配置即信任可辩护，更保守可强制审批）
+7. 5 个斜杠指令名义缺失（§3.10：/provider /key /tools /hooks /sessions——/sessions 由 /session 面板覆盖、/provider /key 由 /config 向导+/model 覆盖、/tools /hooks 无覆盖）
+8. 数据模型字段补齐（token 用量/parent_task_id/Action 结果字段/快照校验值/MemoryEntry token 估算）（§6；其中大型输出落盘已修复）
+9. MCP 远程工具无权限声明（默认 normal 分级；配置即信任可辩护，更保守可强制审批）

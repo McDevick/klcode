@@ -8,7 +8,7 @@
 
 核心机制（agent 主循环、工具分发、治理、反馈、记忆、上下文管理）全部由项目自己的代码实现，不依赖现成 agent 编排框架；移除真实 LLM 后仍可通过确定性单元测试验证（mock provider）。
 
-当前进度：核心框架 + 上下文重构 Phase 1–3 + 服务端 daemon 生命周期重构 + 审批超时已实现并通过测试（server 515 / cli 122 测试全绿）。
+当前进度：核心框架 + 上下文重构 Phase 1–3 + 服务端 daemon 生命周期重构 + 审批超时已实现；P1/P2 生命周期、压缩、历史、MCP 与 WS 问题已修复（server 538 / cli 124 测试全绿）。
 
 ## 功能特性
 
@@ -22,7 +22,7 @@
 - **治理**：ScopeFence 路径围栏、SandboxPolicy 命令策略（白/黑名单、环境变量裁剪、CPU/内存资源限制、fail-closed）、DangerClassifier 危险分级（按工具权限声明）、HITL 审批状态机、`governance_decision`/审批事件审计
 - **工具系统**：18 个内置工具（文件/搜索/补丁/shell/git/测试/任务编排/输出读取）+ 用户 Python 插件 + MCP 远程工具发现注册；工具声明权限/沙箱/超时；jsonschema 参数校验；大输出全局落盘引用
 - **持久化**：SQLite（会话/任务/记忆/状态）+ append-only 脱敏审计日志 + AES 加密凭证库（keyring 优先）
-- **TUI**：CommandRegistry 注册表（别名/参数 schema/状态门控）、双向状态门控、审批面板、会话/技能/MCP/模型/连接管理面板、/exit 运行中二次确认
+- **TUI**：CommandRegistry 注册表（别名/参数 schema/状态门控）、双向状态门控、审批面板、会话/技能/MCP/模型/连接管理面板、会话删除二次确认、WS 重连事件补发、/exit 运行中二次确认
 
 ## 环境要求
 
@@ -287,6 +287,5 @@ CI 包含两个 job：`unit-test`（make ci + make test）与 `dist-check`（whe
 - 快照/Git 边界：非 Git 快照失败时任务仍继续；Git 模式不自动创建任务分支，`run_command` 允许普通 `git push`，当前版本不处理。
 - `kl server start` 探测 python 需要能导入 uvicorn/fastapi/kl_server；若本机只有缺依赖的系统 python，请用项目 venv 手动启动。
 - 服务端凭据库在 keyring 与加密文件都不可用时才回退为内存存储（不持久化），初始化时会提示。
-- 任务在 Git 仓库中直接修改当前分支文件（自动建任务分支未实现，回滚靠手动 git 还原）；非 Git 目录任务开始时做快照，但快照不自动回滚。
 - 审批请求默认 300 秒超时，超时自动拒绝；可在 `config.yaml` 的 `guardrail.approval_timeout_seconds` 调整。
 - WebUI、subagent 分派、远程部署与 Docker **不在** `SPEC.md`/`PLAN.md` 授权范围内，仓库不会承诺这些能力。

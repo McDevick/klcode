@@ -27,8 +27,8 @@
 ## 2. 验证证据（本机实测）
 
 ### 2.1 全量测试
-- Server：`pytest server/tests -q` → **324 passed, 1 skipped**
-- CLI：`npm test` → **9 files, 45 passed**（含 TUI 组件测试 9 个）
+- Server：`pytest server/tests -q` → **538 passed, 1 skipped**
+- CLI：`npm test` → **9 files, 124 passed**（含 TUI 组件测试）
 
 ### 2.2 后端冒烟（真实 uvicorn 启动）
 | 检查项 | 结果 |
@@ -56,9 +56,9 @@
 | 验收标准 | 状态 | 说明 |
 |---|---|---|
 | 1. 全新机器可安装并 `kl init`，key 不入库/日志 | ⚠️ | 包可构建、脱敏生效；`kl init` 依赖 daemon 先启动 |
-| 2. **TUI 支持提交任务/实时观察/审批/暂停中止/会话恢复/斜杠指令** | ✅ | 已接线：`kl tui` 启动，建 session→提交→`/tasks/{id}/run`→WS 实时事件→HITL 审批闭环；`/sessions` 等斜杠命令可用（/pause 等暂停类指令仍为 roadmap） |
+| 2. **TUI 支持提交任务/实时观察/审批/暂停中止/会话恢复/斜杠指令** | ✅ | 已接线：`kl tui` 启动，建 session→提交→`/tasks/{id}/run`→WS 实时事件→HITL 审批闭环；暂停/继续/中止、会话删除二次确认、WS 重连补发均已实现 |
 | 3. 内置工具齐全 + 用户插件可治理执行 | ✅ | 18 工具注册，测试覆盖 |
-| 4. mock-LLM 单测（危险拦截/审批状态机/越界/崩溃不中断/反馈回灌） | ✅ | 324 passed 覆盖 |
+| 4. mock-LLM 单测（危险拦截/审批状态机/越界/崩溃不中断/反馈回灌） | ✅ | 538 passed 覆盖 |
 | 5. 上下文 token 预算 + 确定性摘要/fallback | ✅ | context_demo + 测试 |
 | 6. 行为日志覆盖关键事件，无明文 key | ✅ | event_logger 脱敏测试 |
 | 7. `make test` 一键通过 + CI unit-test job | ✅ | 本地验证通过（Windows 用手动等价命令） |
@@ -84,7 +84,7 @@
   - 后端新增任务执行链路：`POST /tasks/{id}/run`（异步执行 + task 状态机）、`TaskEventBus`（WS 事件广播）、`ApprovalHub`（HITL 审批请求/决策 Future）、loop logger 转发到 WS
   - [app.tsx](cli/src/tui/app.tsx) 接入真实后端：启动建 session → 提交 task → `runTask` → WS 订阅实时事件 → `approval_request` 触发审批面板 → 按键 `a/r/x` 经 `/ws/tasks` 发送决策
   - 输入架构重构：App 顶层单一 `useInput`（规避 ink 7.1.1 多 useInput 组件切换时 input listener 丢失的竞态），TaskInput/ApprovalPanel 改纯展示
-  - 仍为 roadmap：`/pause /continue /abort` 暂停类指令、`/status /help` 等完整斜杠指令集
+  - 暂停/继续/中止、会话删除二次确认、WS 重连补发已实现；完整斜杠指令集仍在维护中
 
 **✅ U-3 后端对孤儿 task / 非法 session 返回 500**
 - 修复：`create_task` 在真实 manager 路径先校验 session 存在，缺失返回 404；`test_task_create_with_missing_session_returns_404_with_deps` 覆盖
@@ -116,7 +116,7 @@
 
 | 期望 | 现状 | 差距 |
 |---|---|---|
-| TUI 可以交互使用 | ✅ `kl tui` 启动；建 session→提交→执行→WS 实时事件→HITL 审批闭环 | **已达标**（暂停/中止类指令为 roadmap） |
+| TUI 可以交互使用 | ✅ `kl tui` 启动；建 session→提交→执行→WS 实时事件→HITL 审批闭环；暂停/继续/中止已实现 | **已达标** |
 | 后端稳定运行 | ✅ `kl run` 可用、CRUD/执行/事件/审批全链路通过、336 测试全绿 | **已达标**（U-4/U-5 为健壮性优化项） |
 
 ---
@@ -135,7 +135,7 @@
 |---|---|---|
 | U-1 | `kl run` 先建 session（workspace=cwd）再提交 task | 端到端 `task t1 created (pending)` |
 | U-3 | `create_task` 校验 session 存在，缺失返回 404 | `test_task_create_with_missing_session_returns_404_with_deps` |
-| U-2 | `tui` 子命令 + 后端执行/事件/审批链路 + App 连真实后端 | server `336 passed`；CLI `45 passed`（tui 7 个）；`POST /tasks/{id}/run` 端到端含审批流测试 4 个 |
+| U-2 | `tui` 子命令 + 后端执行/事件/审批链路 + App 连真实后端 | server `538 passed`；CLI `124 passed`；`POST /tasks/{id}/run` 端到端含审批流测试 |
 | U-6 | README 全面更新 | — |
 | U-4 | `kl server start` 探测可用 python（`python`/`python3`/`py`，检查 uvicorn+fastapi+kl_server），无可用时返回清晰错误 | server.test.ts +3 |
 | U-5 | `kl config key set` 写入真实凭据库；`kl config provider add` 更新 registry + 写回 `.kl/config.yaml` | test_routes.py +3、CLI 端到端验证 |
