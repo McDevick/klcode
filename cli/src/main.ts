@@ -67,6 +67,7 @@ export function buildProgram(): Command {
   return program;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+const entryPath = process.argv[1] ? resolve(process.argv[1]) : '';
+if (entryPath && entryPath.toLowerCase().endsWith('main.js')) {
   buildProgram().parse(process.argv);
 }

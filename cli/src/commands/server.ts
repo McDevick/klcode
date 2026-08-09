@@ -9,6 +9,7 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ApiClient, DEFAULT_BASE_URL } from '../api/client';
 import { SERVER_VERSION } from '../server-version';
 
@@ -60,9 +61,23 @@ const PYTHON_CANDIDATES =
   process.platform === 'win32' ? ['py', 'python', 'python3'] : ['python', 'python3', 'py'];
 
 function serverRoots(): string[] {
-  return [join(process.cwd(), 'server'), join(process.cwd(), '..', 'server')].filter(
-    existsSync,
-  );
+  const moduleRoot = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    process.cwd(),
+    join(process.cwd(), '..'),
+    moduleRoot,
+    join(moduleRoot, '..'),
+    join(moduleRoot, '..', '..'),
+  ];
+  const roots = new Set<string>();
+  for (const root of candidates) {
+    for (const candidate of [join(root, 'server'), join(root, '..', 'server')]) {
+      if (existsSync(candidate)) {
+        roots.add(candidate);
+      }
+    }
+  }
+  return Array.from(roots);
 }
 
 function probeEnv(): NodeJS.ProcessEnv {
@@ -113,7 +128,7 @@ function globalVenvPython(): string {
 
 function canImportServer(python: string, env: NodeJS.ProcessEnv): boolean {
   try {
-    execFileSync(python, ['-c', 'import uvicorn, fastapi, kl_server'], {
+    execFileSync(python, ['-c', 'import uvicorn, fastapi, websockets, kl_server'], {
       stdio: 'pipe',
       env,
     });
@@ -164,7 +179,7 @@ export async function resolvePathPython(
         candidate,
         [
           '-c',
-          'import sys; import uvicorn, fastapi, kl_server; '
+          'import sys; import uvicorn, fastapi, websockets, kl_server; '
             + 'print(sys.executable); print(kl_server.__file__)',
         ],
         { encoding: 'utf8', stdio: 'pipe', env },

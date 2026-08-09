@@ -39,6 +39,7 @@ npm pack --dry-run
 python -m venv /tmp/kl-release-venv
 /tmp/kl-release-venv/Scripts/python -m pip install server/dist/kl_server-0.1.0-py3-none-any.whl
 /tmp/kl-release-venv/Scripts/kl-server --help
+/tmp/kl-release-venv/Scripts/python -c "import uvicorn, fastapi, websockets, kl_server"
 ```
 
 ### 3.2 Node CLI
@@ -48,6 +49,21 @@ cd cli
 npm pack
 npm install -g kl-code-cli-0.1.0.tgz
 kl --help
+```
+
+检查 `kl` 是否真的在 PATH 中：
+
+```powershell
+Get-Command kl
+npm bin -g
+```
+
+如果 `kl` 找不到，将 npm 全局 bin 加入 PATH 后重新验证；`npx @kl-code/cli` 只能临时使用，不视为“kl 已注册”。
+
+Server 独立安装只注册 `kl-server`：
+
+```bash
+/tmp/kl-release-venv/Scripts/kl-server --help
 ```
 
 ### 3.3 冷启动冒烟
@@ -105,6 +121,7 @@ kl tui
 
 ### 4.5 WS 与 MCP
 
+- [ ] server 环境包含 `websockets`，WS 能正常连接，不再出现 `No supported WebSocket library detected`。
 - [ ] TUI WS 重连后能补发最近事件。
 - [ ] 相同 `event_id` 不会重复处理。
 - [ ] MCP 不可达时 `/mcp` 面板显示 `status: error` 和具体原因。

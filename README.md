@@ -29,6 +29,48 @@
 - Python >= 3.11
 - Node.js >= 22，含 npm
 
+## 安装方式与 kl 注册
+
+| 方式 | 是否注册 `kl` | 说明 |
+|---|---|---|
+| `npm install -g @kl-code/cli` | ✅ | npm 会在全局 bin 目录生成 `kl`；前提是该目录已在 PATH |
+| `npm link` | ✅ | 源码开发时注册全局 `kl`，同样依赖 npm 全局 bin |
+| `npx @kl-code/cli` | ❌ | 临时执行，不注册全局命令 |
+| `npm run tui` / `node cli/dist/main.js tui` | ❌ | 只在源码目录可用 |
+| `pip install kl-server` | ❌ | 只注册 `kl-server`，不注册 `kl` |
+
+如果 `kl` 命令找不到：
+
+```powershell
+npm config get prefix
+npm bin -g
+```
+
+Windows 常见全局 bin 目录：
+
+```text
+%APPDATA%\npm
+```
+
+Linux/macOS 常见：
+
+```text
+~/.npm-global/bin
+/usr/local/bin
+```
+
+官方推荐 CLI 安装方式：
+
+```bash
+npm install -g @kl-code/cli
+```
+
+Server 独立安装：
+
+```bash
+pip install kl-server
+```
+
 ## 全新机器快速开始
 
 ```bash

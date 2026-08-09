@@ -26,7 +26,7 @@ npm run check:server-version
 | Wheel | `server/dist/kl_server-<version>-py3-none-any.whl` | 用户可直接 `pip install` |
 | Source dist | `server/dist/kl_server-<version>.tar.gz` | 源码安装/审计使用 |
 | Python 版本要求 | `>=3.11` | 写在 `server/pyproject.toml` |
-| 运行依赖 | fastapi/uvicorn/pydantic/aiosqlite/keyring/cryptography/httpx/jsonschema/openai/mcp/PyYAML | 由 pyproject 声明，不在包内嵌依赖 |
+| 运行依赖 | fastapi/uvicorn/websockets/pydantic/aiosqlite/keyring/cryptography/httpx/jsonschema/openai/mcp/PyYAML | 由 pyproject 声明，不在包内嵌依赖 |
 
 构建命令：
 
@@ -42,6 +42,20 @@ python -m build server
 | 入口 | `cli/dist/main.js` | 已 esbuild 打包，包内 `bin.kl` 指向它 |
 | Node 版本要求 | `>=22` | 写在 `cli/package.json` |
 | 运行时依赖 | ink/commander/react/marked 等 | 由 npm dependencies 声明，不手动打包 |
+
+`kl` 命令注册说明：
+
+- `npm install -g @kl-code/cli` 会注册 `kl`。
+- `npm link` 也会注册，但只适合开发环境。
+- `npx @kl-code/cli` 不会注册全局 `kl`。
+- PyPI 的 `kl-server` 只注册服务端命令 `kl-server`。
+- 如果 `kl` 找不到，检查 npm 全局 bin 是否在 PATH：
+  ```bash
+  npm config get prefix
+  npm bin -g
+  ```
+- Windows 常见目录：`%APPDATA%\npm`
+- Linux/macOS 常见目录：`~/.npm-global/bin`、`/usr/local/bin`
 
 构建/检查命令：
 
