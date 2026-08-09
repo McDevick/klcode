@@ -51,6 +51,7 @@ export function SessionManager({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const items: SessionItem[] = [
     ...sessions.map((session) => ({ kind: 'session' as const, session })),
@@ -70,6 +71,7 @@ export function SessionManager({
       setSessions(filtered);
       setSelectedIndex((index) => Math.min(index, Math.max(0, filtered.length)));
       setActionIndex(0);
+      setConfirmDelete(null);
       setError('');
     } catch (err) {
       setError(String(err));
@@ -110,9 +112,15 @@ export function SessionManager({
   };
 
   const deleteSession = async (target: SessionRecord) => {
+    if (confirmDelete !== target.id) {
+      setConfirmDelete(target.id);
+      setError('再次确认删除该会话');
+      return;
+    }
     const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
     setBusy(true);
     setError('');
+    setConfirmDelete(null);
     try {
       await client.deleteSession(target.id);
       if (target.id === currentSessionId) {
@@ -123,6 +131,7 @@ export function SessionManager({
       }
       await loadSessions();
     } catch (err) {
+      setConfirmDelete(null);
       setError(String(err));
     } finally {
       setBusy(false);
@@ -132,6 +141,7 @@ export function SessionManager({
   const startRenameSession = (target: SessionRecord) => {
     setRenameValue(displayName(target));
     setMode('rename');
+    setConfirmDelete(null);
     setError('');
   };
 
@@ -270,11 +280,13 @@ export function SessionManager({
     if (key.upArrow) {
       setSelectedIndex((index) => Math.max(0, index - 1));
       setActionIndex(0);
+      setConfirmDelete(null);
       return;
     }
     if (key.downArrow) {
       setSelectedIndex((index) => Math.min(items.length - 1, index + 1));
       setActionIndex(0);
+      setConfirmDelete(null);
       return;
     }
     if (key.leftArrow) {

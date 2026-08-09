@@ -4,6 +4,7 @@ import { readDaemonToken } from './daemon-token';
 export interface TaskEvent {
   task_id: string;
   event: string;
+  event_id?: string;
   [key: string]: unknown;
 }
 
@@ -80,6 +81,7 @@ export function connectTaskEventsWithReconnect(
   const token = readDaemonToken(options.tokenPath);
   const query = token ? `?token=${encodeURIComponent(token)}` : '';
   const url = `${base}/ws/tasks/${encodeURIComponent(taskId)}${query}`;
+  const seenEventIds = new Set<string>();
 
   class ReconnectingTaskSocketImpl implements ReconnectingTaskSocket {
     private socket: WebSocket;
@@ -97,7 +99,12 @@ export function connectTaskEventsWithReconnect(
             'task_id' in data &&
             typeof (data as TaskEvent).event === 'string'
           ) {
-            onEvent(data as TaskEvent);
+            const event = data as TaskEvent;
+            if (typeof event.event_id === 'string') {
+              if (seenEventIds.has(event.event_id)) return;
+              seenEventIds.add(event.event_id);
+            }
+            onEvent(event);
           }
         } catch {
           // Ignore malformed websocket messages.

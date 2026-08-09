@@ -62,8 +62,8 @@ class RunCommandTool(Tool):
             return ToolResult(ok=False, output="", error=str(exc))
         payload = {
             "exit_code": proc.returncode,
-            "stdout": proc.stdout[-8000:],
-            "stderr": proc.stderr[-8000:],
-            "truncated": len(proc.stdout) > 8000 or len(proc.stderr) > 8000,
+            "stdout": proc.stdout,
+            "stderr": proc.stderr,
+            "truncated": False,
         }
         return ToolResult(ok=True, output=json.dumps(payload, ensure_ascii=False))

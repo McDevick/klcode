@@ -65,6 +65,11 @@ def test_bootstrap_wires_api_routes_to_deps(tmp_path):
     class FakeSessions:
         def __init__(self):
             self.store = {}
+            self.next = 0
+
+        async def next_id(self):
+            self.next += 1
+            return f"s{self.next}"
 
         async def create(self, session):
             self.store[session.id] = session
@@ -90,6 +95,11 @@ def test_bootstrap_wires_api_routes_to_deps(tmp_path):
     class FakeTasks:
         def __init__(self):
             self.store = {}
+            self.next = 0
+
+        async def next_id(self):
+            self.next += 1
+            return f"t{self.next}"
 
         async def create(self, task):
             self.store[task.id] = task

@@ -25,7 +25,7 @@ def test_event_logger_redacts_nested_and_sensitive_values(tmp_path):
     payload = json.loads((tmp_path / "audit.jsonl").read_text(encoding="utf-8").strip().splitlines()[0])["payload"]
     assert payload["nested"]["api_key"] == "[REDACTED]"
     assert payload["items"][0]["token"] == "[REDACTED]"
-    assert payload["command"] == "[REDACTED]"
+    assert payload["command"] == "echo api_key=[REDACTED]"
     assert payload["env"] == "[REDACTED]"
 
 
@@ -52,13 +52,33 @@ def test_event_logger_redacts_token_password_authorization_in_strings(tmp_path):
         },
     )
     payload = json.loads((tmp_path / "audit.jsonl").read_text(encoding="utf-8").strip().splitlines()[0])["payload"]
-    assert payload["task"] == "[REDACTED]"
+    assert "Bearer" not in payload["task"]
+    assert "token=[REDACTED]" in payload["task"]
+    assert "password=[REDACTED]" in payload["task"]
 
 
 def test_event_logger_wraps_write_failures(tmp_path):
     logger = EventLogger(tmp_path)
     with pytest.raises(RuntimeError):
         logger.write("action", {"a": 1})
+
+
+def test_event_logger_writes_task_history_partition_and_delete(tmp_path):
+    logger = EventLogger(tmp_path / "audit.jsonl", history_dir=tmp_path / "history")
+    logger.write("loop_start", {"task": "hello"}, "t1")
+    logger.write("agent_message", {"text": "world"}, "t1")
+
+    history_path = logger.history_path("t1")
+    assert history_path is not None
+    assert history_path.exists()
+    lines = history_path.read_text(encoding="utf-8").strip().splitlines()
+    assert [json.loads(line)["event"] for line in lines] == [
+        "loop_start",
+        "agent_message",
+    ]
+
+    logger.delete_task_history("t1")
+    assert not history_path.exists()
 
 
 def test_event_logger_redacts_common_secret_formats(tmp_path):
@@ -70,4 +90,6 @@ def test_event_logger_redacts_common_secret_formats(tmp_path):
         },
     )
     payload = json.loads((tmp_path / "audit.jsonl").read_text(encoding="utf-8").strip().splitlines()[0])["payload"]
-    assert payload["task"] == "[REDACTED]"
+    assert "ghp_" not in payload["task"]
+    assert "AKIA" not in payload["task"]
+    assert "[REDACTED]" in payload["task"]

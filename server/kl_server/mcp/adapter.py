@@ -21,6 +21,7 @@ def _mcp_call_text(result: dict) -> str:
 class McpAdapter:
     def __init__(self, servers: dict[str, dict]):
         self.servers = servers
+        self.last_errors: dict[str, str] = {}
         self._transports: dict[str, McpTransport] = {}
 
     def catalog(self) -> list[dict]:

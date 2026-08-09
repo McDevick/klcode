@@ -127,3 +127,43 @@ test('connectTaskEventsWithReconnect reconnects after close with backoff', () =>
     (globalThis as { WebSocket: unknown }).WebSocket = original;
   }
 });
+
+test('connectTaskEventsWithReconnect deduplicates replayed event_ids', () => {
+  class FakeReconnectingWebSocket {
+    static instances: FakeReconnectingWebSocket[] = [];
+    url: string;
+    onmessage: ((event: { data: string }) => void) | null = null;
+    onclose: (() => void) | null = null;
+    close = () => undefined;
+
+    constructor(url: string) {
+      this.url = url;
+      FakeReconnectingWebSocket.instances.push(this);
+    }
+  }
+
+  const original = globalThis.WebSocket;
+  (globalThis as { WebSocket: unknown }).WebSocket = FakeReconnectingWebSocket;
+  vi.useFakeTimers();
+  try {
+    const received: TaskEvent[] = [];
+    const socket = connectTaskEventsWithReconnect(
+      't1',
+      (event) => received.push(event),
+      { baseUrl: 'http://example.com/' },
+    );
+    const first = FakeReconnectingWebSocket.instances[0];
+    first.onmessage?.({ data: JSON.stringify({ task_id: 't1', event_id: 't1:1', event: 'tool_result' }) });
+    first.onclose?.();
+    vi.advanceTimersByTime(1000);
+    const second = FakeReconnectingWebSocket.instances[1];
+    second.onmessage?.({ data: JSON.stringify({ task_id: 't1', event_id: 't1:1', event: 'tool_result' }) });
+    expect(received).toHaveLength(1);
+    second.onmessage?.({ data: JSON.stringify({ task_id: 't1', event_id: 't1:2', event: 'task_end' }) });
+    expect(received).toHaveLength(2);
+    socket.close();
+  } finally {
+    vi.useRealTimers();
+    (globalThis as { WebSocket: unknown }).WebSocket = original;
+  }
+});

@@ -4,6 +4,7 @@ import pytest
 
 from kl_server.core.context import (
     ContextAssembler,
+    ContextCompressionError,
     LLMSummarizer,
     extract_memory_keywords,
     select_memory_entries,
@@ -480,7 +481,30 @@ async def test_compact_messages_bucketizes_history():
 
 
 @pytest.mark.asyncio
-async def test_compact_messages_falls_back_to_recent_history():
+async def test_fallback_compact_messages_keeps_recent_and_returns_dropped():
+    assembler = ContextAssembler(max_tokens=100)
+    history = [
+        {"role": "user", "content": "task1"},
+        {"role": "assistant", "content": "old assistant 1"},
+        {"role": "assistant", "content": "old assistant 2"},
+        {"role": "assistant", "content": "old assistant 3"},
+        {"role": "assistant", "content": "old assistant 4"},
+        {"role": "assistant", "content": "recent assistant 1"},
+        {"role": "assistant", "content": "recent assistant 2"},
+    ]
+
+    compacted, dropped = await assembler.fallback_compact_messages(history)
+
+    text = "\n".join(str(message.get("content", "")) for message in compacted)
+    dropped_text = "\n".join(str(message.get("content", "")) for message in dropped)
+    assert "old assistant 1" in dropped_text
+    assert "old assistant 2" in dropped_text
+    assert "old assistant 3" in text
+    assert "recent assistant 1" in text
+    assert "old assistant 1" not in text
+
+
+async def test_compact_messages_raises_when_summarizer_fails():
     class FailingSummarizer:
         async def summarize(self, segments, task_id):
             raise RuntimeError("summary failed")
@@ -496,12 +520,8 @@ async def test_compact_messages_falls_back_to_recent_history():
         {"role": "assistant", "content": "recent assistant"},
     ]
 
-    compacted, summary = await assembler.compact_messages(history, "t1")
-
-    assert summary == ""
-    text = "\n".join(str(message.get("content", "")) for message in compacted)
-    assert "old assistant 1" not in text
-    assert "recent assistant" in text
+    with pytest.raises(ContextCompressionError):
+        await assembler.compact_messages(history, "t1")
 
 
 @pytest.mark.asyncio

@@ -168,6 +168,11 @@ class MemoryStore:
         )
         await conn.commit()
 
+
+    async def delete_scope(self, scope: str) -> None:
+        conn = await self._connection()
+        await conn.execute("DELETE FROM memory WHERE scope = ?", (scope,))
+        await conn.commit()
     async def close(self) -> None:
         async with self._connect_lock:
             if self.conn is not None:

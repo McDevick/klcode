@@ -111,6 +111,17 @@ class McpRemoteTool(Tool):
         return await self.adapter.tool(self.server, self.remote_name, args)
 
 
+def _set_mcp_discovery_error(adapter, server: str, error: str | None) -> None:
+    errors = getattr(adapter, "last_errors", None)
+    if errors is None:
+        errors = {}
+        adapter.last_errors = errors
+    if error is None:
+        errors.pop(server, None)
+    else:
+        errors[server] = str(error)[:500]
+
+
 async def register_mcp_tools(
     registry,
     adapter: McpAdapter,
@@ -139,10 +150,13 @@ async def register_mcp_tools(
             )
         except asyncio.TimeoutError:
             logger.warning("Timed out discovering MCP tools for %s", server)
+            _set_mcp_discovery_error(adapter, server, "discovery timed out")
             continue
         except Exception as exc:
             logger.warning("Failed to discover MCP tools for %s: %s", server, exc)
+            _set_mcp_discovery_error(adapter, server, exc)
             continue
+        _set_mcp_discovery_error(adapter, server, None)
         for tool in tools:
             remote_name = tool.get("name", "")
             if not remote_name:

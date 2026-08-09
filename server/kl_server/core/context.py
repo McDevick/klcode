@@ -11,6 +11,11 @@ from kl_server.providers.base import ProviderRequest
 
 logger = logging.getLogger(__name__)
 
+
+class ContextCompressionError(RuntimeError):
+    """Raised when history cannot be compressed without losing information."""
+
+
 # Phase 1：记忆按 kind 配额注入，tool_result/task 只写库不进上下文。
 MEMORY_KIND_QUOTAS = {
     "user_note": 2,
@@ -342,12 +347,11 @@ class ContextAssembler:
                     return {**message, "content": f"[文件引用] {reference}"}
         return None
 
-    async def compact_messages(
+    def _deterministic_compacted(
         self,
         history: list[dict],
-        task_id: str,
-    ) -> tuple[list[dict], str]:
-        """按 A 对话/决策、B 工具结果、C 反馈三桶压缩运行时 history。"""
+    ) -> tuple[list[dict], list[dict]]:
+        """按 A 对话/决策、B 工具结果、C 反馈三桶做确定性裁剪。"""
         conversation_indices: list[int] = []
         tool_indices: list[int] = []
         feedback_latest: dict[str, int] = {}
@@ -370,16 +374,6 @@ class ContextAssembler:
             for index in conversation_indices
             if index not in recent_history
         ]
-        summary = ""
-        if old_conversation and self.summarizer is not None:
-            segments = [
-                f"{message.get('role')}: {message.get('content', '')}"
-                for message in old_conversation
-            ]
-            try:
-                summary = await self.summarizer.summarize(segments, task_id)
-            except Exception:
-                summary = ""
 
         recent_tools = set(tool_indices[-RECENT_TOOL_RESULTS:])
         keep: dict[int, dict] = {
@@ -396,7 +390,43 @@ class ContextAssembler:
             keep[index] = history[index]
 
         compacted = [keep[index] for index in sorted(keep)]
+        return compacted, old_conversation
+
+    async def compact_messages(
+        self,
+        history: list[dict],
+        task_id: str,
+    ) -> tuple[list[dict], str]:
+        """按 A 对话/决策、B 工具结果、C 反馈三桶压缩运行时 history。"""
+        compacted, old_conversation = self._deterministic_compacted(history)
+        summary = ""
+        if old_conversation:
+            if self.summarizer is None:
+                raise ContextCompressionError(
+                    "no summarizer configured; refusing to drop history"
+                )
+            segments = [
+                f"{message.get('role')}: {message.get('content', '')}"
+                for message in old_conversation
+            ]
+            try:
+                summary = await self.summarizer.summarize(segments, task_id)
+            except Exception as exc:
+                raise ContextCompressionError(
+                    f"context compression failed: {exc}"
+                ) from exc
+            if not summary or not summary.strip():
+                raise ContextCompressionError(
+                    "summarizer returned empty summary"
+                )
         return compacted, summary
+
+    async def fallback_compact_messages(
+        self,
+        history: list[dict],
+    ) -> tuple[list[dict], list[dict]]:
+        compacted, old_conversation = self._deterministic_compacted(history)
+        return compacted, old_conversation
 
     def _read_summary_state(self, task_id: str) -> tuple[int, str] | None:
         if task_id not in self._summary_state:

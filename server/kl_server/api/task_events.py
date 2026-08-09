@@ -6,12 +6,16 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+MAX_REPLAY_EVENTS = 500
+
 
 class TaskEventBus:
-    """Fan-out task events to subscribed WebSocket connections."""
+    """Fan-out task events to subscribed WebSocket clients."""
 
     def __init__(self) -> None:
         self._connections: dict[str, set[Any]] = {}
+        self._history: dict[str, list[dict]] = {}
+        self._seq: dict[str, int] = {}
         self._lock = asyncio.Lock()
 
     async def register(self, task_id: str, websocket: Any) -> None:
@@ -33,11 +37,18 @@ class TaskEventBus:
 
     async def broadcast(self, task_id: str, payload: dict) -> None:
         async with self._lock:
+            seq = self._seq.get(task_id, 0) + 1
+            self._seq[task_id] = seq
+            event = {"event_id": f"{task_id}:{seq}", **payload}
+            history = self._history.setdefault(task_id, [])
+            history.append(event)
+            if len(history) > MAX_REPLAY_EVENTS:
+                del history[: len(history) - MAX_REPLAY_EVENTS]
             sockets = set(self._connections.get(task_id, ()))
         dead: list[Any] = []
         for websocket in sockets:
             try:
-                await websocket.send_json({"task_id": task_id, **payload})
+                await websocket.send_json({"task_id": task_id, **event})
             except Exception:
                 dead.append(websocket)
         if dead:
@@ -45,6 +56,15 @@ class TaskEventBus:
                 sockets = self._connections.setdefault(task_id, set())
                 for websocket in dead:
                     sockets.discard(websocket)
+
+    async def replay(self, task_id: str, websocket: Any) -> None:
+        async with self._lock:
+            events = list(self._history.get(task_id, []))
+        for event in events:
+            try:
+                await websocket.send_json({"task_id": task_id, **event})
+            except Exception:
+                return
 
     def emit_sync(self, task_id: str, payload: dict) -> None:
         """Fire-and-forget broadcast from synchronous code (e.g. a logger).

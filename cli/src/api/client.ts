@@ -71,6 +71,8 @@ export interface McpServerInfo {
   url?: string;
   args?: string[];
   tools?: McpToolInfo[];
+  status?: string;
+  error?: string;
 }
 
 export interface McpServerInput {

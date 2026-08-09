@@ -16,6 +16,7 @@ class Database:
         self.path = path
         self.conn: aiosqlite.Connection | None = None
         self._connect_lock = asyncio.Lock()
+        self._sequence_lock = asyncio.Lock()
         self.corrupt_backup: str | None = None
 
     def _backup_corrupt_database(self) -> Path:
@@ -75,6 +76,10 @@ class Database:
                             summary TEXT NOT NULL,
                             created_at TEXT NOT NULL
                         );
+                        CREATE TABLE IF NOT EXISTS id_sequences (
+                            kind TEXT PRIMARY KEY,
+                            value INTEGER NOT NULL
+                        );
                         """
                     )
                     await self.conn.commit()
@@ -86,6 +91,19 @@ class Database:
                             await self.conn.execute(stmt)
                         except Exception:
                             pass
+                    for kind, table, prefix in (
+                        ("session", "sessions", "s"),
+                        ("task", "tasks", "t"),
+                    ):
+                        await self.conn.execute(
+                            f"""
+                            INSERT INTO id_sequences (kind, value)
+                            SELECT '{kind}', COALESCE(MAX(CAST(substr(id, {len(prefix) + 1}) AS INTEGER)), 0)
+                            FROM {table}
+                            WHERE id GLOB '{prefix}[0-9]*'
+                            ON CONFLICT(kind) DO UPDATE SET value = MAX(value, excluded.value)
+                            """
+                        )
                     await self.conn.commit()
                 except DatabaseCorruptionError:
                     raise
@@ -102,6 +120,30 @@ class Database:
                         f"database is corrupt; backup: {backup}; writes blocked"
                     ) from exc
             return self.conn
+
+    async def next_sequence(self, kind: str) -> int:
+        async with self._sequence_lock:
+            conn = await self.connect()
+            await conn.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = await conn.execute(
+                    """
+                    INSERT INTO id_sequences (kind, value)
+                    VALUES (?, 1)
+                    ON CONFLICT(kind) DO UPDATE SET value = value + 1
+                    RETURNING value
+                    """,
+                    (kind,),
+                )
+                row = await cursor.fetchone()
+                if row is None:
+                    raise RuntimeError("failed to allocate sequence id")
+                value = int(row["value"])
+                await conn.commit()
+                return value
+            except Exception:
+                await conn.rollback()
+                raise
 
     async def close(self) -> None:
         async with self._connect_lock:

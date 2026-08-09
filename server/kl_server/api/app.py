@@ -92,6 +92,13 @@ async def _discover_mcp_tools(deps) -> None:
         logger.exception("Failed to register MCP tools")
 
 
+async def _recover_stale_tasks(deps) -> int:
+    tasks = getattr(deps, "tasks", None)
+    if tasks is None or not hasattr(tasks, "recover_stale_tasks"):
+        return 0
+    return await tasks.recover_stale_tasks()
+
+
 def _wire_runtime_events(deps, bus: TaskEventBus) -> None:
     """Forward the composed agent loop's lifecycle events to the event bus."""
     if deps is None:
@@ -122,6 +129,9 @@ def create_app(
             app.state.deps = runtime_deps
             app.state.auth_token = runtime_token
             _wire_runtime_events(runtime_deps, bus)
+            recovered = await _recover_stale_tasks(runtime_deps)
+            if recovered:
+                logger.info("Marked %d stale tasks failed after daemon restart", recovered)
             config = getattr(runtime_deps, "config", None)
             guardrail = getattr(config, "guardrail", None) if config is not None else None
             if guardrail is not None:

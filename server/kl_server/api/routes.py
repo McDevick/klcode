@@ -24,6 +24,13 @@ from kl_server.providers.base import ProviderRequest
 from kl_server.providers.openai_compatible import OpenAICompatibleProvider
 
 
+ACTIVE_TASK_STATUSES = {
+    TaskStatus.RUNNING,
+    TaskStatus.AWAITING_APPROVAL,
+    TaskStatus.PAUSED,
+}
+
+
 def _persist_config(deps) -> None:
     """Write the current AppConfig back to the config YAML file."""
     config_path = getattr(deps, "config_path", None)
@@ -190,6 +197,11 @@ def _mcp_server_config(deps, server: str) -> dict | None:
                 }
             )
     record["tools"] = tools
+    mcp = getattr(deps, "mcp", None)
+    error = getattr(mcp, "last_errors", {}).get(server) if mcp is not None else None
+    record["status"] = "error" if error else "ok"
+    if error:
+        record["error"] = error
     return record
 
 
@@ -202,12 +214,17 @@ def _mcp_servers(deps) -> list[dict]:
     return servers
 
 
-async def _refresh_mcp_server(deps, server: str) -> None:
+async def _refresh_mcp_server(deps, server: str) -> dict | None:
     from kl_server.extensions import register_mcp_tools, unregister_mcp_tools
 
     unregister_mcp_tools(deps.tool_registry, server)
-    if server in deps.mcp.servers:
-        await register_mcp_tools(deps.tool_registry, deps.mcp, servers=[server])
+    if server not in deps.mcp.servers:
+        errors = getattr(deps.mcp, "last_errors", None)
+        if errors is not None:
+            errors.pop(server, None)
+        return None
+    await register_mcp_tools(deps.tool_registry, deps.mcp, servers=[server])
+    return _mcp_server_config(deps, server)
 
 
 def _history_message(record: dict) -> dict | None:
@@ -292,18 +309,33 @@ async def _load_session_history(deps, session_id: str) -> list[dict]:
     tasks = [task for task in await deps.tasks.list() if task.session_id == session_id]
     task_ids = {task.id for task in tasks}
     summaries = {task.id: task.summary for task in tasks if task.summary}
-    log_path = getattr(deps.logger, "path", None)
-    if not log_path or not Path(log_path).exists():
-        return []
-
     records: list[dict] = []
-    for line in Path(log_path).read_text(encoding="utf-8").splitlines():
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if record.get("task_id") in task_ids:
-            records.append(record)
+    missing_task_ids = set(task_ids)
+    history_dir = getattr(deps.logger, "history_dir", None)
+    history_path_fn = getattr(deps.logger, "history_path", None)
+    if history_dir is not None and history_path_fn is not None:
+        for task_id in task_ids:
+            history_path = history_path_fn(task_id)
+            if history_path is None or not history_path.exists():
+                continue
+            for line in history_path.read_text(encoding="utf-8").splitlines():
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if record.get("task_id") == task_id:
+                    records.append(record)
+            missing_task_ids.discard(task_id)
+    if missing_task_ids:
+        log_path = getattr(deps.logger, "path", None)
+        if log_path and Path(log_path).exists():
+            for line in Path(log_path).read_text(encoding="utf-8").splitlines():
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if record.get("task_id") in missing_task_ids:
+                    records.append(record)
     records.sort(key=lambda record: record.get("timestamp", ""))
 
     messages: list[tuple[float, dict]] = []
@@ -381,18 +413,6 @@ def build_router() -> APIRouter:
             "summary": task.summary or "",
         }
 
-    def next_seq(existing_ids: list[str], prefix: str) -> int:
-        return (
-            max(
-                (
-                    int(item[len(prefix):])
-                    for item in existing_ids
-                    if item.startswith(prefix) and item[len(prefix):].isdigit()
-                ),
-                default=0,
-            )
-            + 1
-        )
 
     router = APIRouter(prefix="/api/v1")
 
@@ -417,10 +437,9 @@ def build_router() -> APIRouter:
         nonlocal next_session_id
         deps = getattr(request.app.state, "deps", None)
         if deps is not None:
-            # 从已持久化的记录计算下一个序号，避免服务重启后与既有 id 冲突
-            existing = await deps.sessions.list()
-            next_session_id = next_seq([item.id for item in existing], "s")
-        session_id = f"s{next_session_id}"
+            session_id = await deps.sessions.next_id()
+        else:
+            session_id = f"s{next_session_id}"
         session = Session(
             id=session_id,
             workspace=payload.workspace,
@@ -430,7 +449,8 @@ def build_router() -> APIRouter:
         )
         if deps is not None:
             await deps.sessions.create(session)
-        next_session_id += 1
+        else:
+            next_session_id += 1
         record = session_dict(session)
         if deps is None:
             sessions[session.id] = record
@@ -627,6 +647,19 @@ def build_router() -> APIRouter:
                 session = await deps.sessions.get(session_id)
             except KeyError:
                 raise HTTPException(status_code=404, detail="session not found")
+            active_tasks = [
+                task
+                for task in await deps.tasks.list()
+                if task.session_id == session_id and task.status in ACTIVE_TASK_STATUSES
+            ]
+            if active_tasks:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "session has active tasks; abort them before closing: "
+                        + ", ".join(task.id for task in active_tasks)
+                    ),
+                )
             session.status = "closed"
             await deps.sessions.update(session)
             return session_dict(session)
@@ -640,6 +673,23 @@ def build_router() -> APIRouter:
     async def delete_session(session_id: str, request: Request):
         deps = getattr(request.app.state, "deps", None)
         if deps is not None:
+            tasks = [
+                task
+                for task in await deps.tasks.list()
+                if task.session_id == session_id
+            ]
+            active_tasks = [
+                task for task in tasks if task.status in ACTIVE_TASK_STATUSES
+            ]
+            if active_tasks:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "session has active tasks; abort them before deleting: "
+                        + ", ".join(task.id for task in active_tasks)
+                    ),
+                )
+            task_ids = [task.id for task in tasks]
             try:
                 await deps.sessions.delete(session_id)
             except KeyError:
@@ -652,6 +702,15 @@ def build_router() -> APIRouter:
                     USER_INSTRUCTIONS_STATE_KIND,
                 ):
                     await memory.delete_state(f"session:{session_id}", kind)
+            if memory is not None and hasattr(memory, "delete_scope"):
+                await memory.delete_scope(session_id)
+            executor = getattr(deps, "executor", None)
+            if executor is not None and hasattr(executor, "delete_session_outputs"):
+                await asyncio.to_thread(executor.delete_session_outputs, session_id)
+            logger = getattr(deps, "logger", None)
+            if logger is not None and hasattr(logger, "delete_task_history"):
+                for task_id in task_ids:
+                    logger.delete_task_history(task_id)
             return Response(status_code=204)
         if sessions.pop(session_id, None) is None:
             raise HTTPException(status_code=404, detail="session not found")
@@ -661,17 +720,6 @@ def build_router() -> APIRouter:
     async def create_task(payload: CreateTaskPayload, request: Request):
         nonlocal next_task_id
         deps = getattr(request.app.state, "deps", None)
-        if deps is not None:
-            existing = await deps.tasks.list()
-            next_task_id = next_seq([item.id for item in existing], "t")
-        task_id = f"t{next_task_id}"
-        task = Task(
-            id=task_id,
-            session_id=payload.session_id,
-            description=payload.description,
-            workspace_mode=payload.workspace_mode,
-            branch=payload.branch,
-        )
         if deps is not None:
             try:
                 session = await deps.sessions.get(payload.session_id)
@@ -686,8 +734,20 @@ def build_router() -> APIRouter:
                     status_code=400,
                     detail=f"workspace invalid: {workspace_error}",
                 )
+            task_id = await deps.tasks.next_id()
+        else:
+            task_id = f"t{next_task_id}"
+        task = Task(
+            id=task_id,
+            session_id=payload.session_id,
+            description=payload.description,
+            workspace_mode=payload.workspace_mode,
+            branch=payload.branch,
+        )
+        if deps is not None:
             await deps.tasks.create(task)
-        next_task_id += 1
+        else:
+            next_task_id += 1
         record = task_dict(task)
         if deps is None:
             tasks[task.id] = record
@@ -920,8 +980,7 @@ def build_router() -> APIRouter:
             config["url"] = payload.url
         deps.mcp.servers[payload.name] = config
         _persist_config(deps)
-        await _refresh_mcp_server(deps, payload.name)
-        return _mcp_server_config(deps, payload.name)
+        return await _refresh_mcp_server(deps, payload.name)
 
     @router.post("/mcp/{server}/refresh")
     async def refresh_mcp(server: str, request: Request):
@@ -930,8 +989,7 @@ def build_router() -> APIRouter:
             raise HTTPException(status_code=501, detail="requires a configured server")
         if server not in deps.mcp.servers:
             raise HTTPException(status_code=404, detail="mcp server not found")
-        await _refresh_mcp_server(deps, server)
-        return _mcp_server_config(deps, server)
+        return await _refresh_mcp_server(deps, server)
 
     @router.delete("/mcp/{server}")
     async def remove_mcp(server: str, request: Request):

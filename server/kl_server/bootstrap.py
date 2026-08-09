@@ -135,7 +135,7 @@ def build_app_dependencies(
         output_retention_days=config.storage.tool_outputs_retention_days,
         output_max_mb=config.storage.tool_outputs_max_mb,
     )
-    logger = EventLogger(Path(log_path))
+    logger = EventLogger(Path(log_path), history_dir=global_kl_dir / "history")
     executor.logger = logger
     memory = MemoryStore(db_path.parent / "memory.db")
     default_max_context = 20000

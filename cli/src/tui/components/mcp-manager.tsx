@@ -64,7 +64,11 @@ export function McpManager({
           setServers((current) =>
             current.map((server) => (server.name === updated.name ? updated : server)),
           );
-          setNotice(`已刷新: ${updated.name} (${updated.tools?.length ?? 0} tools)`);
+          setNotice(
+            updated.status === 'error'
+              ? `刷新失败: ${updated.error ?? 'unknown error'}`
+              : `已刷新: ${updated.name} (${updated.tools?.length ?? 0} tools)`,
+          );
         })
         .catch((error: unknown) => {
           setNotice(`刷新失败: ${String(error)}`);
@@ -107,7 +111,10 @@ export function McpManager({
         <Text dimColor>暂无已配置的 mcp server</Text>
       ) : (
         <CommandMenu
-          commands={servers.map((server) => ({ name: server.name, desc: '' }))}
+          commands={servers.map((server) => ({
+            name: server.name,
+            desc: server.status === 'error' ? (server.error ?? 'error') : '',
+          }))}
           menuIndex={selectedIndex}
         />
       )}

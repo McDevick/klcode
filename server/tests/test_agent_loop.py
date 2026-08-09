@@ -331,6 +331,17 @@ class CompressContext:
         return "compressed summary"
 
 
+
+class FailingBucketCompressContext(CompressContext):
+    async def compact_messages(self, history, task_id):
+        raise RuntimeError("summary failed")
+
+    async def fallback_compact_messages(self, history):
+        return [], [
+            {"role": "assistant", "content": "old assistant"},
+        ]
+
+
 class BucketCompressContext(CompressContext):
     async def compact_messages(self, history, task_id):
         return [
@@ -710,6 +721,29 @@ async def test_loop_applies_bucket_compaction_result():
 
 
 @pytest.mark.asyncio
+
+@pytest.mark.asyncio
+async def test_loop_compacts_with_snapshot_when_summary_fails(tmp_path):
+    output_dir = tmp_path / "tool_outputs"
+    provider = MockProvider(responses=["DONE"])
+    loop = AgentLoop(
+        provider=provider,
+        tools=ToolExecutor(ToolRegistry(), output_dir=output_dir),
+        settings=LoopSettings(max_iterations=2),
+        context=FailingBucketCompressContext(),
+    )
+
+    await loop.run(Session(id="s1", workspace=str(tmp_path)), "task")
+
+    messages = provider.calls[0].messages
+    contents = [
+        str(message.get("content", ""))
+        for message in messages
+    ]
+    assert any("context_compression_failed" in content for content in contents)
+    assert any("read_tool_output" in content for content in contents)
+
+
 async def test_loop_writes_events_in_realtime(tmp_path):
     registry = ToolRegistry()
     registry.register(FinalTool())

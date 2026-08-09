@@ -8,6 +8,10 @@ class TaskManager:
     def __init__(self, db: Database):
         self.db = db
 
+    async def next_id(self) -> str:
+        value = await self.db.next_sequence("task")
+        return f"t{value}"
+
     async def create(self, task: Task) -> Task:
         conn = await self.db.connect()
         await conn.execute(
@@ -120,6 +124,25 @@ class TaskManager:
         task.status = TaskStatus.RUNNING
         await self.update(task)
 
+
+    async def recover_stale_tasks(self) -> int:
+        conn = await self.db.connect()
+        cursor = await conn.execute(
+            """
+            UPDATE tasks
+            SET status = ?, summary = ?
+            WHERE status IN (?, ?, ?)
+            """,
+            (
+                TaskStatus.FAILED.value,
+                "daemon restarted before task completed",
+                TaskStatus.RUNNING.value,
+                TaskStatus.AWAITING_APPROVAL.value,
+                TaskStatus.PAUSED.value,
+            ),
+        )
+        await conn.commit()
+        return cursor.rowcount
     async def abort(self, task_id: str) -> None:
         task = await self.get(task_id)
         task.status = TaskStatus.CANCELED

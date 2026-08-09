@@ -119,6 +119,55 @@ async def test_get_missing_ids_raise_key_error(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_database_next_sequence_is_unique_concurrently(tmp_path):
+    db = Database(tmp_path / "kl.db")
+    try:
+        values = await asyncio.gather(
+            *(db.next_sequence("session") for _ in range(20))
+        )
+        assert values == list(range(1, 21))
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_database_sequence_seeds_from_existing_ids(tmp_path):
+    path = tmp_path / "kl.db"
+    conn = await aiosqlite.connect(path)
+    await conn.executescript(
+        """
+        CREATE TABLE sessions (
+            id TEXT PRIMARY KEY, workspace TEXT NOT NULL, name TEXT NOT NULL,
+            provider TEXT NOT NULL, model TEXT NOT NULL, status TEXT NOT NULL,
+            rules TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL
+        );
+        CREATE TABLE tasks (
+            id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id),
+            description TEXT NOT NULL, status TEXT NOT NULL, workspace_mode TEXT NOT NULL,
+            branch TEXT, snapshot_path TEXT, summary TEXT NOT NULL, created_at TEXT NOT NULL
+        );
+        """
+    )
+    await conn.execute(
+        "INSERT INTO sessions (id, workspace, name, provider, model, status, rules, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ("s5", str(tmp_path), "s5", "mock", "mock-model", "active", "", "2026-08-09T00:00:00+00:00"),
+    )
+    await conn.execute(
+        "INSERT INTO tasks (id, session_id, description, status, workspace_mode, branch, snapshot_path, summary, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("t3", "s5", "fix", "pending", "managed", None, None, "", "2026-08-09T00:00:00+00:00"),
+    )
+    await conn.commit()
+    await conn.close()
+
+    db = Database(path)
+    try:
+        await db.connect()
+        assert await db.next_sequence("session") == 6
+        assert await db.next_sequence("task") == 4
+    finally:
+        await db.close()
+
+
 async def test_duplicate_ids_raise_integrity_error(tmp_path):
     db = Database(tmp_path / "kl.db")
     sessions = SessionManager(db)

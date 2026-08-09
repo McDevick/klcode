@@ -36,6 +36,18 @@ def test_task_websocket_broadcasts_to_all_clients():
             assert second.receive_json()["event"] == "tool_result"
 
 
+
+def test_task_websocket_replays_recent_events_on_reconnect():
+    bus = TaskEventBus()
+    client = TestClient(create_app(bus=bus))
+    with client.websocket_connect("/ws/tasks/t1") as first:
+        first.send_json({"event": "tool_result"})
+        assert first.receive_json()["event"] == "tool_result"
+        with client.websocket_connect("/ws/tasks/t1") as second:
+            replayed = second.receive_json()
+            assert replayed["event"] == "tool_result"
+            assert replayed["event_id"] == "t1:1"
+
 def test_task_websocket_broadcasts_are_isolated_per_app():
     client_a = TestClient(create_app())
     client_b = TestClient(create_app())

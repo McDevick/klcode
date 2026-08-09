@@ -34,40 +34,38 @@
 
 ## 3. P1：稳定性和数据完整性
 
-### P1-1 运行中的 session 可被 close/delete
+### P1-1 运行中的 session 可被 close/delete ✅ 已处理（2026-08-09）
 
-- 位置：`server/kl_server/api/routes.py:623-658`、`server/kl_server/core/task_manager.py:88-105`
-- 风险：`close_session` 和 `delete_session` 不检查该 session 是否正在运行任务。删除会先删除 tasks 行，后台 `_execute_task` 后续 `update(task)` 会找不到行，可能以未处理异常结束或留下状态不一致。
-- 后果：用户误删会话时，已产生的代码变更不会回滚，后台任务可能继续执行但没有可靠结束事件。
-- 建议：close/delete 前检查 active task，要求先 abort；TUI 删除会话前增加二次确认。
+- 位置：`server/kl_server/api/routes.py`、`cli/src/tui/components/session-manager.tsx`
+- 修复：session 存在 `running`、`awaiting_approval`、`paused` 任务时，`close`/`delete` 返回 409；用户需要先 abort 后再操作。TUI 删除会话增加二次确认。
+- 验证：close/delete 拦截测试、abort 后删除成功测试、TUI 二次确认测试通过。
 
-### P1-2 daemon 重启后任务状态无恢复
+### P1-2 daemon 重启后任务状态无恢复 ✅ 已处理（2026-08-09）
 
-- 位置：`server/kl_server/api/routes.py:54`、`server/kl_server/api/routes.py:734`、`server/kl_server/api/app.py:38`
-- 风险：`_running_tasks` 只是进程内 dict；服务崩溃或重启时，SQLite 中 `running`、`awaiting_approval`、`paused` 状态不会被清理或标记失败。
-- 后果：任务实际已死但状态永久卡住，TUI 会显示运行中/等待审批；`/abort` 可以清理，但用户必须先发现。
-- 建议：启动时把非终态任务标记为 failed/canceled，或至少提供 `/status` 中的 stale 状态和恢复入口。
+- 位置：`server/kl_server/core/task_manager.py`、`server/kl_server/api/app.py`
+- 修复：daemon 启动时把 SQLite 中的 `running`、`awaiting_approval`、`paused` 任务统一标记为 `failed`，summary 为 `daemon restarted before task completed`；`pending` 和终态任务保持不动。
+- 验证：TaskManager recover 单测 + runtime_factory 启动生命周期测试通过。
 
-### P1-3 运行时上下文压缩失败会直接丢历史
+### P1-3 运行时上下文压缩失败会直接丢历史 ✅ 已处理（2026-08-09）
 
-- 位置：`server/kl_server/core/context.py:373-399`、`server/kl_server/core/agent_loop.py:609-642`
-- 风险：`compact_messages` 在 LLM 摘要失败时返回空 `summary`，但仍返回缩短后的 history；`agent_loop` 判断 `len(recent_history) < len(history)` 后直接替换 history。
-- 后果：provider 临时不可用时，旧对话、决策和失败原因被静默丢弃，任务继续时“失忆”，且无法自动恢复。
-- 建议：摘要失败时不替换 history，而是保留最近可容纳的消息并注入明确的压缩失败信号；或把旧消息先落盘，下次再恢复。
+- 位置：`server/kl_server/core/context.py`、`server/kl_server/core/agent_loop.py`
+- 修复：压缩摘要失败或无 summarizer 时抛出 `ContextCompressionError`；AgentLoop 捕获后先执行确定性裁剪，将旧上下文快照写入全局 tool_outputs，再保留最近消息并向模型注入 `read_tool_output` 引用。如果快照落盘失败才保留完整历史，并带 2 轮压缩冷却，避免反复失败导致上下文超限。
+- 验证：`compact_messages` 失败抛异常、确定性 fallback、AgentLoop 快照引用、冷却逻辑测试通过。
 
-### P1-4 完整输出落盘对命令类工具不完整
+### P1-4 完整输出落盘对命令类工具不完整 ✅ 已处理（2026-08-09）
 
-- 位置：`server/kl_server/tools/builtin/shell.py:65-66`、`server/kl_server/core/tool_executor.py:50-75`
-- 风险：`run_command`/`run_tests`/`run_lint` 在执行层就只保留 stdout/stderr 末尾 8000 字符；`ToolExecutor` 的“完整输出落盘”只针对返回结果超过 20k 的情况。
-- 后果：长测试输出开头的关键错误、编译错误或日志会被永久丢失，`[文件引用]` 也不能恢复它们。
-- 建议：shell 工具本身不截断原始输出，把截断和落盘统一交给 `ToolExecutor`；或直接在 shell 层落盘完整 stdout/stderr 并返回引用。
+- 位置：`server/kl_server/tools/builtin/shell.py`、`server/kl_server/core/tool_executor.py`
+- 修复：`run_command` 不再在执行层截断 stdout/stderr，完整输出返回给 `ToolExecutor`；由 `ToolExecutor` 统一截断、摘要并落盘到全局 tool_outputs。
+- 验证：run_command 大输出完整落盘测试 + 输出摘要测试通过。
 
-### P1-5 历史回放丢失工具参数和长输出
+### P1-5 历史回放丢失工具参数和长输出 ✅ 已处理（2026-08-09）
 
-- 位置：`server/kl_server/core/event_logger.py:16`、`server/kl_server/api/routes.py:237-244`、`server/kl_server/core/agent_loop.py:826-832`
-- 风险：审计日志把 `command` 整体替换为 `[REDACTED]`，并且 `tool_result.output` 只写 500 字符。TUI 实时事件走 WS 可以看到原始参数，但重新打开 session history 时，工具行会变成 `run_command("[REDACTED]")`，长结果也被截断。
-- 后果：历史会话的“聊天流”不完整，用户无法知道之前实际执行了什么命令。
-- 建议：审计时只脱敏真实密钥/参数值，保留命令结构；history 中输出只放摘要，同时附上 `tool_outputs` 文件引用并可点击打开。
+- 位置：`server/kl_server/core/event_logger.py`、`server/kl_server/core/agent_loop.py`、`server/kl_server/api/routes.py`
+- 修复：
+  - 审计/历史脱敏改为只脱敏真实密钥值，保留命令结构，例如 `pytest --token [REDACTED]`。
+  - `tool_result` 历史输出上限从 500 提升到 4000，并保留 `[文件引用]` 与全局 tool_outputs 引用。
+  - 历史回放继续通过 `read_tool_output` 恢复完整输出。
+- 验证：EventLogger 命令结构保留测试 + 历史回放工具参数脱敏测试通过。
 
 ### P1-6 上下文预算估算不准确，且无循环级 token 硬限制（当前版本不处理）
 
@@ -95,38 +93,42 @@
 
 ## 4. P2：并发、体验和文档风险
 
-### P2-1 session/task ID 生成存在并发竞争
+### P2-1 session/task ID 生成存在并发竞争 ✅ 已处理（2026-08-09）
 
-- 位置：`server/kl_server/api/routes.py:415-437`、`server/kl_server/api/routes.py:660-695`
-- 风险：`next_session_id`/`next_task_id` 采用“先 list 再 +1”的 read-modify-write；两个并发请求在 await 处交错时可能算出同一个 ID，主键冲突返回 500。
-- 建议：用数据库自增/唯一 ID，或在同一个事务内通过 `MAX(id)` 原子分配并捕获冲突重试。
+- 位置：`server/kl_server/storage/database.py`、`server/kl_server/core/session_manager.py`、`server/kl_server/core/task_manager.py`
+- 修复：新增 `id_sequences` 表，`Database.next_sequence()` 使用 `INSERT ... ON CONFLICT ... RETURNING` 原子分配；Session/Task Manager 通过 `next_id()` 生成 `sN`/`tN`。
+- 兼容：旧库启动时按现有 `sN`/`tN` 的最大序号初始化 sequence，避免与历史 ID 冲突。
+- 验证：并发分配唯一性测试 + 旧库 seed 测试通过。
 
-### P2-2 WS 重连不补发错过的任务事件
+### P2-2 WS 重连不补发错过的任务事件 ✅ 已处理（2026-08-09）
 
-- 位置：`cli/src/api/events.ts:45-115`
-- 风险：任务事件 WS 会指数退避重连，但只续传之后的新事件；断线期间发生的 `tool_result`、`task_end`、审批结果不会补发。
-- 后果：TUI 可能停在“运行中”，用户需要刷新/重开会话才能恢复视图。
-- 建议：重连后拉取任务状态和历史，补齐缺失事件，或为每个任务提供从序号/游标补发的 WS 协议。
+- 位置：`server/kl_server/api/task_events.py`、`server/kl_server/api/ws.py`、`cli/src/api/events.ts`
+- 修复：TaskEventBus 为每个任务保留最近 500 条事件并生成 `event_id`；新 WebSocket 连接建立后先 `replay` 补发历史事件。
+- 客户端：重连连接复用同一 `event_id` 去重集合，补发事件不会重复处理。
+- 验证：服务端 replay 测试 + WS 重连补发测试 + CLI event_id 去重测试通过。
 
-### P2-3 删除 session 不清理 memory 普通记录
+### P2-3 删除 session 不清理 memory 普通记录 ✅ 已处理（2026-08-09）
 
-- 位置：`server/kl_server/api/routes.py:648-654`、`server/kl_server/memory/store.py:56-60`
-- 风险：删除 session 只清理 `state` 中的 task_plan/continuation/instructions，`tool_result`、`feedback`、`context_summary` 等 memory 行仍留在全局 `memory.db`。
-- 后果：隐私数据和磁盘占用不会随会话删除释放；若后续 session 使用相同 tags 或关键词，可能被检索到旧内容。
-- 建议：删除 session 时级联清理对应 memory 行，或至少提供清理 API。
+- 位置：`server/kl_server/api/routes.py`、`server/kl_server/memory/store.py`、`server/kl_server/core/tool_executor.py`
+- 修复：删除 session 时级联清理：
+  - `state` 中的 task_plan/continuation/instructions。
+  - `memory` 表中该 session 的 feedback/tool_result/context_summary 等记录。
+  - `~/.kl/tool_outputs/<session_id>/` 目录。
+  - `MANIFEST.jsonl` 中该 session 的 output 记录。
+- 验证：memory scope 清理、tool_outputs 目录与 manifest 清理、route 级联删除测试通过。
 
-### P2-4 MCP server 添加/刷新失败不够可见
+### P2-4 MCP server 添加/刷新失败不够可见 ✅ 已处理（2026-08-09）
 
-- 位置：`server/kl_server/api/routes.py:910-935`、`server/kl_server/extensions.py:96-104`
-- 风险：MCP server 不可达或 schema 非法时，`register_mcp_tools` 只写 warning 并继续；`add_mcp` 仍然持久化配置并返回“已添加”结果，TUI 可能看到 0 tools 但不知道原因。
-- 建议：`add/refresh` 返回明确 `error`/`tools` 状态，或至少让 TUI 展示发现失败原因。
+- 位置：`server/kl_server/extensions.py`、`server/kl_server/mcp/adapter.py`、`server/kl_server/api/routes.py`、`cli/src/tui/components/mcp-manager.tsx`
+- 修复：MCP 发现失败时记录 `last_errors`；`/mcp`、add/refresh 响应返回 `status` 与 `error`；TUI 在列表和刷新结果中展示失败原因。
+- 验证：扩展层错误记录测试 + `/mcp` status/error 测试通过。
 
-### P2-5 数据文件无轮转，历史读取全量扫日志 ⚠️ 部分已处理（2026-08-09）
+### P2-5 数据文件无轮转，历史读取全量扫日志 ✅ 已处理（2026-08-09）
 
 - 位置：`server/kl_server/api/routes.py:291-307`、`server/kl_server/core/event_logger.py:40-52`
-- 风险：`audit.jsonl`、`memory.db` 仍只增长；`tool_outputs/` 已支持保留天数/容量上限，但每次 `/history`、`/context` 仍读取整个 audit 文件再过滤。
+- 风险：每次 `/history`、`/context` 读取整个 audit 文件，会话切换会随日志增长越来越慢；memory 与 tool_outputs 缺少删除级联。
 - 后果：长期运行后磁盘占用和接口延迟都会上升。
-- 建议：日志轮转、memory 清理策略、按 session/task 索引查询历史；tool_outputs 保留策略已实现。
+- 修复：历史事件按 task 分片写入 `~/.kl/history/<task_id>.jsonl`，历史回放只读目标 task 分片；旧 audit 仅作为缺失分片时的 fallback。删除 session 时级联清理 memory、tool_outputs、task 历史分片。audit.jsonl 继续作为审计日志保留。
 
 ### P2-6 文档与当前行为漂移 ✅ 已处理（2026-08-09）
 
@@ -151,6 +153,6 @@
 ## 5. 建议处理顺序
 
 1. P0-1/P0-2 当前版本不处理，已作为已知限制记录；正式发布或多人共享前再评估默认命令权限和凭据保护。
-2. 再处理 P1-1/P1-2：session/task 生命周期和 daemon 重启恢复。
-3. 然后处理 P1-3/P1-4/P1-5：压缩失败保底、完整输出落盘、历史回放。
-4. 继续处理 P2-1..P2-5 等剩余风险；P2-6/P2-7 已完成。
+2. P1-1/P1-2 已完成；继续处理 P1-3/P1-4/P1-5。
+3. P1-3/P1-4/P1-5 已完成。
+4. P2 系列风险已全部处理；后续如需审计日志轮转可另开专项。

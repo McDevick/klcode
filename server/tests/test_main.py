@@ -2,6 +2,8 @@ import importlib
 import sys
 from pathlib import Path
 
+import pytest
+
 
 def test_main_import_does_not_create_runtime_artifacts(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
@@ -53,6 +55,32 @@ def test_main_ignores_project_config_when_global_config_exists(tmp_path, monkeyp
 
     assert deps.config_path == str(home / ".kl" / "config.yaml")
     assert (project_kl / "config.yaml").read_text(encoding="utf-8") == "[invalid yaml"
+
+
+@pytest.mark.asyncio
+async def test_main_lifespan_marks_stale_tasks_failed(tmp_path, monkeypatch):
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.chdir(tmp_path)
+    from fastapi.testclient import TestClient
+
+    from kl_server.api.app import create_app
+    from kl_server.main import _build_runtime
+    from kl_server.models.task import Session, Task, TaskStatus
+
+    deps, auth_token = _build_runtime()
+    await deps.sessions.create(Session(id="s1", workspace=str(tmp_path)))
+    await deps.tasks.create(
+        Task(id="t1", session_id="s1", description="x", status=TaskStatus.RUNNING)
+    )
+
+    def factory():
+        return deps, auth_token
+
+    with TestClient(create_app(runtime_factory=factory)) as client:
+        assert client.app.state.deps is deps
+        task = await deps.tasks.get("t1")
+        assert task.status == TaskStatus.FAILED
+        assert "daemon restarted" in task.summary
 
 
 def test_main_app_lifespan_builds_runtime(tmp_path, monkeypatch):

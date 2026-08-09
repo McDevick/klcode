@@ -70,6 +70,7 @@ def build_ws_router(
                 return
         await websocket.accept()
         await bus.register(task_id, websocket)
+        await bus.replay(task_id, websocket)
         try:
             while True:
                 raw = await websocket.receive_text()

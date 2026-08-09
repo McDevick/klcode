@@ -142,6 +142,25 @@ async def test_register_mcp_tools_skips_slow_server_after_timeout():
     assert registered == []
 
 
+
+class FailingMcpAdapter:
+    servers = {"bad": {}}
+
+    async def list_tools(self, server):
+        raise RuntimeError("boom")
+
+
+@pytest.mark.asyncio
+async def test_register_mcp_tools_records_discovery_error():
+    registry = ToolRegistry()
+    adapter = FailingMcpAdapter()
+
+    registered = await register_mcp_tools(registry, adapter)
+
+    assert registered == []
+    assert adapter.last_errors["bad"] == "boom"
+
+
 class CollisionMcpAdapter:
     servers = {"a_b": {}, "a": {}}
 

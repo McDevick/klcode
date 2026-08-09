@@ -1932,3 +1932,55 @@ test('session manager only shows sessions from current workspace', async () => {
     restore();
   }
 });
+
+test('session manager requires confirmation before delete', async () => {
+  let listCount = 0;
+  let deleteCount = 0;
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    if (url.includes('/api/v1/sessions') && method === 'GET') {
+      listCount += 1;
+      return {
+        ok: true,
+        status: 200,
+        json: async () =>
+          listCount === 1
+            ? []
+            : [
+                {
+                  id: 's-local',
+                  workspace: process.cwd(),
+                  name: 'local',
+                  status: 'active',
+                  task_count: 0,
+                },
+              ],
+      };
+    }
+    if (url.includes('/api/v1/sessions') && method === 'POST') return sessionResponse;
+    if (url.includes('/api/v1/sessions/s-local') && method === 'DELETE') {
+      deleteCount += 1;
+      return { ok: true, status: 204, json: async () => undefined };
+    }
+    if (url.includes('/config/model')) return modelConfigResponse;
+    return { ok: true, status: 200, json: async () => ({}) };
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('/session');
+    stdin.write('\r');
+    await waitFor(() => (lastFrame() ?? '').includes('s-local'));
+    stdin.write('d');
+    await waitFor(() => (lastFrame() ?? '').includes('再次确认删除该会话'));
+    await sleep(50);
+    stdin.write('d');
+    await waitFor(() => deleteCount === 1);
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});

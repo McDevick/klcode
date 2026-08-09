@@ -138,6 +138,7 @@ class AgentLoop:
         self._instructions: dict[str, list[str]] = {}
         self._project_rules_cache: dict[str, str] = {}
         self._global_user_rules_cache: str | None = None
+        self._compression_failure_until: dict[str, int] = {}
 
     def set_paused(self, task_id: str, paused: bool) -> None:
         """Pause (clear gate) or resume (remove gate) a task's execution."""
@@ -608,7 +609,13 @@ class AgentLoop:
                     should_compress = getattr(self.context, "should_compress", None)
                     compact_messages = getattr(self.context, "compact_messages", None)
                     compact_history = getattr(self.context, "compact_history", None)
-                    if should_compress is not None and should_compress(history_texts):
+                    if (
+                        should_compress is not None
+                        and should_compress(history_texts)
+                        and iteration >= self._compression_failure_until.get(task_id, -1)
+                    ):
+                        compression_failed = False
+                        snapshot_path = None
                         try:
                             if compact_messages is not None:
                                 recent_history, context_summary = (
@@ -619,9 +626,79 @@ class AgentLoop:
                                     history_texts,
                                     task_id,
                                 )
-                        except Exception:
+                        except Exception as exc:
                             context_summary = ""
-                        if context_summary or len(recent_history) < len(history):
+                            recent_history = history
+                            compression_failed = True
+                            self._compression_failure_until[task_id] = iteration + 2
+                            fallback = getattr(
+                                self.context,
+                                "fallback_compact_messages",
+                                None,
+                            )
+                            if fallback is not None:
+                                try:
+                                    fallback_history, dropped = await fallback(history)
+                                    if len(fallback_history) < len(history) and dropped:
+                                        snapshot_text = "\n\n".join(
+                                            f"{message.get('role')}: {message.get('content', '')}"
+                                            for message in dropped
+                                        )
+                                        persist_snapshot = getattr(
+                                            self.tools,
+                                            "persist_context_snapshot",
+                                            None,
+                                        )
+                                        if persist_snapshot is not None:
+                                            snapshot_path = persist_snapshot(
+                                                session.workspace,
+                                                session.id,
+                                                task_id,
+                                                snapshot_text,
+                                            )
+                                        if snapshot_path is not None:
+                                            recent_history = fallback_history
+                                except Exception:
+                                    pass
+                            if self.logger:
+                                self.logger.write(
+                                    "context_compression_failed",
+                                    {
+                                        "error": str(exc)[:500],
+                                        "snapshot_path": snapshot_path,
+                                    },
+                                    task_id,
+                                )
+                        else:
+                            self._compression_failure_until.pop(task_id, None)
+                        if compression_failed:
+                            if len(recent_history) < len(history):
+                                history[:] = recent_history
+                            if snapshot_path is not None:
+                                history.append(
+                                    {
+                                        "role": "user",
+                                        "content": (
+                                            "feedback:\ncontext_compression_failed: "
+                                            "压缩失败，旧上下文已保存到 "
+                                            f"{snapshot_path}；当前仅保留最近消息，"
+                                            f"可调用 read_tool_output(\"{snapshot_path}\") 恢复"
+                                        ),
+                                    }
+                                )
+                            else:
+                                history.append(
+                                    {
+                                        "role": "user",
+                                        "content": (
+                                            "feedback:\ncontext_compression_failed: "
+                                            "压缩失败，已保留完整历史；请基于现有上下文继续，"
+                                            "不要假设历史已丢失"
+                                        ),
+                                    }
+                                )
+                            recent_history = history
+                        elif context_summary or len(recent_history) < len(history):
                             dropped_count = len(history) - len(recent_history)
                             history[:] = recent_history
                             if self.logger:
@@ -836,7 +913,7 @@ class AgentLoop:
                             "error": result.error,
                             "meta": result.meta,
                             "args": action.args,
-                            "output": event_output[:500],
+                            "output": event_output[:4000],
                         },
                         task_id,
                     )
@@ -953,7 +1030,7 @@ class AgentLoop:
                                 "error": result.error,
                                 "meta": result.meta,
                                 "args": action.args,
-                                "output": event_output[:500],
+                                "output": event_output[:4000],
                             },
                             task_id,
                         )

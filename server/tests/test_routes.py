@@ -272,6 +272,51 @@ def test_session_rename_close_and_delete():
     assert client.get(f"/api/v1/sessions/{session_id}").status_code == 404
 
 
+
+@pytest.mark.asyncio
+async def test_session_close_rejects_running_task(tmp_path):
+    client = make_deps_client(tmp_path)
+    session_id = create_session(client, str(tmp_path)).json()["id"]
+    task_id = client.post(
+        "/api/v1/tasks",
+        json={"session_id": session_id, "description": "running"},
+    ).json()["id"]
+    deps = client.app.state.deps
+    task = await deps.tasks.get(task_id)
+    task.status = TaskStatus.RUNNING
+    await deps.tasks.update(task)
+
+    response = client.post(f"/api/v1/sessions/{session_id}/close")
+
+    assert response.status_code == 409
+    assert client.get(f"/api/v1/sessions/{session_id}").json()["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_session_delete_rejects_running_task_then_allows_after_abort(tmp_path):
+    client = make_deps_client(tmp_path)
+    session_id = create_session(client, str(tmp_path)).json()["id"]
+    task_id = client.post(
+        "/api/v1/tasks",
+        json={"session_id": session_id, "description": "running"},
+    ).json()["id"]
+    deps = client.app.state.deps
+    task = await deps.tasks.get(task_id)
+    task.status = TaskStatus.PAUSED
+    await deps.tasks.update(task)
+
+    rejected = client.delete(f"/api/v1/sessions/{session_id}")
+    assert rejected.status_code == 409
+    assert client.get(f"/api/v1/sessions/{session_id}").status_code == 200
+
+    task = await deps.tasks.get(task_id)
+    task.status = TaskStatus.CANCELED
+    await deps.tasks.update(task)
+    deleted = client.delete(f"/api/v1/sessions/{session_id}")
+    assert deleted.status_code == 204
+    assert client.get(f"/api/v1/sessions/{session_id}").status_code == 404
+
+
 def test_session_history_replays_audit_events(tmp_path):
     client = make_deps_client(tmp_path)
     session_id = create_session(client, str(tmp_path)).json()["id"]
@@ -393,14 +438,65 @@ async def test_session_feedback_endpoint_lists_feedback_memory(tmp_path):
     ]
 
 
+def test_session_history_reads_task_history_partition(tmp_path):
+
+    client = make_deps_client(tmp_path)
+    session_id = create_session(client, str(tmp_path)).json()["id"]
+    task_id = client.post(
+        "/api/v1/tasks",
+        json={"session_id": session_id, "description": "hello"},
+    ).json()["id"]
+    deps = client.app.state.deps
+    deps.logger.write("loop_start", {"task": "hello"}, task_id)
+    deps.logger.write("agent_message", {"text": "world"}, task_id)
+    deps.logger.write(
+        "tool_result",
+        {
+            "tool": "run_command",
+            "ok": True,
+            "args": {"command": "pytest --token secret-value"},
+            "output": "passed",
+        },
+        task_id,
+    )
+
+    history = client.get(f"/api/v1/sessions/{session_id}/history").json()
+
+    assert any(item["type"] == "user" and item["content"] == "hello" for item in history)
+    assert any(item["type"] == "agent" and item["content"] == "world" for item in history)
+    tool = next(item for item in history if item["type"] == "tool")
+    assert "pytest --token" in tool["args"]["command"]
+    assert "secret-value" not in tool["args"]["command"]
+    assert "[REDACTED]" in tool["args"]["command"]
+
+
 @pytest.mark.asyncio
 async def test_delete_session_cleans_task_manage_state(tmp_path):
     client = make_deps_client(tmp_path)
     session_id = create_session(client, str(tmp_path)).json()["id"]
-    memory = client.app.state.deps.memory
+    deps = client.app.state.deps
+    memory = deps.memory
     await memory.set_state(f"session:{session_id}", "subtasks", "[]")
     await memory.set_state(f"session:{session_id}", "continuation_context", "{}")
     await memory.set_state(f"session:{session_id}", "user_instructions", "[]")
+    await memory.add(session_id, "feedback", [session_id], "old feedback")
+    task_id = client.post(
+        "/api/v1/tasks",
+        json={"session_id": session_id, "description": "history task"},
+    ).json()["id"]
+    history_path = deps.logger.history_path(task_id)
+    assert history_path is not None
+    deps.logger.write("loop_start", {"task": "history task"}, task_id)
+    assert history_path.exists()
+    output_dir = deps.executor.output_dir
+    session_output = output_dir / session_id
+    session_output.mkdir(parents=True)
+    (session_output / "big.txt").write_text("full output", encoding="utf-8")
+    manifest = output_dir / "MANIFEST.jsonl"
+    manifest.write_text(
+        json.dumps({"session_id": session_id, "output_file": "x"}) + "\n",
+        encoding="utf-8",
+    )
 
     deleted = client.delete(f"/api/v1/sessions/{session_id}")
 
@@ -408,6 +504,10 @@ async def test_delete_session_cleans_task_manage_state(tmp_path):
     assert await memory.get_state(f"session:{session_id}", "subtasks") is None
     assert await memory.get_state(f"session:{session_id}", "continuation_context") is None
     assert await memory.get_state(f"session:{session_id}", "user_instructions") is None
+    assert await memory.find([session_id]) == []
+    assert not session_output.exists()
+    assert session_id not in manifest.read_text(encoding="utf-8")
+    assert not history_path.exists()
 
 
 @pytest.mark.asyncio
@@ -960,6 +1060,19 @@ def test_config_model_set_allows_unavailable_provider(tmp_path):
     assert response.status_code == 200
     assert response.json()["provider"] == "deepseek"
     assert response.json()["model"] == "deepseek-chat"
+
+
+
+def test_mcp_list_reports_discovery_error(tmp_path):
+    client = make_deps_client(tmp_path)
+    deps = client.app.state.deps
+    deps.mcp.servers["bad"] = {"url": "http://127.0.0.1:1"}
+    deps.mcp.last_errors["bad"] = "boom"
+
+    records = client.get("/api/v1/mcp").json()
+
+    assert records[0]["status"] == "error"
+    assert records[0]["error"] == "boom"
 
 
 def test_config_check_reports_configured_providers(tmp_path):

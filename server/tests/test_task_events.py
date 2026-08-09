@@ -38,7 +38,10 @@ async def test_bus_broadcast_delivers_to_subscribers_and_drops_dead():
 
     await bus.broadcast("t1", {"event": "loop_start"})
 
-    assert alive.sent == [{"task_id": "t1", "event": "loop_start"}]
+    assert len(alive.sent) == 1
+    assert alive.sent[0]["task_id"] == "t1"
+    assert alive.sent[0]["event"] == "loop_start"
+    assert alive.sent[0]["event_id"] == "t1:1"
     assert dead.sent == []
     # dead connection removed from the set; next broadcast only reaches alive
     await bus.broadcast("t1", {"event": "second"})
@@ -48,6 +51,20 @@ async def test_bus_broadcast_delivers_to_subscribers_and_drops_dead():
     await bus.broadcast("t1", {"event": "third"})
     assert len(alive.sent) == 2
 
+
+@pytest.mark.asyncio
+async def test_bus_replays_recent_events():
+    bus = TaskEventBus()
+    first = FakeWebSocket()
+    await bus.register("t1", first)
+    await bus.broadcast("t1", {"event": "loop_start"})
+    await bus.broadcast("t1", {"event": "tool_result"})
+
+    second = FakeWebSocket()
+    await bus.replay("t1", second)
+
+    assert [item["event"] for item in second.sent] == ["loop_start", "tool_result"]
+    assert [item["event_id"] for item in second.sent] == ["t1:1", "t1:2"]
 
 @pytest.mark.asyncio
 async def test_bus_unregister_removes_empty_task_key():

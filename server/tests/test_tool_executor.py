@@ -9,6 +9,7 @@ from kl_server.core.guardrail import DangerClassifier, Guardrail, HITLManager, S
 from kl_server.core.sandbox import SandboxPolicy
 from kl_server.models.action import ToolResult
 from kl_server.tools.base import Tool, ToolContext
+from kl_server.tools.builtin.shell import RunCommandTool
 from kl_server.tools.builtin.tool_output import ReadToolOutputTool
 from kl_server.tools.registry import ToolRegistry
 from kl_server.core.tool_executor import ToolExecutor
@@ -321,6 +322,45 @@ async def test_executor_read_tool_output_rejects_missing_and_deleted(tmp_path):
     assert "not found" in (result.error or "")
 
 
+
+@pytest.mark.asyncio
+async def test_executor_persists_full_command_output(tmp_path):
+    registry = ToolRegistry()
+    registry.register(RunCommandTool())
+    output_dir = tmp_path / "tool_outputs"
+    executor = ToolExecutor(
+        registry,
+        max_output_chars=1000,
+        output_dir=output_dir,
+    )
+
+    result = await executor.execute(
+        "run_command",
+        {"command": "python -c \"print('x' * 100000)\""},
+        ToolContext(workspace=str(tmp_path), session_id="s1", task_id="t1"),
+    )
+
+    assert result.truncated is True
+    output_file = result.meta.get("output_file")
+    assert output_file is not None
+    assert Path(output_file).exists()
+    payload = json.loads(Path(output_file).read_text(encoding="utf-8"))
+    assert len(payload["stdout"]) >= 100_000
+
+
+async def test_executor_delete_session_outputs_removes_session_and_manifest(tmp_path):
+    output_dir = tmp_path / "tool_outputs"
+    executor = ToolExecutor(ToolRegistry(), output_dir=output_dir)
+    ctx = ToolContext(workspace=str(tmp_path), session_id="s1", task_id="t1")
+    executor._persist_full_output("big", "x" * 100, ctx)
+
+    assert (output_dir / "s1").exists()
+    executor.delete_session_outputs("s1")
+
+    assert not (output_dir / "s1").exists()
+    manifest = output_dir / "MANIFEST.jsonl"
+    assert manifest.exists()
+    assert "s1" not in manifest.read_text(encoding="utf-8")
 async def test_executor_removes_outputs_older_than_retention(tmp_path):
     output_dir = tmp_path / "tool_outputs"
     output_dir.mkdir()

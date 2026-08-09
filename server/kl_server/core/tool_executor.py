@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import re
+import shutil
 import time
 import uuid
 from dataclasses import replace
@@ -153,6 +154,48 @@ class ToolExecutor:
                 except OSError:
                     pass
 
+    def delete_session_outputs(self, session_id: str) -> None:
+        if self.output_dir is None:
+            return
+        root = self.output_dir.resolve()
+        target = (root / str(session_id)).resolve()
+        if target == root or not target.is_relative_to(root):
+            return
+        if target.exists():
+            shutil.rmtree(target, ignore_errors=True)
+        manifest = root / "MANIFEST.jsonl"
+        if not manifest.exists():
+            return
+        try:
+            kept = []
+            for line in manifest.read_text(encoding="utf-8").splitlines():
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if record.get("session_id") != session_id:
+                    kept.append(line)
+            manifest.write_text(
+                "\n".join(kept) + ("\n" if kept else ""),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+
+
+    def persist_context_snapshot(
+        self,
+        workspace: str,
+        session_id: str,
+        task_id: str,
+        text: str,
+    ) -> str | None:
+        ctx = ToolContext(
+            workspace=workspace,
+            session_id=session_id,
+            task_id=task_id,
+        )
+        return self._persist_full_output("context_snapshot", text, ctx)
     def _persist_full_output(
         self,
         name: str,

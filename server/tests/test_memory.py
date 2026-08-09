@@ -175,6 +175,22 @@ async def test_delete_state_removes_only_requested_key(tmp_path):
 
 
 @pytest.mark.asyncio
+
+@pytest.mark.asyncio
+async def test_delete_scope_removes_all_memory_rows(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+    await store.connect()
+    try:
+        await store.add("s1", "feedback", ["s1"], "f1")
+        await store.add("s1", "tool_result", ["s1"], "t1")
+        await store.add("s2", "feedback", ["s2"], "other")
+
+        await store.delete_scope("s1")
+
+        assert await store.find(["s1"]) == []
+        assert await store.find(["s2"]) == ["other"]
+    finally:
+        await store.close()
 async def test_context_manager_close_is_idempotent(tmp_path):
     store = MemoryStore(tmp_path / "memory.db")
     async with store:

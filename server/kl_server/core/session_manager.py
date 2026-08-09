@@ -8,6 +8,10 @@ class SessionManager:
     def __init__(self, db: Database):
         self.db = db
 
+    async def next_id(self) -> str:
+        value = await self.db.next_sequence("session")
+        return f"s{value}"
+
     async def create(self, session: Session) -> Session:
         conn = await self.db.connect()
         await conn.execute(
