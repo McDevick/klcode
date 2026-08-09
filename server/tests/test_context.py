@@ -451,7 +451,7 @@ async def test_compact_messages_bucketizes_history():
         {"role": "assistant", "content": "old assistant 3"},
         {
             "role": "tool",
-            "content": "old tool result\n[文件引用] .kl/tool_outputs/old.txt",
+            "content": "old tool result\n[文件引用] ~/.kl/tool_outputs/old.txt",
         },
         {"role": "user", "content": "feedback:\nsuccess: ok"},
         {"role": "user", "content": "feedback:\ntest_failure: bad1"},
@@ -461,7 +461,7 @@ async def test_compact_messages_bucketizes_history():
         {"role": "assistant", "content": "recent assistant 2"},
         {
             "role": "tool",
-            "content": "recent tool result\n[文件引用] .kl/tool_outputs/recent.txt",
+            "content": "recent tool result\n[文件引用] ~/.kl/tool_outputs/recent.txt",
         },
     ]
 
@@ -472,7 +472,7 @@ async def test_compact_messages_bucketizes_history():
     assert "old assistant 1" not in text
     assert "old assistant 2" not in text
     assert "old assistant 3" not in text
-    assert "[文件引用] .kl/tool_outputs/old.txt" in text
+    assert "[文件引用] ~/.kl/tool_outputs/old.txt" in text
     assert "recent tool result" in text
     assert text.count("test_failure:") == 1
     assert "bad2" in text

@@ -372,3 +372,5 @@ def test_bootstrap_uses_global_skills_tools_and_skips_project_kl(tmp_path):
     assert str(deps.plugins.root) == str(tmp_path / "tools")
     assert (tmp_path / "skills").is_dir()
     assert (tmp_path / "tools").is_dir()
+    assert deps.executor.output_dir == (tmp_path / "tool_outputs").resolve()
+    assert (tmp_path / "tool_outputs").is_dir()

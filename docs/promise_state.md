@@ -63,7 +63,7 @@
 | 内置 MockProvider | ✅ | providers/registry.py:10 默认注册 mock |
 | 供应商配置只保存 credential_ref，不保存 key | ⚠️（偏差） | config.py:18-19 允许 api_key 直写且 factory.py:16 优先使用；README 有本地场景说明，但与 SPEC 3.4/§7.1/4.2 冲突 |
 | 模型列表输出 | ✅ | routes.py:814 GET /models、/config/model |
-| 测试连接结果 | ⚠️（弱化） | cli config.ts:44-52 `provider test` 仅检查 provider 存在，不真实调用 LLM |
+| 测试连接结果 | ✅ | routes.py:974-1005 `/providers/{name}/test` 真实调用 provider.complete；cli config.ts provider test 走该端点 |
 | 未配置 key 的付费供应商不可用 | ✅ | factory.py 已删除缺 key raise；缺 key 供应商注册为无 key 实例，运行时调用才失败（不可用语义从启动期推迟到调用期） |
 | 本地 provider 可无 key | ✅ | factory.py:16-22 无 key 也注册（api_key=None） |
 | base URL 必须显式配置 | ✅ | config.py base_url 必填字段 |
@@ -75,16 +75,16 @@
 | 承诺 | 状态 | 证据 |
 |---|---|---|
 | 统一 Tool 接口：名称、参数 schema | ✅ | tools/base.py:17-23（name/description/schema/execute） |
-| Tool 接口含权限声明、沙箱要求、超时 | ✅ | tools/base.py Protocol 含 permissions/sandbox/timeout；17 个内置工具全量声明；Action 携带声明（models/action.py）；守卫按权限分级（guardrail.py DANGEROUS_PERMISSIONS/UNMANAGED_ESCALATION_PERMISSIONS）；catalog 输出审计 |
-| 内置工具 17 个（SPEC 列表） | ✅（演进） | 16 个保留 + edit_file 新增；mcp_tool 由 MCP 远程工具注册替代（§3.9 机制） |
+| Tool 接口含权限声明、沙箱要求、超时 | ✅ | tools/base.py Protocol 含 permissions/sandbox/timeout；18 个内置工具全量声明；Action 携带声明（models/action.py）；守卫按权限分级（guardrail.py DANGEROUS_PERMISSIONS/UNMANAGED_ESCALATION_PERMISSIONS）；catalog 输出审计 |
+| 内置工具 18 个（SPEC 列表） | ✅（演进） | 17 个保留 + edit_file + read_tool_output 新增；mcp_tool 由 MCP 远程工具注册替代（§3.9 机制） |
 | 用户工具 `.kl/tools/<name>/` Python 插件 API | ✅ | plugins/loader.py |
 | 工具描述进入系统提示词 | ✅（等价） | agent_loop.py:138-158 以原生 tools 参数提供，效果等价 |
 | 工具执行有超时和资源限制 | ✅ | tool_executor.py 按工具声明 timeout 定制（run_tests 180s/run_command 120s/读写 30s），未声明回退 60s；max_output_chars=20k |
-| 大型输出截断并保留文件引用 | ✅ | 截断时完整输出落盘 .kl/tool_outputs/<task>_<tool>_<uuid>.txt（tool_executor _persist_full_output，OSError 容错），references 含落盘路径 + 操作涉及文件双语义，meta.output_file 记录 |
+| 大型输出截断并保留文件引用 | ✅ | 截断时完整输出落盘 ~/.kl/tool_outputs/<session>/<task>/<tool>_<uuid>.txt（tool_executor _persist_full_output，OSError 容错），references 含落盘路径 + 操作涉及文件双语义，meta.output_file 记录 |
 | 工具崩溃/超时/权限不足分别返回结构化错误 | ✅ | tool_executor.py:86-90 |
 | schema 错误返回结构化错误 | ✅ | tools/registry.py:38-51 jsonschema 执行前校验，ValidationError/SchemaError 区分，统一 schema_error: <message>；jsonschema>=4.0 已入 pyproject |
 
-## §3.6 Guardrail 治理（核验 2026-08-08，兑现约 95%，唯一剩余：审批超时）
+## §3.6 Guardrail 治理（核验 2026-08-08，审批超时已修复，兑现 100%）
 
 | 承诺 | 状态 | 证据 |
 |---|---|---|
@@ -93,8 +93,8 @@
 | SandboxPolicy 环境变量清理 | ✅ | sandbox.py sanitize_env：_BASE_ENV_KEYS 白名单 + _SENSITIVE_ENV_RE（AWS_/OPENAI/KEY/TOKEN/SECRET/PASSWORD 等）过滤 → command_env() 注入 ctx.sandbox.env → shell.py env= 子进程只拿裁剪环境 |
 | SandboxPolicy 超时和资源限制 | ✅ | SandboxConfig（timeout/max_cpu_seconds/max_memory_mb）→ SandboxPolicy → executor 每工具注入 ctx.sandbox.limits + timeout=min(tool, sandbox) → shell.py RLIMIT_CPU/RLIMIT_AS preexec_fn 生效（POSIX） |
 | DangerClassifier 按动作/路径/命令/影响输出危险等级 | ✅ | guardrail.py:36-100（normal/dangerous/critical + rm -rf 根目标、git push --force 检测） |
-| HITL 状态机：等待批准/拒绝/修改/超时 | ✅（缺超时） | guardrail.py:114-156（pending/approved/rejected/aborted 状态转移） |
-| 审批超时按配置拒绝或冻结任务 | ❌ | HITLManager 无超时机制 |
+| HITL 状态机：等待批准/拒绝/修改/超时 | ✅ | guardrail.py:114-156（pending/approved/rejected/aborted 状态转移）+ ApprovalHub 超时决策 |
+| 审批超时按配置拒绝或冻结任务 | ✅ | ApprovalHub asyncio.wait_for + agent_loop decision=timeout；默认 300s，config.guardrail.approval_timeout_seconds 可调 |
 | 非 Git 模式默认更严格 | ✅ | guardrail.py:88/98 UNMANAGED_ESCALATION_TOOLS |
 | 治理逻辑不依赖 LLM | ✅ | 纯代码实现 |
 | 每条决策写入行为日志 | ✅ | tool_executor 每次 guardrail.check 后写独立 governance_decision 事件（tool/decision/args/permissions），异常写 decision="error"；bootstrap 注入 executor.logger |
@@ -215,7 +215,7 @@
 | EventLog：id/task_id/事件类型/脱敏 payload/时间戳 | ✅ | event_logger.py |
 | WorkspaceSnapshot：路径/校验值 | ⚠️ | snapshot.py 有路径 + .meta（restore 时校验归属）；内容校验值缺 |
 | SQLite 存状态/任务/记忆/审计索引 | ✅ | storage/database.py + memory/store.py |
-| 大型输出存文件，库只存引用和摘要 | ✅ | 截断时完整输出落盘 .kl/tool_outputs/（tool_executor _persist_full_output），references + meta.output_file 引用 |
+| 大型输出存文件，库只存引用和摘要 | ✅ | 截断时完整输出落盘 ~/.kl/tool_outputs/（tool_executor _persist_full_output），references + meta.output_file 引用 |
 | 项目数据 .kl/ 并 gitignore | ✅ | .gitignore + README |
 | 凭据不进 SQLite 或日志 | ✅ | credentials.master 独立加密文件 |
 
@@ -232,7 +232,7 @@
 | key show 只显示是否已配置 | ✅ | routes.py:843-848 返回 {"configured": bool} |
 | 服务端 PyPI/uv 安装（console 入口 kl-server） | ✅ | pyproject.toml |
 | CLI/TUI npm 安装（bin 配置） | ✅ | cli/package.json |
-| make dev 同时启动服务端和 TUI | ❌ | README 已知限制：make dev 为占位守卫（退出码 1） |
+| make dev 同时启动服务端和 TUI | ✅ | Makefile dev -> cd cli && npm run tui；服务端未启动时 TUI 自动拉起 daemon |
 | Docker 作为后续部署方案 | ✅（不实现） | §12 未授权范围 |
 
 ## §9 验收标准（核验 2026-08-07，兑现 8/9 条基本满足）
@@ -263,6 +263,10 @@
 - 2026-08-08 复核批次三（用户修复）：⑩§3.11 审批事件独立日志（approval_request 含 action_id/tool/args/level、approval_complete 含 decision），专项测试断言请求与决策落盘——§3.11 升至 100%（继 §3.7/§3.8 后第三个全兑现章节）。全量缺口降至 13 项。
 - 2026-08-08 信息同步批次四：§4 日志覆盖行升至 ✅（治理+审批事件齐备，兑现率 90%，剩余 4 项：kl init 冷启动 gap、token 用量状态接口、工具重试上限、CI 构建检查）；§4 引导证据更新为 connect-manager、CI pass 记录更新（npmmirror 502 为基础设施问题）；§6 Approval/WorkspaceSnapshot 行补充审计覆盖说明（校验值仍缺，兑现率 75% 保持）。
 - 2026-08-08 修复批次五：①§4.3 kl init 冷启动自动拉起（连接被拒 → server start → 轮询 /health → 重试；仅网络错误触发，+3 测试）；②§4.5 CI dist-check job（wheel/sdist 构建 + zipfile 包内容断言 + cli build + --help 可运行性，本地全链路验证）；③max_iterations 默认值 10→20（bootstrap 显式覆盖删除，单一来源）——§4 兑现率升至约 95%，剩余 2 项：token 用量状态接口、工具重试上限。全量缺口 13 → 11 项。
+- 2026-08-09 修复批次六：P2-7 发布资产补齐（examples/config.example.yaml、LICENSE、RELEASE_NOTES.md），make dev 接线为 cd cli && npm run tui；`make dev` 项已从缺口列表移出。
+- 2026-08-09 修复批次七：P2-6 文档与行为对齐。默认 provider 统一说明为 deepseek，/connect 优先配置 API，/model 可切换 mock；README/promise_state 的审批超时与 provider test 状态已同步。
+- 2026-08-09 修复批次八：工具输出统一迁移到 ~/.kl/tool_outputs，支持 storage 配置、MANIFEST.jsonl 元数据和保留策略；服务端启动不再创建项目 .kl/tool_outputs。
+- 2026-08-09 修复批次九：新增 read_tool_output 内置工具，可从全局 tool_outputs 读取登记过的完整输出；manifest 支持 available/deleted_at，清理时写入 tombstone。
 
 ## 全量缺口汇总（2026-08-08 更新：CommandRegistry 已修复移出，交互确认剩 2 项）
 
@@ -274,13 +278,10 @@
 3. Git 任务自动建分支 + 失败回退快照（§3.2）
 4. 连续失败达阈值任务失败保留现场（§3.3，现有仅警告信号）
 5. 循环级 token 预算停止条件（§3.3/§4.4；Task 无 token 用量字段）
-6. 审批超时机制（§3.6，HITL 无超时，无人值守时任务无限挂起——§3.6 唯一剩余缺口）
-7. 删除 session 二次确认、/session close 运行中检查（§3.1；/exit 运行中确认已修复）
-8. 工具执行重试上限（§4.1，工具层无重试）
+6. 删除 session 二次确认、/session close 运行中检查（§3.1；/exit 运行中确认已修复）
+7. 工具执行重试上限（§4.1，工具层无重试）
 
 **P2（规格形式/增强）**
-9. 5 个斜杠指令名义缺失（§3.10：/provider /key /tools /hooks /sessions——/sessions 由 /session 面板覆盖、/provider /key 由 /config 向导+/model 覆盖、/tools /hooks 无覆盖）
-10. 数据模型字段补齐（token 用量/parent_task_id/Action 结果字段/快照校验值/MemoryEntry token 估算）（§6；其中大型输出落盘已修复）
-11. make dev 接线（§7.2，仍为占位守卫）
-12. provider test 真实连接测试（§3.4，现仅检查 provider 存在）
-13. MCP 远程工具无权限声明（默认 normal 分级；配置即信任可辩护，更保守可强制审批）
+8. 5 个斜杠指令名义缺失（§3.10：/provider /key /tools /hooks /sessions——/sessions 由 /session 面板覆盖、/provider /key 由 /config 向导+/model 覆盖、/tools /hooks 无覆盖）
+9. 数据模型字段补齐（token 用量/parent_task_id/Action 结果字段/快照校验值/MemoryEntry token 估算）（§6；其中大型输出落盘已修复）
+10. MCP 远程工具无权限声明（默认 normal 分级；配置即信任可辩护，更保守可强制审批）

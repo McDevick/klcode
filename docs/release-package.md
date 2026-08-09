@@ -1,6 +1,6 @@
 # KL Code Release 包内容清单
 
-> 状态：草案（2026-08-09）
+> 状态：草案（2026-08-09，基础发布资产已补齐）
 > 目标：明确正式发布时需要构建、检查和附带哪些文件，避免把用户数据/密钥/本地环境打进发布包。
 
 ## 1. 版本约定
@@ -54,21 +54,17 @@ npm pack --dry-run
 
 ### 2.3 文档与配置模板
 
-建议随 release 附带的文档：
+当前仓库已提供以下发布文档与资产：
 
 - `README.md`
+- `docs/check.md`
 - `docs/server-redesign.md`
 - `docs/context-redesign.md`
-- `LICENSE`（如项目已有或计划引入）
+- `LICENSE`（MIT）
 - `RELEASE_NOTES.md`：本次版本变更、已知问题、升级注意事项
+- `examples/config.example.yaml`
 
-强烈建议新增一个示例配置：
-
-```text
-examples/config.example.yaml
-```
-
-内容覆盖：
+示例配置内容覆盖：
 
 - `default_provider` / `default_model`
 - provider 的 `base_url` / `default_model` / `credential_ref`
@@ -127,7 +123,7 @@ server/__pycache__/
 - 自动创建 `~/.kl/`
 - 自动创建/自举 `~/.kl/venv`
 - 自动生成 `~/.kl/daemon.token`
-- 如果用户没有配置 `~/.kl/config.yaml`，使用默认 mock provider
+- 如果用户没有配置 `~/.kl/config.yaml`，加载器会自动合并 DeepSeek 预设并把默认 provider 设为 `deepseek`；需要 mock 冷启动请使用 `/model` 切换，或在配置中显式设置 `default_provider: mock`
 - 如果用户没有 `~/.kl/user-rules.md`、`~/.kl/skills/`、`~/.kl/tools/`，不报错
 
 项目目录不再作为配置/数据库根目录；项目级规则只读取：
@@ -137,11 +133,13 @@ server/__pycache__/
 <项目>/AGENTS.md
 ```
 
-项目级大输出落盘只发生在：
+大输出统一落盘到全局目录：
 
 ```text
-<session workspace>/.kl/tool_outputs/
+~/.kl/tool_outputs/
 ```
+
+可通过 `storage.tool_outputs_dir` 覆盖，不再在项目工作区创建 `.kl/tool_outputs`。
 
 ## 6. 发布前检查清单
 
@@ -150,6 +148,7 @@ server/__pycache__/
 - [ ] `cd cli && npm run build && npm run check:server-version` 成功
 - [ ] `npm pack --dry-run` 只包含 `dist` 和 package metadata
 - [ ] 测试全量通过：`server` 与 `cli`
-- [ ] 示例配置 `examples/config.example.yaml` 已包含
+- [x] 示例配置 `examples/config.example.yaml` 已包含
 - [ ] 发布包内没有 `.kl`、密钥、数据库、日志、venv、node_modules
-- [ ] release notes 已写清升级迁移说明
+- [x] `LICENSE` 与 `RELEASE_NOTES.md` 已包含
+- [x] release notes 已写清升级迁移说明

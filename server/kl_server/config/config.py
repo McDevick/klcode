@@ -37,6 +37,21 @@ class ProviderConfig(BaseModel):
     models: list[str] = []
 
 
+class StorageConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tool_outputs_dir: str | None = None
+    tool_outputs_retention_days: int | None = None
+    tool_outputs_max_mb: int | None = None
+
+    @field_validator("tool_outputs_retention_days", "tool_outputs_max_mb")
+    @classmethod
+    def _validate_positive_limits(cls, value: int | None) -> int | None:
+        if value is not None and value <= 0:
+            raise ValueError("tool_outputs retention/max_mb must be positive")
+        return value
+
+
 class AppConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -45,5 +60,6 @@ class AppConfig(BaseModel):
     default_model: str = ""  # 全局默认模型；空则用各 provider 自身的 default_model
     hooks: dict[str, list[dict]] = {}  # 生命周期 hook 配置（command/http），key 为事件名
     mcp: dict[str, dict] = {}  # MCP server 配置，key 为 server 名
+    storage: StorageConfig = StorageConfig()
     sandbox: SandboxConfig = SandboxConfig()
     guardrail: GuardrailConfig = GuardrailConfig()

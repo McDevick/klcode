@@ -31,7 +31,7 @@
 │  用户指令沉淀：约束/偏好/流程（Phase 2 新增）     │
 ├─ 轨迹层（预算内，分桶）────────────────────────┤
 │  桶A 对话/决策：最近 N 轮 + 旧桶结构化摘要        │
-│  桶B 工具结果：最近 K 个 + 旧引用 .kl/tool_outputs│
+│  桶B 工具结果：最近 K 个 + 旧引用 ~/.kl/tool_outputs│
 │  桶C 反馈/观察：同类合并去重                     │
 └────────────────────────────────────────────────┘
         │ 每轮：used_tokens 记账 → 累计到 Task
@@ -66,7 +66,7 @@
 1. history 运行时划分为三桶：A 对话/决策（user 文本 + assistant 文本）、B 工具结果（role: tool）、C 反馈/观察（feedback 前缀 user 消息）
 2. `should_compress`/`compact_history` 桶感知：
    - 桶 A：保留最近 N 轮，旧桶交给 LLMSummarizer（保留现有增量摘要）
-   - 桶 B：只留最近 K 个完整结果，更早的替换为 `.kl/tool_outputs/<file>` 引用（复用已有落盘机制）
+   - 桶 B：只留最近 K 个完整结果，更早的替换为 `~/.kl/tool_outputs/<file>` 引用（复用已有落盘机制）
    - 桶 C：同类（同 category）只留最新一条
 3. 摘要失败 fallback：桶 A 保留最近 4 轮原始（现状行为，不回归）
 

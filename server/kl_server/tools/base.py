@@ -15,6 +15,7 @@ class ToolContext:
     permissions: list[str] = field(default_factory=list)
     sandbox: dict[str, Any] = field(default_factory=dict)
     tool_timeout: float | None = None
+    tool_outputs_dir: str | None = None
 
 
 class Tool(Protocol):

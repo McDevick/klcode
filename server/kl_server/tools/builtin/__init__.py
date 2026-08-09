@@ -8,6 +8,7 @@ from .patch import ApplyPatchTool
 from .search import GlobTool, GrepTool
 from .shell import RunCommandTool
 from .task import TaskManageTool
+from .tool_output import ReadToolOutputTool
 from .validation import RunLintTool, RunTestsTool, TypecheckTool
 
 
@@ -31,6 +32,7 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
         RunLintTool(),
         TypecheckTool(),
         TaskManageTool(),
+        ReadToolOutputTool(),
     ]
     for tool in tools:
         registry.register(tool)

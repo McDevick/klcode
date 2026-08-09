@@ -546,6 +546,7 @@ def test_register_builtin_tools_catalog():
         "run_lint",
         "typecheck",
         "task_manage",
+        "read_tool_output",
     }
 
 

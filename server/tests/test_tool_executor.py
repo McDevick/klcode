@@ -1,4 +1,7 @@
 import asyncio
+import json
+import os
+import time
 from pathlib import Path
 
 import pytest
@@ -6,6 +9,7 @@ from kl_server.core.guardrail import DangerClassifier, Guardrail, HITLManager, S
 from kl_server.core.sandbox import SandboxPolicy
 from kl_server.models.action import ToolResult
 from kl_server.tools.base import Tool, ToolContext
+from kl_server.tools.builtin.tool_output import ReadToolOutputTool
 from kl_server.tools.registry import ToolRegistry
 from kl_server.core.tool_executor import ToolExecutor
 
@@ -212,22 +216,130 @@ async def test_executor_keeps_references_when_truncating(tmp_path):
 async def test_executor_persists_full_output_file(tmp_path):
     registry = ToolRegistry()
     registry.register(BigFileTool())
-    executor = ToolExecutor(registry, max_output_chars=10_000)
+    output_dir = tmp_path / "tool_outputs"
+    executor = ToolExecutor(
+        registry,
+        max_output_chars=10_000,
+        output_dir=output_dir,
+    )
     assert not (tmp_path / ".kl").exists()
 
     result = await executor.execute(
         "big_file",
         {},
-        ToolContext(workspace=str(tmp_path), task_id="t1"),
+        ToolContext(workspace=str(tmp_path), session_id="s1", task_id="t1"),
     )
 
     output_file = result.meta.get("output_file")
     assert output_file is not None
     assert Path(output_file).exists()
-    assert (tmp_path / ".kl" / "tool_outputs").is_dir()
+    assert output_dir.is_dir()
+    assert not (tmp_path / ".kl").exists()
     assert Path(output_file).read_text(encoding="utf-8") == "x" * 100_000
     assert output_file in result.references
     assert "src/a.ts" in result.references
+
+    manifest = output_dir / "MANIFEST.jsonl"
+    assert manifest.exists()
+    record = json.loads(manifest.read_text(encoding="utf-8").splitlines()[-1])
+    assert record["session_id"] == "s1"
+    assert record["task_id"] == "t1"
+    assert record["tool"] == "big_file"
+    assert record["output_file"] == output_file
+
+
+async def test_executor_can_read_registered_full_output(tmp_path):
+    registry = ToolRegistry()
+    registry.register(BigFileTool())
+    registry.register(ReadToolOutputTool())
+    output_dir = tmp_path / "tool_outputs"
+    executor = ToolExecutor(
+        registry,
+        max_output_chars=10_000,
+        output_dir=output_dir,
+    )
+
+    result = await executor.execute(
+        "big_file",
+        {},
+        ToolContext(workspace=str(tmp_path), session_id="s1", task_id="t1"),
+    )
+    output_file = result.meta.get("output_file")
+    assert output_file is not None
+
+    reader_registry = ToolRegistry()
+    reader_registry.register(ReadToolOutputTool())
+    reader = ToolExecutor(
+        reader_registry,
+        max_output_chars=200_000,
+        output_dir=output_dir,
+    )
+    read = await reader.execute(
+        "read_tool_output",
+        {"output_file": output_file},
+        ToolContext(workspace=str(tmp_path), session_id="s1", task_id="t1"),
+    )
+
+    assert read.ok is True
+    assert read.output == "x" * 100_000
+
+
+async def test_executor_read_tool_output_rejects_missing_and_deleted(tmp_path):
+    registry = ToolRegistry()
+    registry.register(ReadToolOutputTool())
+    output_dir = tmp_path / "tool_outputs"
+    output_dir.mkdir()
+    executor = ToolExecutor(registry, output_dir=output_dir)
+    ctx = ToolContext(workspace=str(tmp_path), session_id="s1", task_id="t1")
+
+    missing = await executor.execute(
+        "read_tool_output",
+        {"output_file": str(output_dir / "missing.txt")},
+        ctx,
+    )
+    assert missing.ok is False
+    assert "not registered" in (missing.error or "")
+
+    deleted = output_dir / "deleted.txt"
+    deleted.write_text("gone", encoding="utf-8")
+    executor._append_manifest(
+        "big",
+        "gone",
+        ToolContext(workspace=str(tmp_path), session_id="s1", task_id="t1"),
+        deleted,
+        output_dir,
+    )
+    executor._mark_deleted(output_dir, deleted)
+    deleted.unlink()
+
+    result = await executor.execute(
+        "read_tool_output",
+        {"output_file": str(deleted)},
+        ctx,
+    )
+    assert result.ok is False
+    assert "not found" in (result.error or "")
+
+
+async def test_executor_removes_outputs_older_than_retention(tmp_path):
+    output_dir = tmp_path / "tool_outputs"
+    output_dir.mkdir()
+    executor = ToolExecutor(
+        ToolRegistry(),
+        output_dir=output_dir,
+        output_retention_days=1,
+    )
+    old = output_dir / "old.txt"
+    new = output_dir / "new.txt"
+    old.write_text("old", encoding="utf-8")
+    new.write_text("new", encoding="utf-8")
+    past = time.time() - 2 * 86400
+    os.utime(old, (past, past))
+
+    executor._enforce_retention(output_dir)
+
+    assert not old.exists()
+    assert new.exists()
 
 
 class FakeSummarizer:

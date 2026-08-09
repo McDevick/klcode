@@ -20,7 +20,7 @@
   - 事实层：记忆按 kind 配额 + 关键词相关注入；**用户指令沉淀**（note/任务描述中的约束、偏好、流程跨任务生效）
   - 轨迹层：历史分桶压缩（对话摘要 + 工具结果落盘引用 + 反馈去重）
 - **治理**：ScopeFence 路径围栏、SandboxPolicy 命令策略（白/黑名单、环境变量裁剪、CPU/内存资源限制、fail-closed）、DangerClassifier 危险分级（按工具权限声明）、HITL 审批状态机、`governance_decision`/审批事件审计
-- **工具系统**：17 个内置工具（文件/搜索/补丁/shell/git/测试/任务编排）+ 用户 Python 插件 + MCP 远程工具发现注册；工具声明权限/沙箱/超时；jsonschema 参数校验；大输出落盘引用
+- **工具系统**：18 个内置工具（文件/搜索/补丁/shell/git/测试/任务编排/输出读取）+ 用户 Python 插件 + MCP 远程工具发现注册；工具声明权限/沙箱/超时；jsonschema 参数校验；大输出全局落盘引用
 - **持久化**：SQLite（会话/任务/记忆/状态）+ append-only 脱敏审计日志 + AES 加密凭证库（keyring 优先）
 - **TUI**：CommandRegistry 注册表（别名/参数 schema/状态门控）、双向状态门控、审批面板、会话/技能/MCP/模型/连接管理面板、/exit 运行中二次确认
 
@@ -54,19 +54,20 @@ kl server start         # 自动探测 python 拉起 uvicorn；或手动：
 # 5. 初始化（服务端没跑会自动拉起）
 kl init
 
-# 6. 配置真实模型（默认 mock）
+# 6. 配置真实模型（默认 deepseek，先配置 API 或切换 mock）
 kl config provider add deepseek openai-compatible https://api.deepseek.com deepseek-v4-flash
 kl config key set deepseek          # 隐藏输入，进系统钥匙串
+# 默认已预置 deepseek。TUI 内优先使用 /connect 配置 API，也可用 /model 切换到 mock。
 
 # 7. 启动 TUI 提交任务（需要真实终端 TTY）
 npm run tui
 ```
 
-首次启动自动生成全局 `~/.kl/`（daemon.token、config.yaml、kl.db、audit.jsonl、memory.db）。缺少 config.yaml 也能启动，默认 provider 为 `mock`。
+首次启动自动生成全局 `~/.kl/`（daemon.token、config.yaml、kl.db、audit.jsonl、memory.db）。默认 provider 为 `deepseek`；请先通过 `/connect` 配置 API Key，或使用 `/model` 切换为 `mock`。也可以把 `examples/config.example.yaml` 复制为 `~/.kl/config.yaml` 后启动。
 
 > 配置与数据已全局化：daemon 只读取 `~/.kl/config.yaml`，不再读取项目目录下的 `.kl/config.yaml`。旧项目配置中的 provider/key 引用需手动迁移到 `~/.kl/config.yaml`。
 >
-> skill 与用户工具也全局化：`~/.kl/skills/`、`~/.kl/tools/`；服务端启动不再在启动目录创建 `.kl/skills`/`.kl/tools`。
+> skill、用户工具与大输出也全局化：`~/.kl/skills/`、`~/.kl/tools/`、`~/.kl/tool_outputs/`；服务端启动不再在启动目录创建 `.kl`。
 
 ## 安装
 
@@ -170,7 +171,7 @@ python -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700 --timeout-grac
 kl-server
 ```
 
-`make dev`（roadmap，尚未可用）：当前是占位守卫，输出提示并以退出码 1 结束（待接线为"同时启动服务端与 TUI"）。
+`make dev`（已可用）：构建 CLI 并启动 TUI；服务端未启动时，TUI 会自动拉起 daemon。需要真实 TTY。
 
 ### CLI
 
@@ -211,7 +212,7 @@ npx tsx src/main.ts tui          # 开发模式（免构建）
 node dist/main.js tui            # 已构建过时
 ```
 
-TUI 启动后自动创建 session（workspace 为当前目录）并连接服务端，支持：
+TUI 启动后自动创建 session（workspace 为当前目录）并连接服务端。若默认 provider 未配置 API Key，会提示先使用 `/connect` 配置，也可用 `/model` 切换为 `mock`。支持：
 
 - 输入任务回车 → 创建任务并在服务端后台执行，实时显示事件流（loop / tool / feedback / task_end）
 - 危险动作弹出审批菜单：方向键选择 approve/reject/abort，Enter 确认；快捷键 `a`/`r`/`x`
@@ -231,7 +232,7 @@ TUI 启动后自动创建 session（workspace 为当前目录）并连接服务�
 make install   # 本地可编辑安装（server 使用 pip editable，CLI 使用 npm install）
 make ci        # CI 依赖安装（CLI 使用 npm ci）
 make test      # 运行 server pytest 与 CLI vitest
-make dev       # roadmap 占位，默认退出码 1
+make dev       # 构建 CLI 并启动 TUI；服务端未启动时自动拉起 daemon
 ```
 
 打包配置已就绪（Task 5.3）：
@@ -271,16 +272,21 @@ CI 包含两个 job：`unit-test`（make ci + make test）与 `dist-check`（whe
 
 ## 关键配置
 
-- Provider 注册默认使用 `mock`；可通过配置新增 openai-compatible 实例（加载器含 DeepSeek 预设，config.yaml 留空也会自动合并）。
+- 示例配置见 `examples/config.example.yaml`，默认 provider 为 `deepseek`。首次使用先通过 `/connect` 配置 API Key，也可用 `/model` 切换到 `mock`；如果确实需要配置文件默认 mock，再显式设置 `default_provider: mock`。
 - 配置加载：`kl_server.config.loader.load_app_config`，配置模型 `kl_server.config.config.AppConfig`（YAML，`extra="forbid"`，含 `sandbox` 配置节）。
+- 全局工具输出：默认写入 `~/.kl/tool_outputs/`，可通过 `storage.tool_outputs_dir` 覆盖，并支持 `storage.tool_outputs_retention_days` / `storage.tool_outputs_max_mb` 清理策略。
 - 凭证存储：`kl_server.config.credentials`（keyring 后端，AES 加密文件回退，支持 .env）。
 - 配置 YAML 由 `bootstrap.build_app_dependencies` 在服务启动时加载（含 fail-closed 兜底：配置损坏时以 deny_all 沙箱启动并暴露错误）。
 
 ## 已知限制
 
-- `make dev` 仍为占位守卫，按 roadmap 处理。
+- `run_command` 不是 OS 级沙箱：当前默认 `sandbox.allow` 为空时，除 `deny` 列表外可执行任意本机命令，也能读写 workspace 外文件。当前按“本地完整权限模式”使用，不建议在不可信目录或多人共享环境中运行。
+- 凭据保护存在本地文件读取风险：keyring 不可用时，AES 加密回退的主密码与密文同存于 `~/.kl`；配置也允许明文 `api_key`。这主要用于防止误提交/意外泄露，不能防御能读取 `~/.kl` 的攻击者。API Key 仍建议优先通过 `/connect` 或 keyring 保存。
+- 上下文 token 预算：当前使用估算，没有模型真实 tokenizer/usage，也没有循环级 token 硬停止；长任务主要靠 `max_iterations` 兜底，当前版本不处理。
+- Hook 执行同步阻塞：command/http hook 会在 async 事件循环内同步执行，慢 hook 可能阻塞其他任务和 WS 事件，当前版本不处理。
+- 快照/Git 边界：非 Git 快照失败时任务仍继续；Git 模式不自动创建任务分支，`run_command` 允许普通 `git push`，当前版本不处理。
 - `kl server start` 探测 python 需要能导入 uvicorn/fastapi/kl_server；若本机只有缺依赖的系统 python，请用项目 venv 手动启动。
 - 服务端凭据库在 keyring 与加密文件都不可用时才回退为内存存储（不持久化），初始化时会提示。
 - 任务在 Git 仓库中直接修改当前分支文件（自动建任务分支未实现，回滚靠手动 git 还原）；非 Git 目录任务开始时做快照，但快照不自动回滚。
-- 审批请求无超时机制：无人值守时任务会一直等待审批。
+- 审批请求默认 300 秒超时，超时自动拒绝；可在 `config.yaml` 的 `guardrail.approval_timeout_seconds` 调整。
 - WebUI、subagent 分派、远程部署与 Docker **不在** `SPEC.md`/`PLAN.md` 授权范围内，仓库不会承诺这些能力。

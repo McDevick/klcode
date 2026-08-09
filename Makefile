@@ -13,5 +13,4 @@ test:
 	cd cli && npm test
 
 dev:
-	@echo "make dev is not available until server main and cli tui entrypoints exist"
-	@exit 1
+	cd cli && npm run tui

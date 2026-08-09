@@ -337,7 +337,7 @@ class BucketCompressContext(CompressContext):
             {"role": "user", "content": "[历史摘要] bucket"},
             {
                 "role": "tool",
-                "content": "[文件引用] .kl/tool_outputs/old.txt",
+                "content": "[文件引用] ~/.kl/tool_outputs/old.txt",
             },
             {
                 "role": "user",
@@ -704,7 +704,7 @@ async def test_loop_applies_bucket_compaction_result():
         for message in messages
     ]
     assert any("Previous context summary" in content for content in contents)
-    assert any("[文件引用] .kl/tool_outputs/old.txt" in content for content in contents)
+    assert any("[文件引用] ~/.kl/tool_outputs/old.txt" in content for content in contents)
     assert any("bad2" in content for content in contents)
     assert not any("bad1" in content for content in contents)
 

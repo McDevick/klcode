@@ -122,6 +122,31 @@ def test_app_config_merges_existing_capitalized_deepseek(tmp_path):
 
 
 
+def test_app_config_loads_storage_settings(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "storage:\n"
+        "  tool_outputs_dir: outputs\n"
+        "  tool_outputs_retention_days: 30\n"
+        "  tool_outputs_max_mb: 500\n",
+        encoding="utf-8",
+    )
+
+    config = load_app_config(path)
+
+    assert config.storage.tool_outputs_dir == "outputs"
+    assert config.storage.tool_outputs_retention_days == 30
+    assert config.storage.tool_outputs_max_mb == 500
+
+
+def test_app_config_rejects_non_positive_storage_limits():
+    try:
+        AppConfig(storage={"tool_outputs_retention_days": 0})
+    except Exception:
+        return
+    raise AssertionError("tool_outputs_retention_days below 1 should be rejected")
+
+
 def test_app_config_approval_timeout_default_and_validation():
     config = AppConfig()
     assert config.guardrail.approval_timeout_seconds == 300.0

@@ -1,7 +1,11 @@
 import asyncio
+import json
+import os
 import re
+import time
 import uuid
 from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +41,9 @@ class ToolExecutor:
         summarizer=None,
         logger=None,
         sandbox_policy=None,
+        output_dir: str | Path | None = None,
+        output_retention_days: int | None = None,
+        output_max_mb: int | None = None,
     ):
         self.registry = registry
         self.timeout = timeout
@@ -45,8 +52,15 @@ class ToolExecutor:
         self.summarizer = summarizer
         self.logger = logger
         self.sandbox_policy = sandbox_policy
+        self.output_dir = Path(output_dir).resolve() if output_dir is not None else None
+        self.output_retention_days = output_retention_days
+        self.output_max_mb = output_max_mb
         if self.max_output_chars <= 0:
             raise ValueError("max_output_chars must be positive")
+        if self.output_retention_days is not None and self.output_retention_days <= 0:
+            raise ValueError("output_retention_days must be positive")
+        if self.output_max_mb is not None and self.output_max_mb <= 0:
+            raise ValueError("output_max_mb must be positive")
 
     def _truncate(self, text: str) -> str:
         if len(text) <= self.max_output_chars:
@@ -56,6 +70,89 @@ class ToolExecutor:
             return marker[: self.max_output_chars]
         return text[: self.max_output_chars - len(marker)] + marker
 
+    def _set_private_dir(self, path: Path) -> None:
+        try:
+            os.chmod(path, 0o700)
+        except OSError:
+            pass
+
+    def _append_manifest(
+        self,
+        name: str,
+        output: str,
+        ctx: ToolContext,
+        output_path: Path,
+        root: Path,
+    ) -> None:
+        record = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "session_id": ctx.session_id or "",
+            "task_id": ctx.task_id or "",
+            "workspace": ctx.workspace,
+            "tool": name,
+            "output_file": str(output_path),
+            "size": len(output),
+            "available": True,
+            "deleted_at": None,
+        }
+        with (root / "MANIFEST.jsonl").open("a", encoding="utf-8") as manifest:
+            manifest.write(json.dumps(record, ensure_ascii=False) + "\n")
+            manifest.flush()
+
+    def _mark_deleted(self, root: Path, path: Path) -> None:
+        try:
+            record = {
+                "event": "deleted",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "output_file": str(path),
+                "deleted_at": datetime.now(timezone.utc).isoformat(),
+            }
+            with (root / "MANIFEST.jsonl").open("a", encoding="utf-8") as manifest:
+                manifest.write(json.dumps(record, ensure_ascii=False) + "\n")
+                manifest.flush()
+        except OSError:
+            pass
+
+    def _enforce_retention(self, root: Path) -> None:
+        if self.output_retention_days is None and self.output_max_mb is None:
+            return
+        now = time.time()
+        files = []
+        for path in root.rglob("*"):
+            if not path.is_file() or path.name == "MANIFEST.jsonl":
+                continue
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            files.append((stat.st_mtime, path, stat.st_size))
+        files.sort(key=lambda item: item[0])
+        if self.output_retention_days is not None:
+            cutoff = now - self.output_retention_days * 86400
+            remaining = []
+            for mtime, path, size in files:
+                if mtime < cutoff:
+                    self._mark_deleted(root, path)
+                    try:
+                        path.unlink()
+                    except OSError:
+                        pass
+                else:
+                    remaining.append((mtime, path, size))
+            files = remaining
+        if self.output_max_mb is not None:
+            limit = self.output_max_mb * 1024 * 1024
+            total = sum(item[2] for item in files)
+            for mtime, path, size in files:
+                if total <= limit:
+                    break
+                self._mark_deleted(root, path)
+                try:
+                    path.unlink()
+                    total -= size
+                except OSError:
+                    pass
+
     def _persist_full_output(
         self,
         name: str,
@@ -63,15 +160,23 @@ class ToolExecutor:
         ctx: ToolContext,
     ) -> str | None:
         try:
-            kl_root = Path(ctx.workspace) / ".kl"
-            kl_root.mkdir(parents=True, exist_ok=True)
-            root = kl_root / "tool_outputs"
+            root = self.output_dir
+            if root is None:
+                root = Path(ctx.workspace) / ".kl" / "tool_outputs"
             root.mkdir(parents=True, exist_ok=True)
+            self._set_private_dir(root)
+            session_dir = root / (str(ctx.session_id or "session"))
+            task_dir = session_dir / (str(ctx.task_id or "task"))
+            task_dir.mkdir(parents=True, exist_ok=True)
+            self._set_private_dir(task_dir)
             safe_name = re.sub(r"[^a-zA-Z0-9_-]+", "_", name)[:40]
-            output_path = root / (
-                f"{ctx.task_id or 'task'}_{safe_name}_{uuid.uuid4().hex[:8]}.txt"
-            )
+            output_path = task_dir / f"{safe_name}_{uuid.uuid4().hex[:8]}.txt"
             output_path.write_text(output, encoding="utf-8", errors="replace")
+            try:
+                self._append_manifest(name, output, ctx, output_path, root)
+            except OSError:
+                pass
+            self._enforce_retention(root)
             return str(output_path)
         except OSError:
             return None
@@ -179,11 +284,19 @@ class ToolExecutor:
                     if timeout is not None
                     else sandbox_timeout
                 )
+            resolved_output_dir = self.output_dir
+            if resolved_output_dir is None and ctx.workspace:
+                resolved_output_dir = Path(ctx.workspace) / ".kl" / "tool_outputs"
             tool_ctx = replace(
                 ctx,
                 permissions=list(getattr(tool, "permissions", [])),
                 sandbox=tool_sandbox,
                 tool_timeout=timeout,
+                tool_outputs_dir=(
+                    str(resolved_output_dir)
+                    if resolved_output_dir is not None
+                    else None
+                ),
             )
             result = await asyncio.wait_for(
                 self.registry.execute(name, args, tool_ctx),

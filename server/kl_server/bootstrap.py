@@ -27,6 +27,16 @@ from kl_server.tools.builtin import register_builtin_tools
 from kl_server.tools.registry import ToolRegistry
 
 
+def _resolve_tool_outputs_dir(config: AppConfig, global_kl_dir: Path) -> Path:
+    configured = config.storage.tool_outputs_dir
+    if not configured:
+        return global_kl_dir / "tool_outputs"
+    path = Path(configured).expanduser()
+    if not path.is_absolute():
+        path = global_kl_dir / path
+    return path.resolve()
+
+
 @dataclass
 class AppDependencies:
     config: AppConfig
@@ -114,7 +124,17 @@ def build_app_dependencies(
         danger=DangerClassifier(),
         hitl=HITLManager(),
     )
-    executor = ToolExecutor(tools, guardrail=guardrail, sandbox_policy=sandbox)
+    global_kl_dir = Path(config_path).parent
+    tool_outputs_dir = _resolve_tool_outputs_dir(config, global_kl_dir)
+    tool_outputs_dir.mkdir(parents=True, exist_ok=True)
+    executor = ToolExecutor(
+        tools,
+        guardrail=guardrail,
+        sandbox_policy=sandbox,
+        output_dir=str(tool_outputs_dir),
+        output_retention_days=config.storage.tool_outputs_retention_days,
+        output_max_mb=config.storage.tool_outputs_max_mb,
+    )
     logger = EventLogger(Path(log_path))
     executor.logger = logger
     memory = MemoryStore(db_path.parent / "memory.db")
@@ -124,7 +144,6 @@ def build_app_dependencies(
         default_max_context = default_provider_config.max_context
     context = ContextAssembler(max_tokens=default_max_context)
     hooks = HookManager(config.hooks)
-    global_kl_dir = Path(config_path).parent
     skills_root = global_kl_dir / "skills"
     skills_root.mkdir(parents=True, exist_ok=True)
     skills = SkillLoader(str(skills_root))
