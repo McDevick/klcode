@@ -52,3 +52,34 @@ test('run command with empty description shows usage', async () => {
 
   expect(output).toContain('usage');
 });
+
+test('run command auto-starts daemon on connection error and retries', async () => {
+  const fetchMock = vi
+    .fn()
+    .mockRejectedValueOnce(new TypeError('fetch failed'))
+    .mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 's1', workspace: process.cwd(), name: 'default', status: 'active' }),
+    })
+    .mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 't1', session_id: 's1', description: 'fix', status: 'pending' }),
+    });
+  vi.stubGlobal('fetch', fetchMock);
+  const serverStart = vi.fn().mockResolvedValue('server started (pid 123)');
+  const healthCheck = vi.fn().mockResolvedValue(true);
+  try {
+    const output = await RunCommand.run(['fix'], {
+      serverStart,
+      healthCheck,
+    });
+
+    expect(serverStart).toHaveBeenCalledWith(['start']);
+    expect(healthCheck).toHaveBeenCalledTimes(1);
+    expect(output).toContain('t1');
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

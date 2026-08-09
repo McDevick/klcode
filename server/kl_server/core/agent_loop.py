@@ -183,6 +183,16 @@ class AgentLoop:
         records = await load_user_instructions(self.memory, session_id)
         return format_user_instructions(records)
 
+    def _reject_hitl(self, action_id: str) -> None:
+        guardrail = getattr(self.tools, "guardrail", None)
+        hitl = getattr(guardrail, "hitl", None)
+        if hitl is None or not hasattr(hitl, "reject"):
+            return
+        try:
+            hitl.reject(action_id)
+        except ValueError:
+            pass
+
     async def _task_plan_text(self, session_id: str) -> str:
         if self.memory is None or not hasattr(self.memory, "get_state"):
             return ""
@@ -827,6 +837,11 @@ class AgentLoop:
                                 "tool": action.tool,
                                 "args": action.args,
                                 "level": approval_level,
+                                "timeout_seconds": getattr(
+                                    self.on_approval,
+                                    "timeout",
+                                    300,
+                                ),
                             },
                             task_id,
                         )
@@ -876,10 +891,20 @@ class AgentLoop:
                         if self.hooks:
                             self.hooks.run("task_end", {"reason": "aborted"})
                         return "ABORTED"
-                    if decision == "reject":
-                        # 该调用被拒绝：结果回传"拒绝"反馈，其余调用继续
+                    if decision in {"reject", "timeout"}:
+                        # 超时/用户拒绝都按拒绝路径处理，其余调用继续
+                        if decision == "timeout":
+                            self._reject_hitl(action_id)
                         history.append(
-                            {"role": "tool", "tool_call_id": call.id, "content": "action rejected by user"}
+                            {
+                                "role": "tool",
+                                "tool_call_id": call.id,
+                                "content": (
+                                    "approval timed out; action rejected"
+                                    if decision == "timeout"
+                                    else "action rejected by user"
+                                ),
+                            }
                         )
                         continue
                     if decision != "approve":

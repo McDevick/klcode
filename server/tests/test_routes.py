@@ -2,11 +2,14 @@ import yaml
 import json
 
 import pytest
+from time import sleep
+
 from fastapi.testclient import TestClient
 
 from kl_server.api.app import create_app
 from kl_server.bootstrap import build_app_dependencies
 from kl_server.config.credentials import InMemoryCredentialStore
+from kl_server.models.task import Session, Task, TaskStatus
 
 
 def make_client():
@@ -1129,3 +1132,137 @@ def test_list_keys_detects_keyring_keys_after_restart(tmp_path):
 
     assert response.status_code == 200
     assert response.json() == {"configured": ["deepseek"]}
+
+
+def test_daemon_status_reports_source_and_ws_connections(tmp_path):
+    deps = build_app_dependencies(
+        config_path=tmp_path / "config.yaml",
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+    client = TestClient(create_app(deps=deps, daemon_source="auto"))
+    with client:
+        status = client.get("/daemon/status").json()
+        assert status == {"source": "auto", "running_tasks": 0, "ws_connections": 0}
+        with client.websocket_connect("/ws/daemon") as websocket:
+            assert websocket
+            status = client.get("/daemon/status").json()
+            assert status["ws_connections"] == 1
+
+
+@pytest.mark.asyncio
+async def test_daemon_status_counts_running_tasks(tmp_path):
+    deps = build_app_dependencies(
+        config_path=tmp_path / "config.yaml",
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+    await deps.sessions.create(
+        Session(id="s1", workspace=str(tmp_path))
+    )
+    await deps.tasks.create(
+        Task(
+            id="t1",
+            session_id="s1",
+            description="long task",
+            status=TaskStatus.RUNNING,
+        )
+    )
+    client = TestClient(create_app(deps=deps))
+    with client:
+        status = client.get("/daemon/status").json()
+        assert status["running_tasks"] == 1
+
+
+def test_auto_daemon_idle_reaper_exits(tmp_path):
+    deps = build_app_dependencies(
+        config_path=tmp_path / "config.yaml",
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+    app = create_app(deps=deps, daemon_source="auto", idle_timeout=0.1)
+    exited: list[bool] = []
+    app.state.idle_exit = lambda: exited.append(True)
+    client = TestClient(app)
+    with client:
+        sleep(0.6)
+    assert exited
+
+
+def test_manual_daemon_not_reaped(tmp_path):
+    deps = build_app_dependencies(
+        config_path=tmp_path / "config.yaml",
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+    app = create_app(deps=deps, daemon_source="manual", idle_timeout=0.1)
+    exited: list[bool] = []
+    app.state.idle_exit = lambda: exited.append(True)
+    client = TestClient(app)
+    with client:
+        sleep(0.6)
+    assert not exited
+
+
+@pytest.mark.asyncio
+async def test_auto_daemon_task_keepalive(tmp_path):
+    deps = build_app_dependencies(
+        config_path=tmp_path / "config.yaml",
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+    await deps.sessions.create(Session(id="s1", workspace=str(tmp_path)))
+    await deps.tasks.create(
+        Task(id="t1", session_id="s1", description="long", status=TaskStatus.RUNNING)
+    )
+    app = create_app(deps=deps, daemon_source="auto", idle_timeout=0.1)
+    exited: list[bool] = []
+    app.state.idle_exit = lambda: exited.append(True)
+    client = TestClient(app)
+    with client:
+        sleep(0.6)
+    assert not exited
+
+
+def test_auto_daemon_ws_keepalive(tmp_path):
+    deps = build_app_dependencies(
+        config_path=tmp_path / "config.yaml",
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+    app = create_app(deps=deps, daemon_source="auto", idle_timeout=0.1)
+    exited: list[bool] = []
+    app.state.idle_exit = lambda: exited.append(True)
+    client = TestClient(app)
+    with client:
+        with client.websocket_connect("/ws/daemon") as websocket:
+            assert websocket
+            sleep(0.6)
+        assert not exited
+
+
+
+def test_approval_hub_uses_config_timeout(tmp_path):
+    deps = build_app_dependencies(
+        config_path=tmp_path / "config.yaml",
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+    deps.config.guardrail.approval_timeout_seconds = 123.0
+    client = TestClient(create_app(deps=deps))
+
+    assert client.app.state.approval_hub.timeout == 123.0

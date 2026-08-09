@@ -84,18 +84,19 @@ async def test_hub_request_broadcasts_approval_and_waits_for_resolution():
             "tool": "run_command",
             "args": {"command": "rm -rf /"},
             "level": "critical",
+            "timeout_seconds": 5.0,
         },
     )
 
 
 @pytest.mark.asyncio
-async def test_hub_request_times_out_with_reject():
+async def test_hub_request_times_out_with_timeout():
     bus = FakeBus()
     hub = ApprovalHub(bus=bus, timeout=0.05)
 
     decision = await hub.request("t1", {"action_id": "a1", "tool": "x", "args": {}, "level": "dangerous"})
 
-    assert decision == "reject"
+    assert decision == "timeout"
 
 
 def test_hub_resolve_unknown_action_is_noop():

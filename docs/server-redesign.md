@@ -121,32 +121,36 @@ kl server start 分支：
 
 ## 6. 实施步骤
 
-| 步骤 | 内容 | 工作量 |
-|---|---|---|
-| 1 | daemon.json 来源标记 + 环境变量传递 + stale 探测 | 小 |
-| 2 | **配置与数据路径全局化**（main.py 显式 `~/.kl/` 路径 + loader 单一全局源，摆脱 cwd 依赖） | 中 |
-| 3 | **全局自举 venv**（~/.kl/venv 检测/创建/安装 + 版本注入 + TTY/非 TTY 提示 + 无 python 报错） | 中 |
-| 4 | 服务端空闲监控（lifespan 后台任务：任务/WS 计数 + 计时 → 优雅退出） | 中 |
-| 5 | 手动 start 接管逻辑（auto → 停旧起新 / 有任务拒绝） | 中 |
-| 6 | tui / run 自动拉起（复用 init 已修逻辑） | 小 |
-| 7 | **WS 断线自动重连**（events.ts 指数退避，防假死 + 误回收） | 小 |
-| 8 | 测试：auto 回收 / manual 不回收 / 任务保活 / WS 断开重连取消回收 / 接管 / stale / 幂等 / 全局配置迁移 / 自举各分支 | 中 |
+| 步骤 | 内容 | 工作量 | 状态 |
+|---|---|---|---|
+| 1 | daemon.json 来源标记 + 环境变量传递 + stale 探测 | 小 | ✅ 已实施 |
+| 2 | **配置与数据路径全局化**（main.py 显式 `~/.kl/` 路径 + loader 单一全局源，摆脱 cwd 依赖） | 中 | ✅ 已实施 |
+| 3 | **全局自举 venv**（~/.kl/venv 检测/创建/安装 + 版本注入 + TTY/非 TTY 提示 + 无 python 报错） | 中 | ✅ 已实施 |
+| 4 | 服务端空闲监控（lifespan 后台任务：任务/WS 计数 + 计时 → 优雅退出） | 中 | ✅ 已实施 |
+| 5 | 手动 start 接管逻辑（auto → 停旧起新 / 有任务拒绝） | 中 | ✅ 已实施 |
+| 6 | tui / run 自动拉起（复用 init 已修逻辑） | 小 | ✅ 已实施 |
+| 7 | **WS 断线自动重连**（events.ts 指数退避，防假死 + 误回收） | 小 | ✅ 已实施 |
+| 8 | 测试：auto 回收 / manual 不回收 / 任务保活 / WS 断开重连取消回收 / 接管 / stale / 幂等 / 全局配置迁移 / 自举各分支 | 中 | ✅ 已实施 |
 
 **合计约 2 天。**
 
+> 截至 2026-08-09：步骤 1/2/3/4/5/6/7/8 已完成。
+
 ## 7. 配套项
 
-### 7.1 审批超时（promise_state P1-6）
+### 7.1 审批超时（promise_state P1-6） ✅ 已实现
 
 挂起审批不阻塞回收的前提——超时自动拒绝 → 任务继续或结束 → 可安全回收。建议与本设计同步或先行实施。
 
 **推荐配置**：
 
 ```yaml
-# .kl/config.yaml
+# ~/.kl/config.yaml
 guardrail:
   approval_timeout_seconds: 300     # 默认 5 分钟；范围建议 30 ~ 1800
 ```
+
+> 已实现：`guardrail.approval_timeout_seconds` 默认 300s；超时返回 `timeout` 决策并自动拒绝该动作；`approval_complete` 审计记录 `decision=timeout`；TUI 审批面板显示倒计时，超时后提示“审批超时，已自动拒绝该动作”。
 
 | 使用场景 | 建议值 |
 |---|---|
@@ -233,6 +237,6 @@ CI dist-check 增加一步：断言 cli 内置 SERVER_VERSION == pyproject versi
 
 理由：交互场景用户知情；无人值守场景不阻塞且留痕可查。
 
-### 9.5 对现有实现的替代
+### 9.5 对现有实现的替代 ✅ 已清理
 
-定稿后 `discoverVenvCandidates`（触发目录向上找 venv）不再需要——环境来源固定为 ~/.kl/venv 或 PATH，删除该探测逻辑（降低复杂度）。
+定稿后 `discoverVenvCandidates`（触发目录向上找 venv）不再需要——环境来源固定为 ~/.kl/venv 或 PATH，已删除该探测逻辑和相关测试。

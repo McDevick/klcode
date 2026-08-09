@@ -18,7 +18,7 @@ export function buildProgram(): Command {
   program.name('kl').description('KL Code CLI');
 
   program.command('init').description('check local initialization state').action(async () => {
-    console.log(await InitCommand.run());
+    console.log(await InitCommand.run([]));
   });
 
   program

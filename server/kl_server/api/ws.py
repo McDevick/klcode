@@ -26,6 +26,32 @@ def build_ws_router(
     bus = bus or TaskEventBus()
     router = APIRouter()
 
+    @router.websocket("/ws/daemon")
+    async def daemon_presence(websocket: WebSocket) -> None:
+        effective_token = (
+            auth_token
+            if auth_token is not None
+            else getattr(websocket.app.state, "auth_token", None)
+        )
+        if effective_token is not None:
+            auth = websocket.headers.get("Authorization", "")
+            expected = f"Bearer {effective_token}"
+            query_token = websocket.query_params.get("token")
+            valid_header = secrets.compare_digest(auth, expected)
+            valid_query = query_token is not None and secrets.compare_digest(query_token, effective_token)
+            if not valid_header and not valid_query:
+                await websocket.close(code=1008)
+                return
+        await websocket.accept()
+        await bus.register("_daemon", websocket)
+        try:
+            while True:
+                await websocket.receive_text()
+        except (WebSocketDisconnect, RuntimeError):
+            pass
+        finally:
+            await bus.unregister("_daemon", websocket)
+
     @router.websocket("/ws/tasks/{task_id}")
     async def task_events(websocket: WebSocket, task_id: str) -> None:
         effective_token = (

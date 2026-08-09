@@ -38,6 +38,25 @@ function stubWebSocket() {
   };
 }
 
+function hasTaskSocket(): boolean {
+  return FakeWebSocket.instances.some((socket) => socket.url.includes('/ws/tasks/'));
+}
+
+function taskSocket(): FakeWebSocket {
+  const socket = FakeWebSocket.instances.find((item) => item.url.includes('/ws/tasks/'));
+  if (socket === undefined) throw new Error('task socket not found');
+  return socket;
+}
+
+function latestTaskSocket(): FakeWebSocket {
+  const sockets = FakeWebSocket.instances.filter((item) =>
+    item.url.includes('/ws/tasks/'),
+  );
+  const socket = sockets[sockets.length - 1];
+  if (socket === undefined) throw new Error('task socket not found');
+  return socket;
+}
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitFor(
@@ -237,8 +256,8 @@ test('app submits a task and streams events into messages', async () => {
       expect.objectContaining({ method: 'POST' }),
     );
 
-    await waitFor(() => FakeWebSocket.instances.length > 0);
-    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    await waitFor(() => hasTaskSocket());
+    const socket = taskSocket();
     emit(socket, { event: 'loop_start', payload: { task: 'hello' } });
     emit(socket, {
       event: 'tool_result',
@@ -274,8 +293,8 @@ test('app shows feedback_generation event', async () => {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('hello');
     stdin.write('\r');
-    await waitFor(() => FakeWebSocket.instances.length > 0);
-    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    await waitFor(() => hasTaskSocket());
+    const socket = taskSocket();
     emit(socket, {
       event: 'feedback_generation',
       payload: {
@@ -305,8 +324,8 @@ test('app truncates long feedback summary with ellipsis', async () => {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('hello');
     stdin.write('\r');
-    await waitFor(() => FakeWebSocket.instances.length > 0);
-    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    await waitFor(() => hasTaskSocket());
+    const socket = taskSocket();
     const summary = 'x'.repeat(200);
     emit(socket, {
       event: 'feedback_generation',
@@ -467,9 +486,9 @@ test('app shows approval bar and sends decision on a', async () => {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('hello');
     stdin.write('\r');
-    await waitFor(() => FakeWebSocket.instances.length > 0);
+    await waitFor(() => hasTaskSocket());
 
-    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    const socket = taskSocket();
     emit(socket, {
       event: 'approval_request',
       action_id: 'a1',
@@ -482,7 +501,7 @@ test('app shows approval bar and sends decision on a', async () => {
 
     stdin.write('a');
     await sleep(50);
-    const decisionSocket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    const decisionSocket = latestTaskSocket();
     expect(decisionSocket.sent.some((data) => data.includes('"approve"'))).toBe(true);
   } finally {
     unmount();
@@ -500,8 +519,8 @@ test('app approval menu can select reject with arrows and enter', async () => {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('hello');
     stdin.write('\r');
-    await waitFor(() => FakeWebSocket.instances.length > 0);
-    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    await waitFor(() => hasTaskSocket());
+    const socket = taskSocket();
     emit(socket, {
       event: 'approval_request',
       action_id: 'a1',
@@ -514,7 +533,7 @@ test('app approval menu can select reject with arrows and enter', async () => {
     await sleep(50);
     stdin.write('\r');
     await sleep(50);
-    const decisionSocket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    const decisionSocket = latestTaskSocket();
     expect(decisionSocket.sent.some((data) => data.includes('"reject"'))).toBe(true);
   } finally {
     unmount();
@@ -867,7 +886,7 @@ test('app /note appends instruction to current task', async () => {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('hello');
     stdin.write('\r');
-    await waitFor(() => FakeWebSocket.instances.length > 0);
+    await waitFor(() => hasTaskSocket());
     stdin.write('/note 请先运行测试');
     stdin.write('\r');
     await waitFor(() => (lastFrame() ?? '').includes('已追加说明: 请先运行测试'));
@@ -895,7 +914,7 @@ test('app /exit requires confirmation while task is running', async () => {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('hello');
     stdin.write('\r');
-    await waitFor(() => FakeWebSocket.instances.length > 0);
+    await waitFor(() => hasTaskSocket());
 
     stdin.write('/exit');
     stdin.write('\r');
@@ -923,7 +942,7 @@ test('app command registry reports missing required args', async () => {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('hello');
     stdin.write('\r');
-    await waitFor(() => FakeWebSocket.instances.length > 0);
+    await waitFor(() => hasTaskSocket());
 
     stdin.write('/note');
     stdin.write('\r');
@@ -945,7 +964,7 @@ test('app blocks management commands while task is running', async () => {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('hello');
     stdin.write('\r');
-    await waitFor(() => FakeWebSocket.instances.length > 0);
+    await waitFor(() => hasTaskSocket());
 
     for (const command of ['/session', '/config', '/compact', '/connect']) {
       stdin.write(command);
@@ -1480,8 +1499,8 @@ test('mouse wheel up scrolls to history and down returns', async () => {
     await waitFor(() => (lastFrame() ?? '').includes('鼠标追踪: 开'));
     stdin.write('hello');
     stdin.write('\r');
-    await waitFor(() => FakeWebSocket.instances.length > 0);
-    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    await waitFor(() => hasTaskSocket());
+    const socket = taskSocket();
     const lines = Array.from({ length: 30 }, (_, index) => `消息${index}`);
     emit(socket, { event: 'task_end', status: 'succeeded', result: lines.join('\n') });
     await waitFor(() => (lastFrame() ?? '').includes('消息29'));
@@ -1584,8 +1603,8 @@ test('wheel up with few messages keeps at least the earliest visible', async () 
     await waitFor(() => (lastFrame() ?? '').includes('鼠标追踪: 开'));
     stdin.write('hello');
     stdin.write('\r');
-    await waitFor(() => FakeWebSocket.instances.length > 0);
-    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    await waitFor(() => hasTaskSocket());
+    const socket = taskSocket();
     const lines = Array.from({ length: 10 }, (_, index) => `行${index}`);
     emit(socket, { event: 'task_end', status: 'succeeded', result: lines.join('\n') });
     await waitFor(() => (lastFrame() ?? '').includes('行9'));
@@ -1647,8 +1666,8 @@ test('app shows model final answer from task_end result', async () => {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('hello');
     stdin.write('\r');
-    await waitFor(() => FakeWebSocket.instances.length > 0);
-    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    await waitFor(() => hasTaskSocket());
+    const socket = taskSocket();
     emit(socket, { event: 'task_end', status: 'succeeded', result: 'DONE: 这是模型的最终回答' });
     await waitFor(() => (lastFrame() ?? '').includes('这是模型的最终回答'));
     expect(lastFrame()).toContain('这是模型的最终回答');
@@ -1668,8 +1687,8 @@ test('app hides bare DONE sentinel from task_end result', async () => {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('hello');
     stdin.write('\r');
-    await waitFor(() => FakeWebSocket.instances.length > 0);
-    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    await waitFor(() => hasTaskSocket());
+    const socket = taskSocket();
     emit(socket, { event: 'task_end', status: 'succeeded', result: 'DONE' });
     await waitFor(() => (lastFrame() ?? '').includes('任务完成: succeeded'));
     expect(lastFrame()).not.toContain('[Agent]: DONE');
@@ -1689,8 +1708,8 @@ test('tool call line shows failure marker for non-zero exit code', async () => {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('hello');
     stdin.write('\r');
-    await waitFor(() => FakeWebSocket.instances.length > 0);
-    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    await waitFor(() => hasTaskSocket());
+    const socket = taskSocket();
     // run_command 非零退出码（工具返回 ok=true 但 exit 1）→ 工具行应显示 ✗
     emit(socket, {
       event: 'tool_result',
@@ -1721,8 +1740,8 @@ test('app renders task_manage output as checklist', async () => {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('hello');
     stdin.write('\r');
-    await waitFor(() => FakeWebSocket.instances.length > 0);
-    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    await waitFor(() => hasTaskSocket());
+    const socket = taskSocket();
     emit(socket, {
       event: 'tool_result',
       payload: {
@@ -1776,8 +1795,8 @@ test('app shows plain replies by default and raw rounds in debug mode', async ()
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
     stdin.write('hello');
     stdin.write('\r');
-    await waitFor(() => FakeWebSocket.instances.length > 0);
-    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    await waitFor(() => hasTaskSocket());
+    const socket = taskSocket();
     // 默认模式：agent_message 显示纯文本；JSON 动作不进消息区（由工具行表达）
     emit(socket, { event: 'llm_call', payload: { iteration: 0 } });
     emit(socket, {

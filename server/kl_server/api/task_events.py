@@ -27,6 +27,10 @@ class TaskEventBus:
             if not sockets:
                 self._connections.pop(task_id, None)
 
+    async def connection_count(self) -> int:
+        async with self._lock:
+            return sum(len(sockets) for sockets in self._connections.values())
+
     async def broadcast(self, task_id: str, payload: dict) -> None:
         async with self._lock:
             sockets = set(self._connections.get(task_id, ()))
@@ -75,7 +79,7 @@ class ApprovalHub:
     requests time out and default to ``reject``.
     """
 
-    def __init__(self, bus: TaskEventBus, timeout: float = 120.0) -> None:
+    def __init__(self, bus: TaskEventBus, timeout: float = 300.0) -> None:
         self.bus = bus
         self.timeout = timeout
         self._waiters: dict[str, asyncio.Future] = {}
@@ -95,13 +99,14 @@ class ApprovalHub:
                 "tool": info.get("tool", ""),
                 "args": info.get("args", {}),
                 "level": info.get("level", ""),
+                "timeout_seconds": self.timeout,
             },
         )
         try:
             return await asyncio.wait_for(future, self.timeout)
         except asyncio.TimeoutError:
             logger.warning("approval request %s timed out; rejecting", action_id)
-            return "reject"
+            return "timeout"
         finally:
             self._waiters.pop(action_id, None)
 

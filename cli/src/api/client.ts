@@ -99,6 +99,12 @@ export interface HealthResult {
   status: string;
 }
 
+export interface DaemonStatus {
+  source: string;
+  running_tasks: number;
+  ws_connections: number;
+}
+
 export interface SessionHistoryMessage {
   type: 'user' | 'agent' | 'tool';
   content?: string;
@@ -197,6 +203,10 @@ export class ApiClient {
 
   ensureConfigured(): Promise<ConfigCheckResult> {
     return this.request('/api/v1/config/check', { method: 'POST' });
+  }
+
+  daemonStatus(): Promise<DaemonStatus> {
+    return this.request('/daemon/status');
   }
 
   runTask(taskId: string): Promise<{ status: string }> {

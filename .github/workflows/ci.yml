@@ -71,6 +71,9 @@ jobs:
       - name: Build CLI bundle
         run: cd cli && npm run build
 
+      - name: Verify server version alignment
+        run: cd cli && npm run check:server-version
+
       - name: Verify CLI artifacts
         run: |
           test -f cli/dist/main.js

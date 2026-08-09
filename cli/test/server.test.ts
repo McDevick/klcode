@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { ServerCommand, defaultPythonResolver, discoverVenvCandidates } from '../src/commands/server';
+import { ServerCommand, bootstrapGlobalVenv, resolveGlobalVenvPython } from '../src/commands/server';
 
 const tempDirs: string[] = [];
 
@@ -86,6 +86,115 @@ test('server start reports a clear failure when no python resolves', async () =>
   expect(existsSync(pidPath)).toBe(false);
 });
 
+test('server start writes daemon.json and manual source env', async () => {
+  const dir = makeTempDir();
+  const pidPath = join(dir, 'daemon.pid');
+  const daemonPath = join(dir, 'daemon.json');
+  const spawnMock = vi.fn().mockReturnValue({ pid: 55, unref: vi.fn() });
+  const pythonResolver = vi.fn().mockResolvedValue('python');
+
+  const output = await ServerCommand.run(['start'], {
+    pidPath,
+    daemonPath,
+    spawnImpl: spawnMock,
+    pythonResolver,
+  });
+
+  expect(output).toContain('started');
+  expect(JSON.parse(readFileSync(daemonPath, 'utf8'))).toMatchObject({
+    pid: 55,
+    source: 'manual',
+  });
+  const env = spawnMock.mock.calls[0][2].env;
+  expect(env.KL_DAEMON_SOURCE).toBe('manual');
+});
+
+test('server start cleans stale pid and daemon record', async () => {
+  const dir = makeTempDir();
+  const pidPath = join(dir, 'daemon.pid');
+  const daemonPath = join(dir, 'daemon.json');
+  writeFileSync(pidPath, '4242');
+  writeFileSync(daemonPath, JSON.stringify({ pid: 4242, source: 'auto', started_at: 'x' }));
+  const spawnMock = vi.fn().mockReturnValue({ pid: 7, unref: vi.fn() });
+
+  const output = await ServerCommand.run(['start'], {
+    pidPath,
+    daemonPath,
+    spawnImpl: spawnMock,
+    pythonResolver: vi.fn().mockResolvedValue('python'),
+    probeImpl: () => false,
+  });
+
+  expect(output).toContain('started');
+  expect(readFileSync(pidPath, 'utf8')).toBe('7');
+  expect(JSON.parse(readFileSync(daemonPath, 'utf8')).source).toBe('manual');
+});
+
+test('server start reports already running for live manual daemon', async () => {
+  const dir = makeTempDir();
+  const pidPath = join(dir, 'daemon.pid');
+  const daemonPath = join(dir, 'daemon.json');
+  writeFileSync(pidPath, '4242');
+  writeFileSync(daemonPath, JSON.stringify({ pid: 4242, source: 'manual', started_at: 'x' }));
+  const spawnMock = vi.fn();
+
+  const output = await ServerCommand.run(['start'], {
+    pidPath,
+    daemonPath,
+    spawnImpl: spawnMock,
+    pythonResolver: vi.fn().mockResolvedValue('python'),
+    probeImpl: () => true,
+  });
+
+  expect(output).toContain('already running');
+  expect(spawnMock).not.toHaveBeenCalled();
+});
+
+test('server start refuses takeover while auto daemon runs tasks', async () => {
+  const dir = makeTempDir();
+  const pidPath = join(dir, 'daemon.pid');
+  const daemonPath = join(dir, 'daemon.json');
+  writeFileSync(pidPath, '4242');
+  writeFileSync(daemonPath, JSON.stringify({ pid: 4242, source: 'auto', started_at: 'x' }));
+  const spawnMock = vi.fn();
+
+  const output = await ServerCommand.run(['start'], {
+    pidPath,
+    daemonPath,
+    spawnImpl: spawnMock,
+    pythonResolver: vi.fn().mockResolvedValue('python'),
+    probeImpl: () => true,
+    statusImpl: async () => ({ source: 'auto', running_tasks: 1, ws_connections: 0 }),
+  });
+
+  expect(output).toContain('cannot start manual server');
+  expect(spawnMock).not.toHaveBeenCalled();
+});
+
+test('server start takes over idle auto daemon', async () => {
+  const dir = makeTempDir();
+  const pidPath = join(dir, 'daemon.pid');
+  const daemonPath = join(dir, 'daemon.json');
+  writeFileSync(pidPath, '4242');
+  writeFileSync(daemonPath, JSON.stringify({ pid: 4242, source: 'auto', started_at: 'x' }));
+  const killMock = vi.fn().mockReturnValue(true);
+  const spawnMock = vi.fn().mockReturnValue({ pid: 9, unref: vi.fn() });
+
+  const output = await ServerCommand.run(['start'], {
+    pidPath,
+    daemonPath,
+    spawnImpl: spawnMock,
+    killImpl: killMock,
+    pythonResolver: vi.fn().mockResolvedValue('python'),
+    probeImpl: () => true,
+    statusImpl: async () => ({ source: 'auto', running_tasks: 0, ws_connections: 0 }),
+  });
+
+  expect(output).toContain('started');
+  expect(killMock).toHaveBeenCalledWith(4242);
+  expect(JSON.parse(readFileSync(daemonPath, 'utf8')).source).toBe('manual');
+});
+
 test('server stop kills pid and removes pid file', async () => {
   const dir = makeTempDir();
   const pidPath = join(dir, 'daemon.pid');
@@ -162,52 +271,71 @@ test('server status reports stale pid when health fails', async () => {
   }
 });
 
-describe('defaultPythonResolver venv discovery', () => {
-  test('discovers venv directories in cwd and parents, deduped', () => {
-    const root = makeTempDir();
-    const scripts = process.platform === 'win32' ? 'Scripts' : 'bin';
-    const pythonName = process.platform === 'win32' ? 'python.exe' : 'python';
-    mkdirSync(join(root, '.venv', scripts), { recursive: true });
-    writeFileSync(join(root, '.venv', scripts, pythonName), '');
-    mkdirSync(join(root, 'my-venv', scripts), { recursive: true });
-    writeFileSync(join(root, 'my-venv', scripts, pythonName), '');
-    const nested = join(root, 'a', 'b');
-    mkdirSync(nested, { recursive: true });
+describe('global venv resolution', () => {
+  test('resolveGlobalVenvPython returns null when python cannot import server', async () => {
+    const fakeVenvPython = join(makeTempDir(), 'venv', 'missing.py');
+    expect(await resolveGlobalVenvPython(process.env, fakeVenvPython)).toBeNull();
+  });
+});
 
-    const originalCwd = process.cwd();
-    try {
-      process.chdir(nested);
-      const candidates = discoverVenvCandidates();
+describe('bootstrapGlobalVenv', () => {
+  const scripts = process.platform === 'win32' ? 'Scripts' : 'bin';
+  const pythonName = process.platform === 'win32' ? 'python.exe' : 'python';
 
-      expect(candidates).toContain(join(root, '.venv'));
-      expect(candidates).toContain(join(root, 'my-venv'));
-      expect(new Set(candidates).size).toBe(candidates.length);
-    } finally {
-      process.chdir(originalCwd);
-    }
+  test('creates global venv and installs pinned server version', async () => {
+    const klDir = makeTempDir();
+    const calls: string[] = [];
+    const execMock = vi.fn().mockImplementation((command: string, args: string[]) => {
+      calls.push(`${command} ${args.join(' ')}`);
+    });
+
+    const python = await bootstrapGlobalVenv({
+      klDir,
+      python: 'python',
+      serverDir: null,
+      version: '1.2.3',
+      canImport: () => true,
+      execFileSyncImpl: execMock,
+    });
+
+    const expected = join(klDir, 'venv', scripts, pythonName);
+    expect(python).toBe(expected);
+    expect(calls[0]).toContain('python -m venv');
+    expect(calls[1]).toContain(`pip install kl-server==1.2.3`);
   });
 
-  test('resolver returns a usable venv python and null when none work', async () => {
-    const root = makeTempDir();
-    const scripts = process.platform === 'win32' ? 'Scripts' : 'bin';
-    const pythonName = process.platform === 'win32' ? 'python.exe' : 'python';
-    mkdirSync(join(root, '.venv', scripts), { recursive: true });
-    writeFileSync(join(root, '.venv', scripts, pythonName), '');
+  test('installs editable source server when server dir exists', async () => {
+    const klDir = makeTempDir();
+    const serverDir = makeTempDir();
+    const calls: string[] = [];
+    const execMock = vi.fn().mockImplementation((command: string, args: string[]) => {
+      calls.push(`${command} ${args.join(' ')}`);
+    });
 
-    const originalCwd = process.cwd();
-    try {
-      process.chdir(root);
-      const withEnv = await defaultPythonResolver();
-      // 深度扫描可能命中上层目录的其他可用 venv（如 Temp 下遗留），
-      // 断言返回的必须是存在的、候选列表内的 python。
-      expect(withEnv).toBeTruthy();
-      expect(existsSync(withEnv as string)).toBe(true);
-      const candidates = discoverVenvCandidates();
-      expect(candidates.map((candidate) => join(candidate, scripts, pythonName))).toContain(
-        withEnv,
-      );
-    } finally {
-      process.chdir(originalCwd);
-    }
+    await bootstrapGlobalVenv({
+      klDir,
+      python: 'python',
+      serverDir,
+      canImport: () => true,
+      execFileSyncImpl: execMock,
+    });
+
+    expect(calls[1]).toContain(`pip install -e ${serverDir}`);
+  });
+
+  test('returns null when user declines bootstrap', async () => {
+    const klDir = makeTempDir();
+
+    const python = await bootstrapGlobalVenv({
+      klDir,
+      python: 'python',
+      confirm: async () => false,
+    });
+
+    expect(python).toBeNull();
+  });
+
+  test('returns null when no python executable is available', async () => {
+    expect(await bootstrapGlobalVenv({ python: null })).toBeNull();
   });
 });

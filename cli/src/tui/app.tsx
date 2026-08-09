@@ -12,8 +12,9 @@ import { ModelManager } from './components/model-manager';
 import { ConnectManager } from './components/connect-manager';
 import { CommandRegistry, type CommandArg, type CommandState } from './commands';
 import { ApiClient, DEFAULT_BASE_URL, type SkillInfo } from '../api/client';
-import { connectTaskEvents } from '../api/events';
-import { sendApprovalDecision, type ApprovalDecision } from './screens/approval';
+import { autoStartDaemon, isConnectionError } from '../api/daemon';
+import { connectDaemonPresence, connectTaskEventsWithReconnect } from '../api/events';
+import { ApprovalPanel, sendApprovalDecision, type ApprovalDecision } from './screens/approval';
 import { theme } from './theme';
 import type { ApprovalRequest, ChatMessage, RunningTask, SlashCommand } from './types';
 
@@ -267,7 +268,11 @@ function parseTaskManageItems(
 }
 
 
-export function App() {
+export interface AppProps {
+  autoStart?: () => Promise<boolean>;
+}
+
+export function App({ autoStart }: AppProps = {}) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [taskStatus, setTaskStatus] = useState('idle');
@@ -386,32 +391,47 @@ export function App() {
   useEffect(() => {
     const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
     const workspace = process.cwd();
-    // 优先复用同工作区、active、无任务的空会话，避免每次启动都新建
-    client
-      .listSessions()
-      .then((sessions) => {
-        const reusable = sessions.find(
-          (session) =>
-            session.workspace === workspace &&
-            session.status === 'active' &&
-            (session.task_count ?? 0) === 0,
-        );
-        if (reusable !== undefined) {
-          setSessionId(reusable.id);
-          setIsOnline(true);
-          pushMessage('agent', `复用会话 ${reusable.id}`, 'done');
-          return;
+    const prepareSession = async () => {
+      const sessions = await client.listSessions();
+      const reusable = sessions.find(
+        (session) =>
+          session.workspace === workspace &&
+          session.status === 'active' &&
+          (session.task_count ?? 0) === 0,
+      );
+      if (reusable !== undefined) {
+        setSessionId(reusable.id);
+        setIsOnline(true);
+        pushMessage('agent', `复用会话 ${reusable.id}`, 'done');
+        return;
+      }
+      const session = await client.createSession({ workspace });
+      setSessionId(session.id);
+      setIsOnline(true);
+      pushMessage('agent', `会话 ${session.id} 已就绪`, 'done');
+    };
+
+    const init = async () => {
+      try {
+        await prepareSession();
+      } catch (error: unknown) {
+        if (isConnectionError(error)) {
+          const started = await (autoStart ?? autoStartDaemon)();
+          if (started) {
+            await prepareSession();
+            return;
+          }
         }
-        return client.createSession({ workspace }).then((session) => {
-          setSessionId(session.id);
-          setIsOnline(true);
-          pushMessage('agent', `会话 ${session.id} 已就绪`, 'done');
-        });
-      })
-      .catch((error: unknown) => {
         setIsOnline(false);
         pushMessage('agent', `会话创建失败: ${String(error)}`, 'error');
-      });
+      }
+    };
+    void init();
+  }, [autoStart]);
+
+  useEffect(() => {
+    const presence = connectDaemonPresence({ baseUrl: DEFAULT_BASE_URL });
+    return () => presence.close();
   }, []);
 
   useEffect(() => {
@@ -428,7 +448,7 @@ export function App() {
 
   useEffect(() => {
     if (taskId === null) return;
-    const socket = connectTaskEvents(taskId, (event) => {
+    const socket = connectTaskEventsWithReconnect(taskId, (event) => {
       setIsOnline(true);
       if (event.event === 'approval_request') {
         setConnectOpen(false);
@@ -442,6 +462,8 @@ export function App() {
           tool: String(event.tool),
           command: JSON.stringify(event.args),
           level: String(event.level),
+          deadline:
+            Date.now() + Number(event.timeout_seconds ?? 300) * 1000,
         });
         pushMessage(
           'agent',
@@ -474,6 +496,17 @@ export function App() {
           : result;
         if (answer) {
           pushMessage('agent', answer, 'text');
+        }
+        return;
+      }
+      if (event.event === 'approval_complete') {
+        const decision = String(
+          (event.payload as { decision?: string } | undefined)?.decision ?? '',
+        );
+        if (decision === 'timeout') {
+          setApproval(null);
+          setApprovalIndex(0);
+          pushMessage('agent', '审批超时，已自动拒绝该动作', 'info');
         }
         return;
       }
@@ -1159,6 +1192,12 @@ export function App() {
             <Text bold color={theme.yellow}>
               ⚠ 审批请求（{approval.level}）: {approval.tool} {approval.command}
             </Text>
+            <ApprovalPanel
+              tool={approval.tool}
+              command={approval.command}
+              level={approval.level}
+              deadline={approval.deadline}
+            />
             <Box flexDirection="column" alignItems="flex-end">
               {APPROVAL_OPTIONS.map((option, index) => (
                 <Text key={option.key} bold color={index === approvalIndex ? theme.teal : theme.text}>

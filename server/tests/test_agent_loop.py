@@ -902,6 +902,36 @@ async def test_approval_reject_continues_with_feedback(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_approval_timeout_rejects_and_marks_hitl(tmp_path):
+    executor, guardrail = make_approval_executor(tmp_path)
+    provider = MockProvider(
+        responses=[
+            '{"tool":"run_command","args":{"command":"git push --force"}}',
+            "DONE",
+        ]
+    )
+
+    async def timeout(task_id: str, action: dict) -> str:
+        return "timeout"
+
+    loop = AgentLoop(
+        provider=provider,
+        tools=executor,
+        settings=LoopSettings(max_iterations=5),
+        on_approval=timeout,
+    )
+    result = await loop.run(Session(id="s1", workspace=str(tmp_path)), "deploy")
+
+    assert result == "DONE"
+    assert len(provider.calls) == 2
+    tool_messages = [m for m in provider.calls[1].messages if m.get("role") == "tool"]
+    assert any("timed out" in message["content"] for message in tool_messages)
+    requests = list(guardrail.hitl.requests.values())
+    assert len(requests) == 1
+    assert requests[0].state == "rejected"
+
+
+@pytest.mark.asyncio
 async def test_approval_abort_stops_loop(tmp_path):
     executor, _ = make_approval_executor(tmp_path)
     provider = MockProvider(

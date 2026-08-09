@@ -8,7 +8,7 @@
 
 核心机制（agent 主循环、工具分发、治理、反馈、记忆、上下文管理）全部由项目自己的代码实现，不依赖现成 agent 编排框架；移除真实 LLM 后仍可通过确定性单元测试验证（mock provider）。
 
-当前进度：核心框架 + 上下文重构 Phase 1–3 已实现并通过测试（server 500+ / cli 100+ 测试全绿）。
+当前进度：核心框架 + 上下文重构 Phase 1–3 + 服务端 daemon 生命周期重构 + 审批超时已实现并通过测试（server 515 / cli 120 测试全绿）。
 
 ## 功能特性
 
@@ -62,7 +62,9 @@ kl config key set deepseek          # 隐藏输入，进系统钥匙串
 npm run tui
 ```
 
-首次启动自动生成 `~/.kl/daemon.token` 和 `.kl/`（config.yaml、kl.db、audit.jsonl、memory.db）。缺少 config.yaml 也能启动，默认 provider 为 `mock`。
+首次启动自动生成全局 `~/.kl/`（daemon.token、config.yaml、kl.db、audit.jsonl、memory.db）。缺少 config.yaml 也能启动，默认 provider 为 `mock`。
+
+> 配置与数据已全局化：daemon 只读取 `~/.kl/config.yaml`，不再读取项目目录下的 `.kl/config.yaml`。旧项目配置中的 provider/key 引用需手动迁移到 `~/.kl/config.yaml`。
 
 ## 安装
 

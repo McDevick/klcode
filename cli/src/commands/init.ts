@@ -52,7 +52,8 @@ export const InitCommand = {
   run: async (args: string[], options: InitCommandOptions = {}): Promise<string> => {
     const client = options.client ?? new ApiClient({ baseUrl: DEFAULT_BASE_URL });
     const serverStart =
-      options.serverStart ?? ((serverArgs: string[]) => ServerCommand.run(serverArgs));
+      options.serverStart ??
+      ((serverArgs: string[]) => ServerCommand.run(serverArgs, { source: 'auto' }));
     const healthCheck =
       options.healthCheck ??
       ((candidate: ApiClient) => waitForHealth(candidate, options.waitTimeoutMs ?? 10_000));

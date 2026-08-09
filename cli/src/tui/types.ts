@@ -27,6 +27,7 @@ export interface ApprovalRequest {
   tool: string;
   command: string;
   level: string;
+  deadline: number;
 }
 
 export interface SlashCommand {

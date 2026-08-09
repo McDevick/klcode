@@ -735,7 +735,7 @@ def build_router() -> APIRouter:
         await deps.tasks.update(task)
         hub = getattr(request.app.state, "approval_hub", None)
         if hub is not None and getattr(loop, "on_approval", None) is None:
-            loop.on_approval = lambda tid, info: hub.request(tid, info)
+            loop.on_approval = hub.request
         bus = getattr(request.app.state, "event_bus", None)
         # 先取得句柄再返回响应，保证紧随其后的 abort 一定能 cancel 到后台任务
         # （否则 abort 可能落在协程尚未把自身写入 _running_tasks 的窗口里）。

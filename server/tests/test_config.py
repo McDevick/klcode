@@ -119,3 +119,15 @@ def test_app_config_merges_existing_capitalized_deepseek(tmp_path):
     provider = config.providers["Deepseek"]
     assert provider.base_url == "https://custom.deepseek.com"
     assert provider.max_context == 20000
+
+
+
+def test_app_config_approval_timeout_default_and_validation():
+    config = AppConfig()
+    assert config.guardrail.approval_timeout_seconds == 300.0
+
+    try:
+        AppConfig(guardrail={"approval_timeout_seconds": 10})
+    except Exception:
+        return
+    raise AssertionError("approval_timeout_seconds below 30 should be rejected")

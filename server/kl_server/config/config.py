@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class SandboxConfig(BaseModel):
@@ -8,6 +8,17 @@ class SandboxConfig(BaseModel):
     timeout: float | None = None
     max_cpu_seconds: float | None = None
     max_memory_mb: int | None = None
+
+
+class GuardrailConfig(BaseModel):
+    approval_timeout_seconds: float = 300.0
+
+    @field_validator("approval_timeout_seconds")
+    @classmethod
+    def _validate_approval_timeout(cls, value: float) -> float:
+        if value < 30 or value > 1800:
+            raise ValueError("approval_timeout_seconds must be between 30 and 1800")
+        return value
 
 
 class ProviderConfig(BaseModel):
@@ -35,3 +46,4 @@ class AppConfig(BaseModel):
     hooks: dict[str, list[dict]] = {}  # 生命周期 hook 配置（command/http），key 为事件名
     mcp: dict[str, dict] = {}  # MCP server 配置，key 为 server 名
     sandbox: SandboxConfig = SandboxConfig()
+    guardrail: GuardrailConfig = GuardrailConfig()
