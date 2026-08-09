@@ -108,7 +108,7 @@ export interface DaemonStatus {
 export interface SessionHistoryMessage {
   type: 'user' | 'agent' | 'tool';
   content?: string;
-  kind?: 'text' | 'error' | 'feedback';
+  kind?: 'text' | 'error' | 'feedback' | 'warning';
   name?: string;
   args?: Record<string, unknown> | null;
   ok?: boolean;

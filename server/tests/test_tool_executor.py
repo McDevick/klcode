@@ -213,6 +213,7 @@ async def test_executor_persists_full_output_file(tmp_path):
     registry = ToolRegistry()
     registry.register(BigFileTool())
     executor = ToolExecutor(registry, max_output_chars=10_000)
+    assert not (tmp_path / ".kl").exists()
 
     result = await executor.execute(
         "big_file",
@@ -223,6 +224,7 @@ async def test_executor_persists_full_output_file(tmp_path):
     output_file = result.meta.get("output_file")
     assert output_file is not None
     assert Path(output_file).exists()
+    assert (tmp_path / ".kl" / "tool_outputs").is_dir()
     assert Path(output_file).read_text(encoding="utf-8") == "x" * 100_000
     assert output_file in result.references
     assert "src/a.ts" in result.references

@@ -63,7 +63,9 @@ class ToolExecutor:
         ctx: ToolContext,
     ) -> str | None:
         try:
-            root = Path(ctx.workspace) / ".kl" / "tool_outputs"
+            kl_root = Path(ctx.workspace) / ".kl"
+            kl_root.mkdir(parents=True, exist_ok=True)
+            root = kl_root / "tool_outputs"
             root.mkdir(parents=True, exist_ok=True)
             safe_name = re.sub(r"[^a-zA-Z0-9_-]+", "_", name)[:40]
             output_path = root / (

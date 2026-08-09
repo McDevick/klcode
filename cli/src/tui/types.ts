@@ -5,7 +5,7 @@ export interface RunningTask {
   steps: number;
 }
 
-export type MessageKind = 'text' | 'info' | 'error' | 'done' | 'tool' | 'feedback';
+export type MessageKind = 'text' | 'info' | 'error' | 'done' | 'tool' | 'feedback' | 'warning';
 
 export interface ChatMessage {
   id: number;
@@ -18,6 +18,7 @@ export interface ChatMessage {
     args: string;
     summary: string;
     ok: boolean;
+    warning?: boolean;
     taskItems?: Array<{ title: string; done: boolean }>;
   };
 }

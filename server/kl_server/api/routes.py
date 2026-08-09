@@ -271,13 +271,13 @@ def _history_message(record: dict) -> dict | None:
                 f"审批请求: {payload.get('tool', '')} "
                 f"({payload.get('level', '')})"
             ),
-            "kind": "info",
+            "kind": "warning",
         }
     if event == "approval_complete":
         return {
             "type": "agent",
             "content": f"审批结果: {payload.get('decision', '')}",
-            "kind": "info",
+            "kind": "warning",
         }
     if event == "provider_error":
         return {

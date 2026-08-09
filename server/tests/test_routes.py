@@ -212,9 +212,9 @@ def test_corrupt_database_returns_backup_path_and_blocks_writes(tmp_path):
     assert "writes blocked" in response.json()["detail"]
 
 
-def test_skills_endpoint_lists_workspace_skills(tmp_path):
+def test_skills_endpoint_lists_global_skills(tmp_path):
     client = make_deps_client(tmp_path)
-    skill_dir = tmp_path / ".kl" / "skills" / "leetcode"
+    skill_dir = tmp_path / "skills" / "leetcode"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(
         "# LeetCode\n解决 LeetCode C++ 题目",

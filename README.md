@@ -8,14 +8,14 @@
 
 核心机制（agent 主循环、工具分发、治理、反馈、记忆、上下文管理）全部由项目自己的代码实现，不依赖现成 agent 编排框架；移除真实 LLM 后仍可通过确定性单元测试验证（mock provider）。
 
-当前进度：核心框架 + 上下文重构 Phase 1–3 + 服务端 daemon 生命周期重构 + 审批超时已实现并通过测试（server 515 / cli 120 测试全绿）。
+当前进度：核心框架 + 上下文重构 Phase 1–3 + 服务端 daemon 生命周期重构 + 审批超时已实现并通过测试（server 515 / cli 122 测试全绿）。
 
 ## 功能特性
 
 - **AgentLoop 主循环**：context → LLM → 工具 → 反馈的固定循环；最大 20 轮 + 同类别失败重试预算降级信号
 - **反馈闭环**：工具输出纯代码分类（成功/测试失败/构建失败/lint/类型/超时/工具错误/provider 错误），去重、截断、熵脱敏后回灌下一轮
 - **上下文四层记忆系统**：
-  - 规则层：用户指令沉淀 > 用户规则 > 项目规则（`.kl/rules.md` + `AGENTS.md`）> 默认
+  - 规则层：用户指令沉淀 > 全局用户规则（`~/.kl/user-rules.md`）> 项目规则（`.kl/rules.md` + `AGENTS.md`）> 默认
   - 状态层：task_plan（子任务 done/pending）、续接上下文（跨任务 outcome/files/next_step）
   - 事实层：记忆按 kind 配额 + 关键词相关注入；**用户指令沉淀**（note/任务描述中的约束、偏好、流程跨任务生效）
   - 轨迹层：历史分桶压缩（对话摘要 + 工具结果落盘引用 + 反馈去重）
@@ -65,6 +65,8 @@ npm run tui
 首次启动自动生成全局 `~/.kl/`（daemon.token、config.yaml、kl.db、audit.jsonl、memory.db）。缺少 config.yaml 也能启动，默认 provider 为 `mock`。
 
 > 配置与数据已全局化：daemon 只读取 `~/.kl/config.yaml`，不再读取项目目录下的 `.kl/config.yaml`。旧项目配置中的 provider/key 引用需手动迁移到 `~/.kl/config.yaml`。
+>
+> skill 与用户工具也全局化：`~/.kl/skills/`、`~/.kl/tools/`；服务端启动不再在启动目录创建 `.kl/skills`/`.kl/tools`。
 
 ## 安装
 
@@ -214,8 +216,8 @@ TUI 启动后自动创建 session（workspace 为当前目录）并连接服务�
 - 输入任务回车 → 创建任务并在服务端后台执行，实时显示事件流（loop / tool / feedback / task_end）
 - 危险动作弹出审批菜单：方向键选择 approve/reject/abort，Enter 确认；快捷键 `a`/`r`/`x`
 - 滚轮（需 `/mouse`）、方向键按行连续滚动，PageUp/PageDown 半屏滚动
-- 斜杠指令（17 个，经 CommandRegistry 注册）：`/session`（会话管理）、`/skills`、`/mcp`、`/config`、`/connect`、`/status`、`/model`、`/context`、`/compact`、`/help`、`/abort`、`/note`（给任务追加说明）、`/pause`、`/continue`、`/debug`、`/mouse`、`/exit`
-- **双向状态门控**：/session、/config、/connect、/compact 任务运行时禁用；/abort、/note、/pause、/continue 无任务时禁用
+- 斜杠指令（16 个，经 CommandRegistry 注册）：`/session`（会话管理）、`/skills`、`/mcp`、`/connect`、`/status`、`/model`、`/context`、`/compact`、`/help`、`/abort`、`/note`（给任务追加说明）、`/pause`、`/continue`、`/debug`、`/mouse`、`/exit`
+- **双向状态门控**：/session、/connect、/compact 任务运行时禁用；/abort、/note、/pause、/continue 无任务时禁用
 - **/exit 运行中二次确认**：任务运行时第一次输入提示"再次输入 /exit 确认退出"，第二次才退出
 - 参数错误显示该指令的用法（注册表生成式提示）
 

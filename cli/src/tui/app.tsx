@@ -13,7 +13,7 @@ import { ConnectManager } from './components/connect-manager';
 import { CommandRegistry, type CommandArg, type CommandState } from './commands';
 import { ApiClient, DEFAULT_BASE_URL, type SkillInfo } from '../api/client';
 import { autoStartDaemon, isConnectionError } from '../api/daemon';
-import { connectDaemonPresence, connectTaskEventsWithReconnect } from '../api/events';
+import { connectDaemonPresence, connectTaskEventsWithReconnect, type TaskEvent } from '../api/events';
 import { ApprovalPanel, sendApprovalDecision, type ApprovalDecision } from './screens/approval';
 import { theme } from './theme';
 import type { ApprovalRequest, ChatMessage, RunningTask, SlashCommand } from './types';
@@ -38,12 +38,6 @@ const COMMAND_META: Array<{
   {
     name: '/mcp',
     desc: '管理 MCP server',
-  },
-  {
-    name: '/config',
-    desc: '配置 provider API 连接',
-    aliases: ['/cfg'],
-    available: (state) => !state.running,
   },
   {
     name: '/connect',
@@ -112,6 +106,11 @@ const SLASH_COMMANDS: SlashCommand[] = COMMAND_META.map((command) => ({
   name: command.name,
   desc: command.desc,
 }));
+
+function eventField(event: TaskEvent, key: string): unknown {
+  const payload = (event.payload ?? {}) as Record<string, unknown>;
+  return event[key] !== undefined ? event[key] : payload[key];
+}
 
 const APPROVAL_OPTIONS = [
   { key: 'approve', label: 'Approve' },
@@ -216,6 +215,9 @@ function summarizeToolResult(payload: {
   error?: string | null;
   output?: string;
 }): string {
+  if (payload.error === 'requires_approval') {
+    return `warning: ${payload.error}`;
+  }
   if (payload.error) return `error: ${payload.error}`;
   const output = String(payload.output ?? '');
   if (!output) return 'ok';
@@ -457,18 +459,23 @@ export function App({ autoStart }: AppProps = {}) {
         setMcpOpen(false);
         setModelManagerOpen(false);
         setApprovalIndex(0);
+        const args = (eventField(event, 'args') ?? {}) as Record<string, unknown>;
+        const timeoutSeconds = Number(
+          eventField(event, 'timeout_seconds') ?? 300,
+        );
         setApproval({
-          actionId: String(event.action_id),
-          tool: String(event.tool),
-          command: JSON.stringify(event.args),
-          level: String(event.level),
-          deadline:
-            Date.now() + Number(event.timeout_seconds ?? 300) * 1000,
+          actionId: String(eventField(event, 'action_id') ?? ''),
+          tool: String(eventField(event, 'tool') ?? ''),
+          command: JSON.stringify(args),
+          level: String(eventField(event, 'level') ?? ''),
+          deadline: Date.now() + timeoutSeconds * 1000,
         });
         pushMessage(
           'agent',
-          `审批请求（${String(event.level)}）: ${String(event.tool)} ${JSON.stringify(event.args)}`,
-          'info',
+          `审批请求（${String(eventField(event, 'level') ?? '')}）: ${String(
+            eventField(event, 'tool') ?? '',
+          )} ${JSON.stringify(args)}`,
+          'warning',
         );
         return;
       }
@@ -500,13 +507,11 @@ export function App({ autoStart }: AppProps = {}) {
         return;
       }
       if (event.event === 'approval_complete') {
-        const decision = String(
-          (event.payload as { decision?: string } | undefined)?.decision ?? '',
-        );
+        const decision = String(eventField(event, 'decision') ?? '');
         if (decision === 'timeout') {
           setApproval(null);
           setApprovalIndex(0);
-          pushMessage('agent', '审批超时，已自动拒绝该动作', 'info');
+          pushMessage('agent', '审批超时，已自动拒绝该动作', 'warning');
         }
         return;
       }
@@ -567,6 +572,7 @@ export function App({ autoStart }: AppProps = {}) {
           args: formatToolArgs(payload.args),
           summary: summarizeToolResult(payload),
           ok: isToolOk(payload),
+          warning: payload.error === 'requires_approval',
           taskItems: parseTaskManageItems(payload.output),
         });
         setRunning((current) =>
@@ -657,6 +663,7 @@ export function App({ autoStart }: AppProps = {}) {
                 output: item.output ?? '',
               }),
               ok: item.ok ?? false,
+              warning: item.error === 'requires_approval',
               taskItems: parseTaskManageItems(item.output),
             },
           };
@@ -668,9 +675,11 @@ export function App({ autoStart }: AppProps = {}) {
           kind:
             item.kind === 'error'
               ? ('error' as const)
-              : item.kind === 'feedback'
-                ? ('feedback' as const)
-                : ('text' as const),
+              : item.kind === 'warning'
+                ? ('warning' as const)
+                : item.kind === 'feedback'
+                  ? ('feedback' as const)
+                  : ('text' as const),
         };
       });
       setMessages(mapped);
@@ -735,7 +744,7 @@ export function App({ autoStart }: AppProps = {}) {
       setSkillsOpen(false);
       return;
     }
-    if (commandName === '/connect' || commandName === '/config') {
+    if (commandName === '/connect') {
       setConnectOpen(true);
       return;
     }

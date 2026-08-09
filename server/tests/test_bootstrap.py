@@ -353,3 +353,22 @@ def test_bootstrap_provider_reads_api_key_from_config(tmp_path):
 
     provider = deps.provider_registry.get("deepseek")
     assert provider.api_key == "sk-from-yaml"
+
+
+
+def test_bootstrap_uses_global_skills_tools_and_skips_project_kl(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    deps = build_app_dependencies(
+        config_path=tmp_path / "config.yaml",
+        db_path=tmp_path / "kl.db",
+        workspace=str(workspace),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+
+    assert not (workspace / ".kl").exists()
+    assert str(deps.skills.root) == str(tmp_path / "skills")
+    assert str(deps.plugins.root) == str(tmp_path / "tools")
+    assert (tmp_path / "skills").is_dir()
+    assert (tmp_path / "tools").is_dir()

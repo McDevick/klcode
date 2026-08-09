@@ -137,6 +137,7 @@ class AgentLoop:
         self._pause_events: dict[str, asyncio.Event] = {}
         self._instructions: dict[str, list[str]] = {}
         self._project_rules_cache: dict[str, str] = {}
+        self._global_user_rules_cache: str | None = None
 
     def set_paused(self, task_id: str, paused: bool) -> None:
         """Pause (clear gate) or resume (remove gate) a task's execution."""
@@ -393,18 +394,31 @@ class AgentLoop:
         self._project_rules_cache[workspace] = combined
         return combined
 
+    def _global_user_rules(self) -> str:
+        if self._global_user_rules_cache is not None:
+            return self._global_user_rules_cache
+        path = Path.home() / ".kl" / "user-rules.md"
+        text = ""
+        if path.is_file():
+            try:
+                text = path.read_text(encoding="utf-8").strip()
+            except (OSError, UnicodeDecodeError):
+                text = ""
+        self._global_user_rules_cache = text
+        return text
+
     def _layered_rules(self, session: Session) -> str:
         parts = [
             "[规则优先级]\n"
-            "用户规则 > 项目规则 > 默认行为；"
-            "如果用户规则与项目规则冲突，以用户规则为准。"
+            "用户指令沉淀 > 全局用户规则 > 项目规则 > 默认行为；"
+            "如果全局用户规则与项目规则冲突，以全局用户规则为准。"
         ]
+        user = self._global_user_rules()
         project = self._project_rules(session.workspace)
-        user = getattr(session, "rules", "")
+        if user:
+            parts.append(f"[全局用户规则]\n{user}")
         if project:
             parts.append(f"[项目规则]\n{project}")
-        if user:
-            parts.append(f"[用户规则]\n{user}")
         return "\n\n".join(parts)
 
     async def _wait_if_paused(self, task_id: str) -> None:

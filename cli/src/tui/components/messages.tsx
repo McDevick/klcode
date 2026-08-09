@@ -54,6 +54,14 @@ export function AgentBubble({ content, kind }: { content: string; kind: ChatMess
       </Box>
     );
   }
+  if (kind === 'warning') {
+    return (
+      <Box paddingX={1}>
+        {prefix}
+        <Text color={theme.deepYellow}>{content}</Text>
+      </Box>
+    );
+  }
   if (kind === 'feedback') {
     return (
       <Box paddingX={1}>
@@ -75,10 +83,16 @@ export function AgentBubble({ content, kind }: { content: string; kind: ChatMess
 export function ToolCallLine({ tool }: { tool: NonNullable<ChatMessage['tool']> }) {
   const callText = tool.args ? `${tool.name}(${tool.args})` : tool.name;
   const summary = tool.summary.length > 120 ? `${tool.summary.slice(0, 120)}…` : tool.summary;
-  const failureLabel = tool.ok ? '' : 'error: ';
-  const cleanSummary = tool.ok ? summary : summary.replace(/^error:\s*/i, '');
-  const marker = tool.ok ? '✓' : '✗';
-  const markerColor = tool.ok ? theme.green : theme.red;
+  const isWarning = tool.warning === true;
+  const failureLabel = tool.ok ? '' : isWarning ? 'warning: ' : 'error: ';
+  const cleanSummary = tool.ok
+    ? summary
+    : isWarning
+      ? summary.replace(/^warning:\s*/i, '')
+      : summary.replace(/^error:\s*/i, '');
+  const marker = tool.ok ? '✓' : isWarning ? '' : '✗';
+  const markerColor = tool.ok ? theme.green : isWarning ? theme.deepYellow : theme.red;
+  const summaryColor = isWarning ? theme.deepYellow : theme.textDim;
   return (
     <Box paddingX={1} flexDirection="column">
       <Text bold color={theme.blue}>[Tool]: {callText}</Text>
@@ -102,8 +116,8 @@ export function ToolCallLine({ tool }: { tool: NonNullable<ChatMessage['tool']> 
       ) : (
         <Box paddingLeft={3}>
           <Text color={theme.textDim}>→ </Text>
-          <Text color={markerColor}>{marker} </Text>
-          <Text color={theme.textDim}>{failureLabel}{cleanSummary}</Text>
+          {marker ? <Text color={markerColor}>{marker} </Text> : null}
+          <Text color={summaryColor}>{failureLabel}{cleanSummary}</Text>
         </Box>
       )}
     </Box>

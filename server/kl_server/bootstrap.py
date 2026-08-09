@@ -124,11 +124,12 @@ def build_app_dependencies(
         default_max_context = default_provider_config.max_context
     context = ContextAssembler(max_tokens=default_max_context)
     hooks = HookManager(config.hooks)
-    skills_root = Path(workspace) / ".kl" / "skills"
+    global_kl_dir = Path(config_path).parent
+    skills_root = global_kl_dir / "skills"
     skills_root.mkdir(parents=True, exist_ok=True)
     skills = SkillLoader(str(skills_root))
     mcp = McpAdapter(config.mcp)
-    plugins_root = Path(workspace) / ".kl" / "tools"
+    plugins_root = global_kl_dir / "tools"
     plugins_root.mkdir(parents=True, exist_ok=True)
     plugins = PluginLoader(str(plugins_root))
     register_user_tools(tools, plugins)

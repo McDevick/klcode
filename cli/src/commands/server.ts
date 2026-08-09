@@ -2,6 +2,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
+  openSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -18,7 +19,7 @@ export interface ServerProcessLike {
 
 export interface ServerSpawnOptions {
   cwd?: string;
-  stdio?: 'ignore';
+  stdio?: 'ignore' | Array<'ignore' | number>;
   detached?: boolean;
   env?: NodeJS.ProcessEnv;
 }
@@ -52,9 +53,11 @@ export interface ServerCommandOptions {
   statusImpl?: () => Promise<DaemonStatus>;
   pythonResolver?: () => Promise<string | null>;
   source?: 'manual' | 'auto';
+  logPath?: string;
 }
 
-const PYTHON_CANDIDATES = ['python', 'python3', 'py'];
+const PYTHON_CANDIDATES =
+  process.platform === 'win32' ? ['py', 'python', 'python3'] : ['python', 'python3', 'py'];
 
 function serverRoots(): string[] {
   return [join(process.cwd(), 'server'), join(process.cwd(), '..', 'server')].filter(
@@ -79,12 +82,33 @@ function venvPythonName(): string {
   return process.platform === 'win32' ? 'Scripts\\python.exe' : 'bin/python';
 }
 
+function venvPythonCandidates(venv: string): string[] {
+  return [
+    join(venv, 'Scripts', 'python.exe'),
+    join(venv, 'bin', 'python.exe'),
+    join(venv, 'bin', 'python'),
+  ];
+}
+
+function findVenvPython(venv: string): string | null {
+  for (const candidate of venvPythonCandidates(venv)) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
 function globalKlDir(): string {
   return join(homedir(), '.kl');
 }
 
+function globalVenvPythonCandidates(): string[] {
+  return venvPythonCandidates(join(globalKlDir(), 'venv'));
+}
+
 function globalVenvPython(): string {
-  return join(globalKlDir(), 'venv', venvPythonName());
+  return globalVenvPythonCandidates()[0];
 }
 
 function canImportServer(python: string, env: NodeJS.ProcessEnv): boolean {
@@ -101,9 +125,31 @@ function canImportServer(python: string, env: NodeJS.ProcessEnv): boolean {
 
 export async function resolveGlobalVenvPython(
   env: NodeJS.ProcessEnv = probeEnv(),
-  python: string = globalVenvPython(),
+  python?: string,
 ): Promise<string | null> {
-  return canImportServer(python, env) ? python : null;
+  const candidates =
+    python !== undefined ? [python] : globalVenvPythonCandidates();
+  for (const candidate of candidates) {
+    if (canImportServer(candidate, env)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function isCurrentSourceServer(modulePath: string): boolean {
+  const roots = serverRoots();
+  if (roots.length === 0) {
+    return true;
+  }
+  const normalizedModule = modulePath.toLowerCase().replace(/\\/g, '/');
+  return roots.some((root) => {
+    const normalizedRoot = root.toLowerCase().replace(/\\/g, '/');
+    return (
+      normalizedModule.startsWith(`${normalizedRoot}/kl_server/`) ||
+      normalizedModule.startsWith(`${normalizedRoot}/server/kl_server/`)
+    );
+  });
 }
 
 export async function resolvePathPython(
@@ -111,15 +157,25 @@ export async function resolvePathPython(
 ): Promise<string | null> {
   // PATH 候选：解析真实可执行路径。Windows 的 py launcher 会另起 python.exe 后退出，
   // 直接 spawn launcher 会导致 pid 指向已退出的进程且服务端生命周期不稳定。
+  // 源码仓库场景只接受当前 server/ 内的 kl_server，避免旧 worktree/系统包被拉起。
   for (const candidate of PYTHON_CANDIDATES) {
     try {
       const probe = execFileSync(
         candidate,
-        ['-c', 'import sys; import uvicorn, fastapi, kl_server; print(sys.executable)'],
+        [
+          '-c',
+          'import sys; import uvicorn, fastapi, kl_server; '
+            + 'print(sys.executable); print(kl_server.__file__)',
+        ],
         { encoding: 'utf8', stdio: 'pipe', env },
       );
-      const resolved = probe.trim();
-      return resolved.length > 0 ? resolved : candidate;
+      const lines = probe.trim().split(/\r?\n/);
+      const resolved = (lines[0] ?? '').trim();
+      const modulePath = (lines[1] ?? '').trim();
+      if (!resolved || !modulePath || !isCurrentSourceServer(modulePath)) {
+        continue;
+      }
+      return resolved;
     } catch {
       // try the next candidate
     }
@@ -195,10 +251,14 @@ export async function bootstrapGlobalVenv(
   }
   const klDir = options.klDir ?? globalKlDir();
   const venv = join(klDir, 'venv');
-  const venvPython = join(venv, venvPythonName());
   const execImpl = options.execFileSyncImpl ?? execFileSync;
+  let venvPython = join(venv, venvPythonName());
   try {
+    if (existsSync(venv)) {
+      rmSync(venv, { recursive: true, force: true });
+    }
     execImpl(python, ['-m', 'venv', venv], { stdio: 'pipe', env });
+    venvPython = findVenvPython(venv) ?? venvPython;
     const serverDir =
       options.serverDir !== undefined ? options.serverDir : discoverServerDir();
     if (serverDir !== null) {
@@ -238,6 +298,10 @@ function defaultPidPath(): string {
 
 function defaultDaemonPath(): string {
   return join(homedir(), '.kl', 'daemon.json');
+}
+
+function defaultDaemonLogPath(): string {
+  return join(homedir(), '.kl', 'daemon.log');
 }
 
 function readPid(pidPath: string): number | undefined {
@@ -308,6 +372,7 @@ export const ServerCommand = {
     const action = args[0];
     const pidPath = options.pidPath ?? defaultPidPath();
     const daemonPath = options.daemonPath ?? defaultDaemonPath();
+    const logPath = options.logPath ?? defaultDaemonLogPath();
     const baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
     const client = new ApiClient({ baseUrl, tokenPath: options.tokenPath });
 
@@ -365,6 +430,13 @@ export const ServerCommand = {
           );
         }
         const spawnImpl = (options.spawnImpl ?? spawn) as ServerSpawnImpl;
+        let logFd: number | undefined;
+        try {
+          mkdirSync(dirname(logPath), { recursive: true });
+          logFd = openSync(logPath, 'a');
+        } catch {
+          logFd = undefined;
+        }
         const pythonPath = serverRoots().join(delimiter);
         const env = pythonPath
           ? {
@@ -393,7 +465,7 @@ export const ServerCommand = {
           ],
           {
             cwd: process.cwd(),
-            stdio: 'ignore',
+            stdio: logFd !== undefined ? ['ignore', logFd, logFd] : 'ignore',
             detached: true,
             env,
           },

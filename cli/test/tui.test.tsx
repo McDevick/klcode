@@ -179,6 +179,27 @@ test('tool line renders readable args and status label', () => {
   }
 });
 
+test('tool line renders approval as warning', () => {
+  const { lastFrame, unmount } = render(
+    <ToolCallLine
+      tool={{
+        name: 'delete_file',
+        args: '"tmp/a.log"',
+        summary: 'warning: requires_approval',
+        ok: false,
+        warning: true,
+      }}
+    />,
+  );
+  try {
+    expect(lastFrame()).toContain('warning: requires_approval');
+    expect(lastFrame()).not.toContain('?');
+    expect(lastFrame()).not.toContain('✗');
+  } finally {
+    unmount();
+  }
+});
+
 test('tool line renders task_manage checklist', () => {
   const { lastFrame, unmount } = render(
     <ToolCallLine
@@ -503,6 +524,41 @@ test('app shows approval bar and sends decision on a', async () => {
     await sleep(50);
     const decisionSocket = latestTaskSocket();
     expect(decisionSocket.sent.some((data) => data.includes('"approve"'))).toBe(true);
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    restore();
+  }
+});
+
+test('app handles nested approval_request payload', async () => {
+  const fetchMock = taskFetchMocks();
+  vi.stubGlobal('fetch', fetchMock);
+  const restore = stubWebSocket();
+  const { stdin, lastFrame, unmount } = render(<App />);
+  try {
+    await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
+    stdin.write('hello');
+    stdin.write('\r');
+    await waitFor(() => hasTaskSocket());
+    const socket = taskSocket();
+    emit(socket, {
+      event: 'approval_request',
+      payload: {
+        action_id: 'a1',
+        tool: 'run_command',
+        args: { command: 'rm -rf /' },
+        level: 'critical',
+        timeout_seconds: 300,
+      },
+    });
+    await waitFor(() => (lastFrame() ?? '').includes('run_command'));
+    expect(lastFrame()).toContain('critical');
+    stdin.write('a');
+    await sleep(50);
+    const decisionSocket = latestTaskSocket();
+    expect(decisionSocket.sent.some((data) => data.includes('"approve"'))).toBe(true);
+    expect(decisionSocket.sent.some((data) => data.includes('"a1"'))).toBe(true);
   } finally {
     unmount();
     vi.unstubAllGlobals();
@@ -966,7 +1022,7 @@ test('app blocks management commands while task is running', async () => {
     stdin.write('\r');
     await waitFor(() => hasTaskSocket());
 
-    for (const command of ['/session', '/config', '/compact', '/connect']) {
+    for (const command of ['/session', '/compact', '/connect']) {
       stdin.write(command);
       stdin.write('\r');
       await waitFor(() =>
@@ -1381,7 +1437,7 @@ test('app /connect saves and overwrites provider api key', async () => {
   const { stdin, lastFrame, unmount } = render(<App />);
   try {
     await waitFor(() => (lastFrame() ?? '').includes('会话 s1 已就绪'));
-    stdin.write('/config');
+    stdin.write('/connect');
     stdin.write('\r');
     await waitFor(() => (lastFrame() ?? '').includes('API 连接'));
     await waitFor(() => (lastFrame() ?? '').includes('deepseek'));
@@ -1577,7 +1633,7 @@ test('wheel does not scroll conversation while connect panel is open', async () 
     stdin.write('/mouse');
     stdin.write('\r');
     await waitFor(() => (lastFrame() ?? '').includes('鼠标追踪: 开'));
-    stdin.write('/config');
+    stdin.write('/connect');
     stdin.write('\r');
     await waitFor(() => (lastFrame() ?? '').includes('API 连接'));
     stdin.write('\x1b[<64;5;5M'); // 滚轮上滚

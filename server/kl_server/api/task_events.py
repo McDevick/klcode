@@ -68,6 +68,10 @@ class WsForwardingLogger:
 
     def write(self, event: str, payload: dict, task_id: str = "") -> None:
         self._inner.write(event, payload, task_id)
+        # 审批事件由 ApprovalHub/WS 路由统一广播顶层字段，避免 logger 与 hub
+        # 双通道发同一事件时 TUI 被嵌套 payload 覆盖。
+        if event in {"approval_request", "approval_complete", "approval_result"}:
+            return
         self._bus.emit_sync(task_id, {"event": event, "payload": payload})
 
 
@@ -106,6 +110,14 @@ class ApprovalHub:
             return await asyncio.wait_for(future, self.timeout)
         except asyncio.TimeoutError:
             logger.warning("approval request %s timed out; rejecting", action_id)
+            await self.bus.broadcast(
+                task_id,
+                {
+                    "event": "approval_complete",
+                    "action_id": action_id,
+                    "decision": "timeout",
+                },
+            )
             return "timeout"
         finally:
             self._waiters.pop(action_id, None)

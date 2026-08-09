@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -599,7 +600,12 @@ async def test_loop_persists_continuation_on_provider_error(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_loop_layers_project_and_user_rules(tmp_path):
+async def test_loop_layers_global_user_and_project_rules(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    global_rules = home / ".kl" / "user-rules.md"
+    global_rules.parent.mkdir(parents=True)
+    global_rules.write_text("全局用户规则内容", encoding="utf-8")
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
     project_rules = tmp_path / ".kl" / "rules.md"
     project_rules.parent.mkdir(parents=True)
     project_rules.write_text("项目规则内容", encoding="utf-8")
@@ -619,18 +625,20 @@ async def test_loop_layers_project_and_user_rules(tmp_path):
         Session(
             id="s1",
             workspace=str(tmp_path),
-            rules="用户规则内容",
+            rules="旧会话规则不应注入",
         ),
         "task",
     )
 
     rules = spy.last_kwargs["rules"]
     assert "[规则优先级]" in rules
-    assert "用户规则 > 项目规则 > 默认行为" in rules
+    assert "用户指令沉淀 > 全局用户规则 > 项目规则 > 默认行为" in rules
+    assert "[全局用户规则]" in rules
+    assert "全局用户规则内容" in rules
     assert "[项目规则]" in rules
     assert "项目规则内容" in rules
-    assert "[用户规则]" in rules
-    assert "用户规则内容" in rules
+    assert "旧会话规则不应注入" not in rules
+    assert "[用户规则]" not in rules
 
 
 @pytest.mark.asyncio
