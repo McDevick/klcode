@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: make ci
+
+      - name: Run tests
+        run: make test
+
+      - name: Build server package
+        run: python -m build server
+
+      - name: Build CLI package
+        run: |
+          cd cli
+          npm run build
+          npm pack
+
+      - name: Verify artifacts
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ls -la server/dist/
+          ls -la cli/kl-code-cli-${VERSION}.tgz
+
+      - name: Generate checksums
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p release
+          sha256sum server/dist/*.whl server/dist/*.tar.gz cli/kl-code-cli-${VERSION}.tgz > release/checksums.sha256
+          cat release/checksums.sha256
+
+      - name: Publish npm package
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > cli/.npmrc
+          cd cli
+          npm publish --access public
+
+      - name: Publish PyPI package
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: |
+          python -m pip install twine
+          python -m twine upload server/dist/*
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          gh release create "${GITHUB_REF_NAME}" \
+            server/dist/kl_server-${VERSION}-py3-none-any.whl \
+            server/dist/kl_server-${VERSION}.tar.gz \
+            cli/kl-code-cli-${VERSION}.tgz \
+            release/checksums.sha256 \
+            --title "KL Code ${GITHUB_REF_NAME}" \
+            --generate-notes
