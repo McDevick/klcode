@@ -57,8 +57,62 @@ export interface ServerCommandOptions {
   logPath?: string;
 }
 
+export interface RunProcessResult {
+  code: number;
+  timedOut: boolean;
+  stdout: string;
+  stderr: string;
+}
+
+export type RunProcessImpl = (
+  command: string,
+  args: readonly string[],
+  options: { env?: NodeJS.ProcessEnv; timeoutMs: number },
+) => Promise<RunProcessResult>;
+
+export async function runProcess(
+  command: string,
+  args: readonly string[],
+  options: { env?: NodeJS.ProcessEnv; timeoutMs: number },
+): Promise<RunProcessResult> {
+  return await new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      env: options.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, options.timeoutMs);
+    child.stdout?.on('data', (chunk: Buffer) => {
+      process.stdout.write(chunk);
+      stdout += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      process.stderr.write(chunk);
+      stderr += chunk.toString();
+    });
+    child.on('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ code: code ?? -1, timedOut, stdout, stderr });
+    });
+  });
+}
+
 const PYTHON_CANDIDATES =
   process.platform === 'win32' ? ['py', 'python', 'python3'] : ['python', 'python3', 'py'];
+const PYTHON_MIN_MAJOR = 3;
+const PYTHON_MIN_MINOR = 11;
+const PROBE_TIMEOUT_MS = 5_000;
+const VENV_TIMEOUT_MS = 120_000;
+const PIP_TIMEOUT_MS = 300_000;
 
 function serverRoots(): string[] {
   const moduleRoot = dirname(fileURLToPath(import.meta.url));
@@ -128,10 +182,16 @@ function globalVenvPython(): string {
 
 function canImportServer(python: string, env: NodeJS.ProcessEnv): boolean {
   try {
-    execFileSync(python, ['-c', 'import uvicorn, fastapi, websockets, kl_server'], {
-      stdio: 'pipe',
-      env,
-    });
+    execFileSync(
+      python,
+      [
+        '-c',
+        'import sys; '
+          + 'assert sys.version_info >= (3, 11); '
+          + 'import uvicorn, fastapi, websockets, kl_server',
+      ],
+      { stdio: 'pipe', env, timeout: PROBE_TIMEOUT_MS },
+    );
     return true;
   } catch {
     return false;
@@ -179,10 +239,12 @@ export async function resolvePathPython(
         candidate,
         [
           '-c',
-          'import sys; import uvicorn, fastapi, websockets, kl_server; '
+          'import sys; '
+            + 'assert sys.version_info >= (3, 11); '
+            + 'import uvicorn, fastapi, websockets, kl_server; '
             + 'print(sys.executable); print(kl_server.__file__)',
         ],
-        { encoding: 'utf8', stdio: 'pipe', env },
+        { encoding: 'utf8', stdio: 'pipe', env, timeout: PROBE_TIMEOUT_MS },
       );
       const lines = probe.trim().split(/\r?\n/);
       const resolved = (lines[0] ?? '').trim();
@@ -203,11 +265,25 @@ function findPythonExecutable(env: NodeJS.ProcessEnv = probeEnv()): string | nul
     try {
       const probe = execFileSync(
         candidate,
-        ['-c', 'import sys; print(sys.executable)'],
-        { encoding: 'utf8', stdio: 'pipe', env },
+        [
+          '-c',
+          'import sys; print(sys.executable); '
+            + 'print(sys.version_info.major, sys.version_info.minor)',
+        ],
+        { encoding: 'utf8', stdio: 'pipe', env, timeout: PROBE_TIMEOUT_MS },
       );
-      const resolved = probe.trim();
-      return resolved.length > 0 ? resolved : candidate;
+      const lines = probe.trim().split(/\r?\n/);
+      const resolved = (lines[0] ?? '').trim();
+      const parts = (lines[1] ?? '').trim().split(/\s+/).map(Number);
+      const major = parts[0] ?? 0;
+      const minor = parts[1] ?? 0;
+      if (
+        resolved &&
+        (major > PYTHON_MIN_MAJOR ||
+          (major === PYTHON_MIN_MAJOR && minor >= PYTHON_MIN_MINOR))
+      ) {
+        return resolved;
+      }
     } catch {
       // try the next candidate
     }
@@ -243,11 +319,7 @@ export interface BootstrapGlobalVenvOptions {
   env?: NodeJS.ProcessEnv;
   confirm?: () => Promise<boolean>;
   canImport?: (python: string, env: NodeJS.ProcessEnv) => boolean;
-  execFileSyncImpl?: (
-    command: string,
-    args: readonly string[],
-    options?: { env?: NodeJS.ProcessEnv; stdio?: 'pipe' | 'ignore'; encoding?: string; cwd?: string },
-  ) => string | void;
+  runProcess?: RunProcessImpl;
 }
 
 export async function bootstrapGlobalVenv(
@@ -266,28 +338,40 @@ export async function bootstrapGlobalVenv(
   }
   const klDir = options.klDir ?? globalKlDir();
   const venv = join(klDir, 'venv');
-  const execImpl = options.execFileSyncImpl ?? execFileSync;
+  const runProcessImpl = options.runProcess ?? runProcess;
   let venvPython = join(venv, venvPythonName());
   try {
     if (existsSync(venv)) {
       rmSync(venv, { recursive: true, force: true });
     }
-    execImpl(python, ['-m', 'venv', venv], { stdio: 'pipe', env });
+    const venvResult = await runProcessImpl(
+      python,
+      ['-m', 'venv', venv],
+      { env, timeoutMs: VENV_TIMEOUT_MS },
+    );
+    if (venvResult.timedOut || venvResult.code !== 0) {
+      throw new Error('venv creation failed');
+    }
     venvPython = findVenvPython(venv) ?? venvPython;
     const serverDir =
       options.serverDir !== undefined ? options.serverDir : discoverServerDir();
-    if (serverDir !== null) {
-      execImpl(venvPython, ['-m', 'pip', 'install', '-e', serverDir], {
-        stdio: 'pipe',
-        env,
-      });
-    } else {
-      execImpl(venvPython, ['-m', 'pip', 'install', `kl-server==${version}`], {
-        stdio: 'pipe',
-        env,
-      });
+    const installArgs =
+      serverDir !== null
+        ? ['-m', 'pip', 'install', '-e', serverDir]
+        : ['-m', 'pip', 'install', `kl-server==${version}`];
+    const installResult = await runProcessImpl(venvPython, installArgs, {
+      env,
+      timeoutMs: PIP_TIMEOUT_MS,
+    });
+    if (installResult.timedOut || installResult.code !== 0) {
+      throw new Error('pip install failed');
     }
   } catch {
+    try {
+      rmSync(venv, { recursive: true, force: true });
+    } catch {
+      // 清理失败不掩盖原始错误
+    }
     return null;
   }
   const canImport = options.canImport ?? canImportServer;

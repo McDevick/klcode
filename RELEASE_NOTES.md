@@ -1,5 +1,21 @@
 # Release Notes
 
+
+## 0.1.1 (2026-08-10)
+
+> 修复发布后首次自动安装 server 卡住的问题。
+
+### Fixed
+
+- `kl init` 自动创建 venv / pip install 改为异步执行，实时显示安装进度，并增加超时。
+- Python 探测要求 `>=3.11`；不限制后续具体版本。
+- 自动安装失败时清理损坏的 `~/.kl/venv`。
+- `kl tui` 进入界面之前先检查/拉起 server，不再先渲染 TUI 再后台安装。
+
+### Upgrade
+
+- 安装 CLI：`npm install -g kl-code-cli@0.1.1`
+- 手动安装 server：`python -m pip install kl-server==0.1.1`
 ## 0.1.0 (2026-08-10)
 
 > 已发布：npm `kl-code-cli@0.1.0`、PyPI `kl-server@0.1.0`、GitHub Release `v0.1.0`。
@@ -19,6 +35,33 @@ kl tui
 
 ```powershell
 python -m pip install kl-server
+```
+
+### 安装前检查
+
+请确保环境中已有可运行的 npm 和 pip：
+
+```powershell
+npm --version
+python -m pip --version
+```
+
+如果命令不可用，请先安装 Node.js `>=22` 和 Python `>=3.11`（推荐 3.11，当前最稳定版本）。
+
+### 无法自动拉起 server 时
+
+如果 `kl tui` 多次重启后仍然无法自动拉起服务端，请手动启动：
+
+```powershell
+python -m pip install kl-server
+kl server start
+kl tui
+```
+
+也可以直接使用 uvicorn 启动：
+
+```powershell
+python -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700 --timeout-graceful-shutdown 3
 ```
 
 ### Release Assets
@@ -79,7 +122,7 @@ GitHub 自动生成的 `Source code (zip)` / `Source code (tar.gz)` 是源码归
 
 ### Upgrade Notes
 
-1. 安装要求：Python `>=3.11`、Node.js `>=22`。
+1. 安装要求：Python `>=3.11`（推荐 3.11，当前最稳定版本）、Node.js `>=22`。
 2. 首次运行前复制 `examples/config.example.yaml` 到 `~/.kl/config.yaml`，并按需配置 provider。
 3. 真实 API key 优先通过 `kl connect` 或 `kl config key set` 写入，不要直接写进配置文件。
 4. 旧项目的 `.kl/config.yaml`、`kl.db`、`memory.db`、`audit.jsonl` 不再由当前 daemon 使用；迁移到 `~/.kl/` 后再启动。

@@ -285,8 +285,9 @@ describe('bootstrapGlobalVenv', () => {
   test('creates global venv and installs pinned server version', async () => {
     const klDir = makeTempDir();
     const calls: string[] = [];
-    const execMock = vi.fn().mockImplementation((command: string, args: string[]) => {
+    const runMock = vi.fn().mockImplementation(async (command: string, args: string[]) => {
       calls.push(`${command} ${args.join(' ')}`);
+      return { code: 0, timedOut: false, stdout: '', stderr: '' };
     });
 
     const python = await bootstrapGlobalVenv({
@@ -295,7 +296,7 @@ describe('bootstrapGlobalVenv', () => {
       serverDir: null,
       version: '1.2.3',
       canImport: () => true,
-      execFileSyncImpl: execMock,
+      runProcess: runMock,
     });
 
     const expected = join(klDir, 'venv', scripts, pythonName);
@@ -308,8 +309,9 @@ describe('bootstrapGlobalVenv', () => {
     const klDir = makeTempDir();
     const serverDir = makeTempDir();
     const calls: string[] = [];
-    const execMock = vi.fn().mockImplementation((command: string, args: string[]) => {
+    const runMock = vi.fn().mockImplementation(async (command: string, args: string[]) => {
       calls.push(`${command} ${args.join(' ')}`);
+      return { code: 0, timedOut: false, stdout: '', stderr: '' };
     });
 
     await bootstrapGlobalVenv({
@@ -317,7 +319,7 @@ describe('bootstrapGlobalVenv', () => {
       python: 'python',
       serverDir,
       canImport: () => true,
-      execFileSyncImpl: execMock,
+      runProcess: runMock,
     });
 
     expect(calls[1]).toContain(`pip install -e ${serverDir}`);
@@ -339,3 +341,42 @@ describe('bootstrapGlobalVenv', () => {
     expect(await bootstrapGlobalVenv({ python: null })).toBeNull();
   });
 });
+
+  test('returns null and removes venv when install fails', async () => {
+    const klDir = makeTempDir();
+    const venvDir = join(klDir, 'venv');
+    mkdirSync(venvDir, { recursive: true });
+    writeFileSync(join(venvDir, 'marker'), 'x');
+    const runMock = vi
+      .fn()
+      .mockResolvedValueOnce({ code: 0, timedOut: false, stdout: '', stderr: '' })
+      .mockResolvedValueOnce({ code: 1, timedOut: false, stdout: '', stderr: '' });
+
+    const python = await bootstrapGlobalVenv({
+      klDir,
+      python: 'python',
+      runProcess: runMock,
+    });
+
+    expect(python).toBeNull();
+    expect(existsSync(venvDir)).toBe(false);
+  });
+
+  test('returns null and removes venv when install times out', async () => {
+    const klDir = makeTempDir();
+    const venvDir = join(klDir, 'venv');
+    mkdirSync(venvDir, { recursive: true });
+    const runMock = vi
+      .fn()
+      .mockResolvedValueOnce({ code: 0, timedOut: false, stdout: '', stderr: '' })
+      .mockResolvedValueOnce({ code: -1, timedOut: true, stdout: '', stderr: '' });
+
+    const python = await bootstrapGlobalVenv({
+      klDir,
+      python: 'python',
+      runProcess: runMock,
+    });
+
+    expect(python).toBeNull();
+    expect(existsSync(venvDir)).toBe(false);
+  });
