@@ -53,6 +53,33 @@ pip install kl-server
 
 - `kl-server` 只提供服务端命令，不注册 `kl`。
 
+### 安装前检查
+
+请确保环境中有可运行的 npm 和 pip：
+
+```powershell
+npm --version
+python -m pip --version
+```
+
+如果命令不可用，请先安装 Node.js `>=22` 和 Python `>=3.11`。
+
+### 无法自动拉起 server 时
+
+如果 `kl tui` 多次重启后仍然无法自动拉起服务端，请手动启动：
+
+```powershell
+python -m pip install kl-server
+kl server start
+kl tui
+```
+
+也可以直接使用 uvicorn 启动：
+
+```powershell
+python -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700 --timeout-graceful-shutdown 3
+```
+
 ### 如果 `kl` 命令找不到
 
 检查 npm 全局 bin 是否在 PATH：

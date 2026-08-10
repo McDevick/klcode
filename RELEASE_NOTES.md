@@ -21,6 +21,33 @@ kl tui
 python -m pip install kl-server
 ```
 
+### 安装前检查
+
+请确保环境中已有可运行的 npm 和 pip：
+
+```powershell
+npm --version
+python -m pip --version
+```
+
+如果命令不可用，请先安装 Node.js `>=22` 和 Python `>=3.11`。
+
+### 无法自动拉起 server 时
+
+如果 `kl tui` 多次重启后仍然无法自动拉起服务端，请手动启动：
+
+```powershell
+python -m pip install kl-server
+kl server start
+kl tui
+```
+
+也可以直接使用 uvicorn 启动：
+
+```powershell
+python -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700 --timeout-graceful-shutdown 3
+```
+
 ### Release Assets
 
 GitHub Release `v0.1.0` 提供以下资产：
