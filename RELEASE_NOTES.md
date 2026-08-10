@@ -56,7 +56,7 @@
 3. 真实 API key 优先通过 `kl connect` 或 `kl config key set` 写入，不要直接写进配置文件。
 4. 旧项目的 `.kl/config.yaml`、`kl.db`、`memory.db`、`audit.jsonl` 不再由当前 daemon 使用；迁移到 `~/.kl/` 后再启动。
 5. 发布 tag 建议使用 `v0.1.0`，发布前运行 server 测试、CLI 测试、TypeScript 检查和版本一致性检查。
-6. CLI 唯一官方安装方式为 `npm install -g @kl-code/cli`；`npx @kl-code/cli` 只是临时执行，不会注册全局 `kl`。
+6. CLI 唯一官方安装方式为 `npm install -g kl-code-cli`；`npx kl-code-cli` 只是临时执行，不会注册全局 `kl`。
 7. `pip install kl-server` 只注册服务端命令 `kl-server`，不会注册 `kl`。
 8. 如果找不到 `kl`，检查 npm 全局 bin 是否在 PATH：
    ```bash

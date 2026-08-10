@@ -58,7 +58,7 @@ Get-Command kl
 npm bin -g
 ```
 
-如果 `kl` 找不到，将 npm 全局 bin 加入 PATH 后重新验证；`npx @kl-code/cli` 只能临时使用，不视为“kl 已注册”。
+如果 `kl` 找不到，将 npm 全局 bin 加入 PATH 后重新验证；`npx kl-code-cli` 只能临时使用，不视为“kl 已注册”。
 
 Server 独立安装只注册 `kl-server`：
 
@@ -172,7 +172,7 @@ kl tui
 ## 7. 账号与 CI
 
 - [ ] PyPI `kl-server` 包名已注册。
-- [ ] npm `@kl-code/cli` 包名已注册。
+- [ ] npm `kl-code-cli` 包名已注册。
 - [ ] `cli/package.json` 已移除 `"private": true`。
 - [ ] 发布 token 已配置为环境变量或本地凭据，不进入仓库。
 - [ ] tag 使用 `v<version>`。
@@ -210,7 +210,7 @@ kl tui
 
 - [x] `cli/package.json` 已移除 `"private": true`
 - [x] `kl-server --help` / `kl-server --version` 可正常退出并打印帮助/版本
-- [x] npm 包名 `@kl-code/cli` 未注册（registry 404）
+- [x] npm 包名 `kl-code-cli` 未注册（registry 404）
 - [x] PyPI 包名 `kl-server` 未注册（PyPI 404）
 - [x] npm 本地登录可用：`npm whoami` 返回账号
 - [x] GitHub Secrets 已配置：`NPM_TOKEN`、`PYPI_TOKEN`

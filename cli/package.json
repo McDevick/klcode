@@ -1,5 +1,5 @@
 {
-  "name": "@kl-code/cli",
+  "name": "kl-code-cli",
   "version": "0.1.0",
   "license": "MIT",
   "description": "KL Code CLI",

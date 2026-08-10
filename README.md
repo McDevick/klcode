@@ -33,9 +33,9 @@
 
 | 方式 | 是否注册 `kl` | 说明 |
 |---|---|---|
-| `npm install -g @kl-code/cli` | ✅ | npm 会在全局 bin 目录生成 `kl`；前提是该目录已在 PATH |
+| `npm install -g kl-code-cli` | ✅ | npm 会在全局 bin 目录生成 `kl`；前提是该目录已在 PATH |
 | `npm link` | ✅ | 源码开发时注册全局 `kl`，同样依赖 npm 全局 bin |
-| `npx @kl-code/cli` | ❌ | 临时执行，不注册全局命令 |
+| `npx kl-code-cli` | ❌ | 临时执行，不注册全局命令 |
 | `npm run tui` / `node cli/dist/main.js tui` | ❌ | 只在源码目录可用 |
 | `pip install kl-server` | ❌ | 只注册 `kl-server`，不注册 `kl` |
 
@@ -62,7 +62,7 @@ Linux/macOS 常见：
 官方推荐 CLI 安装方式：
 
 ```bash
-npm install -g @kl-code/cli
+npm install -g kl-code-cli
 ```
 
 Server 独立安装：
@@ -294,7 +294,7 @@ CI 包含两个 job：`unit-test`（make ci + make test）与 `dist-check`（whe
   - `core/`：AgentLoop、守卫（ScopeFence/DangerClassifier/HITL）、沙箱（SandboxPolicy）、上下文（ContextAssembler/分桶压缩/关键词提取）、反馈、指令沉淀、审计日志、会话/任务管理
   - `hooks/`、`mcp/`、`memory/`、`models/`、`plugins/`、`providers/`、`skills/`、`storage/`、`tools/`：对应扩展子系统
   - `tests/`：pytest 测试
-- `cli/`：TypeScript Ink/Commander CLI（`@kl-code/cli`，Node >= 22）
+- `cli/`：TypeScript Ink/Commander CLI（`kl-code-cli`，Node >= 22）
   - `src/commands/`、`src/tui/`（含 commands.ts 指令注册表）、`src/api/`：命令、TUI 屏、HTTP 客户端
   - `test/`：vitest 测试
 - `examples/`：mock-LLM 机制演示脚本（守卫、反馈、上下文、工具错误、skill、MCP workspace）

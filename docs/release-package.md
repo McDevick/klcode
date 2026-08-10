@@ -45,9 +45,9 @@ python -m build server
 
 `kl` 命令注册说明：
 
-- `npm install -g @kl-code/cli` 会注册 `kl`。
+- `npm install -g kl-code-cli` 会注册 `kl`。
 - `npm link` 也会注册，但只适合开发环境。
-- `npx @kl-code/cli` 不会注册全局 `kl`。
+- `npx kl-code-cli` 不会注册全局 `kl`。
 - PyPI 的 `kl-server` 只注册服务端命令 `kl-server`。
 - 如果 `kl` 找不到，检查 npm 全局 bin 是否在 PATH：
   ```bash
