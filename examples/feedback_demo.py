@@ -116,8 +116,9 @@ async def run_demo():
         elif message["role"] == "assistant":
             for call in message.get("tool_calls") or []:
                 try:
+                    arguments = json.loads(call["function"]["arguments"])
                     provider.actions.append(
-                        json.loads(call["function"]["arguments"])
+                        {"name": call["function"]["name"], "args": arguments}
                     )
                 except (json.JSONDecodeError, KeyError):
                     pass

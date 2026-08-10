@@ -437,6 +437,7 @@ export function App({ autoStart }: AppProps = {}) {
   }, []);
 
   useEffect(() => {
+    if (!isOnline) return;
     const client = new ApiClient({ baseUrl: DEFAULT_BASE_URL });
     client
       .getModelConfig()
@@ -446,7 +447,7 @@ export function App({ autoStart }: AppProps = {}) {
       .catch(() => {
         setModelName('unknown');
       });
-  }, []);
+  }, [isOnline]);
 
   useEffect(() => {
     if (taskId === null) return;

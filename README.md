@@ -297,7 +297,7 @@ CI 包含两个 job：`unit-test`（make ci + make test）与 `dist-check`（whe
 - `cli/`：TypeScript Ink/Commander CLI（`@kl-code/cli`，Node >= 22）
   - `src/commands/`、`src/tui/`（含 commands.ts 指令注册表）、`src/api/`：命令、TUI 屏、HTTP 客户端
   - `test/`：vitest 测试
-- `examples/`：mock-LLM 机制演示脚本（守卫、反馈、上下文、工具错误）
+- `examples/`：mock-LLM 机制演示脚本（守卫、反馈、上下文、工具错误、skill、MCP workspace）
 - `docs/`：项目文档（SPEC 承诺跟踪 `promise_state.md`、上下文重构方案 `context-redesign.md`）
 - 根文件：`Makefile`、`README.md`、`SPEC.md`、`PLAN.md`、`SPEC_PROCESS.md`、`AGENT_LOG.md`、CI 配置
 

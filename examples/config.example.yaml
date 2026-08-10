@@ -20,6 +20,8 @@ providers:
     api_key: null #api可以显式配置，不过在agent内部配置可以获得更好的保密性，推荐在agent内部配置
 
 # MCP 示例：取消注释并安装对应 MCP server 后，启动时会自动发现工具。
+# filesystem MCP 会在工具调用时自动把当前 session.workspace 追加为允许目录，
+# 因此默认不需要手写路径；如果还想允许其他目录，也可以显式追加到 args。
 # mcp:
 #   filesystem:
 #     command: npx
