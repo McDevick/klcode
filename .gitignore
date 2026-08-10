@@ -21,3 +21,4 @@ node_modules/
 # Build artifacts
 dist/
 cli/*.tgz
+demo_video/

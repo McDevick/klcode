@@ -2,48 +2,64 @@
 
 > 原名：Simple Coding Agent
 
-## 项目简介
+KL Code 是一个本地 Coding Agent：在已有代码库中用自然语言接任务，读取项目、修改文件、执行命令、跑测试，并基于客观反馈自我修正。
 
-**KL Code** 是一个本地 Coding Agent（编码智能体）：在已有代码库中用自然语言接任务，读取项目、修改文件、执行命令、跑测试，并基于客观反馈自我修正。
+核心机制（agent 主循环、工具分发、治理、反馈、记忆、上下文管理）全部由项目自己的代码实现，不依赖现成 agent 编排框架；移除真实 LLM 后仍可通过 mock provider 做确定性验证。
 
-核心机制（agent 主循环、工具分发、治理、反馈、记忆、上下文管理）全部由项目自己的代码实现，不依赖现成 agent 编排框架；移除真实 LLM 后仍可通过确定性单元测试验证（mock provider）。
-
-当前进度：核心框架 + 上下文重构 Phase 1–3 + 服务端 daemon 生命周期重构 + 审批超时已实现；P1/P2 生命周期、压缩、历史、MCP 与 WS 问题已修复（server 538 / cli 124 测试全绿）。
+当前版本：`v0.1.0`。已发布 npm 包 `kl-code-cli`、PyPI 包 `kl-server` 与 GitHub Release。
 
 ## 功能特性
 
-- **AgentLoop 主循环**：context → LLM → 工具 → 反馈的固定循环；最大 20 轮 + 同类别失败重试预算降级信号
-- **反馈闭环**：工具输出纯代码分类（成功/测试失败/构建失败/lint/类型/超时/工具错误/provider 错误），去重、截断、熵脱敏后回灌下一轮
+- **AgentLoop 主循环**：context → LLM → 工具 → 反馈的固定循环
+- **反馈闭环**：工具输出分类、去重、截断、脱敏后回灌下一轮
 - **上下文四层记忆系统**：
-  - 规则层：用户指令沉淀 > 全局用户规则（`~/.kl/user-rules.md`）> 项目规则（`.kl/rules.md` + `AGENTS.md`）> 默认
-  - 状态层：task_plan（子任务 done/pending）、续接上下文（跨任务 outcome/files/next_step）
-  - 事实层：记忆按 kind 配额 + 关键词相关注入；**用户指令沉淀**（note/任务描述中的约束、偏好、流程跨任务生效）
-  - 轨迹层：历史分桶压缩（对话摘要 + 工具结果落盘引用 + 反馈去重）
-- **治理**：ScopeFence 路径围栏、SandboxPolicy 命令策略（白/黑名单、环境变量裁剪、CPU/内存资源限制、fail-closed）、DangerClassifier 危险分级（按工具权限声明）、HITL 审批状态机、`governance_decision`/审批事件审计
-- **工具系统**：18 个内置工具（文件/搜索/补丁/shell/git/测试/任务编排/输出读取）+ 用户 Python 插件 + MCP 远程工具发现注册；工具声明权限/沙箱/超时；jsonschema 参数校验；大输出全局落盘引用
-- **持久化**：SQLite（会话/任务/记忆/状态）+ append-only 脱敏审计日志 + AES 加密凭证库（keyring 优先）
-- **TUI**：CommandRegistry 注册表（别名/参数 schema/状态门控）、双向状态门控、审批面板、会话/技能/MCP/模型/连接管理面板、会话删除二次确认、WS 重连事件补发、/exit 运行中二次确认
+  - 规则层：用户指令沉淀 > 全局用户规则 > 项目规则 > 默认
+  - 状态层：任务计划、续接上下文
+  - 事实层：记忆配额 + 关键词相关注入
+  - 轨迹层：历史分桶压缩 + 大输出落盘引用
+- **治理**：ScopeFence 路径围栏、SandboxPolicy 命令策略、危险分级、HITL 审批状态机、治理/审批审计
+- **工具系统**：内置文件/搜索/patch/shell/git/测试/任务/输出读取工具 + 用户 Python 插件 + MCP 远程工具
+- **持久化**：SQLite 会话/任务/记忆 + append-only 脱敏审计日志 + 加密凭证库
+- **TUI**：命令菜单、会话管理、skill 列表、MCP 管理、模型切换、API 连接配置、审批面板、历史回放
 
 ## 环境要求
 
-- Python >= 3.11
-- Node.js >= 22，含 npm
+- Python `>= 3.11`
+- Node.js `>= 22`
+- npm
 
-## 安装方式与 kl 注册
+## 发布后快速开始
 
-| 方式 | 是否注册 `kl` | 说明 |
-|---|---|---|
-| `npm install -g kl-code-cli` | ✅ | npm 会在全局 bin 目录生成 `kl`；前提是该目录已在 PATH |
-| `npm link` | ✅ | 源码开发时注册全局 `kl`，同样依赖 npm 全局 bin |
-| `npx kl-code-cli` | ❌ | 临时执行，不注册全局命令 |
-| `npm run tui` / `node cli/dist/main.js tui` | ❌ | 只在源码目录可用 |
-| `pip install kl-server` | ❌ | 只注册 `kl-server`，不注册 `kl` |
+这是正式发布包最常用的启动方式。
 
-如果 `kl` 命令找不到：
+### Windows / macOS / Linux
+
+```bash
+npm install -g kl-code-cli
+
+kl init
+kl tui
+```
+
+说明：
+
+- `npm install -g kl-code-cli` 会注册全局 `kl` 命令。
+- 首次运行 `kl init` / `kl tui` 时，如果没有可用的 `kl-server`，CLI 会自动创建 `~/.kl/venv` 并从 PyPI 安装对应版本的 `kl-server`。
+- 也可以手动安装 server：
+
+```bash
+pip install kl-server
+```
+
+- `kl-server` 只提供服务端命令，不注册 `kl`。
+
+### 如果 `kl` 命令找不到
+
+检查 npm 全局 bin 是否在 PATH：
 
 ```powershell
 npm config get prefix
-npm bin -g
+npm prefix -g
 ```
 
 Windows 常见全局 bin 目录：
@@ -59,283 +75,316 @@ Linux/macOS 常见：
 /usr/local/bin
 ```
 
-官方推荐 CLI 安装方式：
+## 源码运行
+
+### 克隆并安装
 
 ```bash
-npm install -g kl-code-cli
-```
-
-Server 独立安装：
-
-```bash
-pip install kl-server
-```
-
-## 全新机器快速开始
-
-```bash
-# 1. 获取代码
 git clone <仓库地址> klcode
 cd klcode
-
-# 2. 安装依赖
-make install            # = pip install -e "server[dev]" + cd cli && npm install
-# Windows 无 make：
-#   python -m pip install -e "server[dev]"
-#   cd cli && npm install && cd ..
-
-# 3. 准备 venv（关键：必须用项目 venv，不要用系统 python）
-python -m venv .venv
-.venv\Scripts\python.exe -m pip install -e "server[dev]"   # Windows
-# .venv/bin/pip install -e "server[dev]"                   # Linux/macOS
-
-# 4. 启动服务端（在项目根目录）
-kl server start         # 自动探测 python 拉起 uvicorn；或手动：
-.venv\Scripts\python.exe -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700 --timeout-graceful-shutdown 3
-
-# 5. 初始化（服务端没跑会自动拉起）
-kl init
-
-# 6. 配置真实模型（默认 deepseek，先配置 API 或切换 mock）
-kl config provider add deepseek openai-compatible https://api.deepseek.com deepseek-v4-flash
-kl config key set deepseek          # 隐藏输入，进系统钥匙串
-# 默认已预置 deepseek。TUI 内优先使用 /connect 配置 API，也可用 /model 切换到 mock。
-
-# 7. 启动 TUI 提交任务（需要真实终端 TTY）
-npm run tui
 ```
 
-首次启动自动生成全局 `~/.kl/`（daemon.token、config.yaml、kl.db、audit.jsonl、memory.db）。默认 provider 为 `deepseek`；请先通过 `/connect` 配置 API Key，或使用 `/model` 切换为 `mock`。也可以把 `examples/config.example.yaml` 复制为 `~/.kl/config.yaml` 后启动。
-
-> 配置与数据已全局化：daemon 只读取 `~/.kl/config.yaml`，不再读取项目目录下的 `.kl/config.yaml`。旧项目配置中的 provider/key 引用需手动迁移到 `~/.kl/config.yaml`。
->
-> skill、用户工具与大输出也全局化：`~/.kl/skills/`、`~/.kl/tools/`、`~/.kl/tool_outputs/`；服务端启动不再在启动目录创建 `.kl`。
-
-## 安装
-
-推荐在有 `make` 的环境执行：
+创建虚拟环境并安装依赖：
 
 ```bash
-make install
+python -m venv .venv
 ```
 
-Windows 无 `make` 时，在仓库根目录依次执行等价命令：
+Windows：
 
 ```powershell
-python -m pip install -e "server[dev]"
+.\.venv\Scripts\python.exe -m pip install -e "server[dev]"
 cd cli
 npm install
 cd ..
 ```
 
-CI 依赖安装（CLI 使用 `npm ci`）：
+Linux/macOS：
 
 ```bash
-make ci
+.venv/bin/python -m pip install -e "server[dev]"
+cd cli
+npm install
+cd ..
 ```
 
-## 运行
-
-运行服务端与 CLI 测试：
+有 `make` 的环境也可以直接执行：
 
 ```bash
-make test
+make install
+```
+
+### 构建 CLI
+
+```bash
+cd cli
+npm run build
+cd ..
+```
+
+### 启动
+
+从源码目录启动 TUI：
+
+```bash
+node cli/dist/main.js init
+node cli/dist/main.js tui
+```
+
+或注册源码版 `kl`：
+
+```bash
+cd cli
+npm link
+cd ..
+
+kl init
+kl tui
+```
+
+手动启动服务端：
+
+```bash
+.venv\Scripts\python.exe -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700 --timeout-graceful-shutdown 3
+```
+
+Linux/macOS 对应：
+
+```bash
+.venv/bin/python -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700 --timeout-graceful-shutdown 3
+```
+
+## 首次运行
+
+首次启动会自动生成全局目录：
+
+```text
+~/.kl/
+  config.yaml
+  kl.db
+  memory.db
+  audit.jsonl
+  daemon.token
+  venv/
+  skills/
+  tools/
+  tool_outputs/
+```
+
+- 配置统一读取 `~/.kl/config.yaml`，不再读取项目目录下的 `.kl/config.yaml`。
+- skill 位于 `~/.kl/skills/<name>/SKILL.md`。
+- 用户 Python 插件位于 `~/.kl/tools/`。
+- 大输出默认写入 `~/.kl/tool_outputs/`。
+
+默认 provider 是 `deepseek`。首次使用请先在 TUI 中执行 `/connect` 配置 API Key，也可以使用 `/model` 切换到 `mock` 无 key 试跑。
+
+## 常用命令
+
+```text
+kl init                 初始化并准备服务端
+kl tui                  启动 TUI
+kl run "任务描述"        提交一次性任务
+kl server start|stop|status
+kl config provider list
+kl config key set <ref>
+```
+
+TUI 内常用指令：
+
+```text
+/connect   配置 API Key
+/model     切换模型
+/skills    查看 skill
+/mcp       管理 MCP server
+/session   会话管理
+/context   查看上下文状态
+/compact   手动压缩上下文
+/note      给任务追加说明
+/abort     中止任务
+/pause     暂停任务
+/continue  继续任务
+/exit      退出
+```
+
+## 配置
+
+示例配置：
+
+```text
+examples/config.example.yaml
+```
+
+可复制为：
+
+```text
+~/.kl/config.yaml
+```
+
+关键配置说明：
+
+- `default_provider` / `default_model`：默认 provider 与模型
+- `providers`：provider 的 base_url、模型列表、credential_ref
+- `mcp`：MCP server 配置
+- `sandbox`：命令允许/拒绝列表、超时、资源限制
+- `guardrail.approval_timeout_seconds`：审批超时，默认 300 秒
+- `storage.tool_outputs_dir`：大输出目录，默认 `~/.kl/tool_outputs`
+
+配置加载逻辑位于 `server/kl_server/config/loader.py`，配置模型位于 `server/kl_server/config/config.py`。
+
+## Skill
+
+Skill 文件位于：
+
+```text
+~/.kl/skills/<name>/SKILL.md
+```
+
+推荐格式：
+
+```markdown
+---
+name: leetcode
+description: 算法题解题流程
+keywords: [leetcode, 算法, cpp]
+when_to_use: 用户要求解决算法题时
+summary: 先分析题目结构，再编码并用测试验证。
+always_on: false
+---
+
+## Workflow
+...
+```
+
+- 新增/修改 skill 不需要重启后端。
+- `/skills` 只展示 skill 名称。
+- agent 可以通过 `read_skill(name)` 获取完整内容。
+- 大型 skill 可以通过 `read_skill(name, section=...)` 分节读取。
+
+## MCP
+
+MCP server 在全局配置中声明：
+
+```yaml
+mcp:
+  filesystem:
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-filesystem"
+```
+
+- `/mcp` 可以查看、刷新、删除 MCP server。
+- filesystem MCP 会自动把当前 session 的 workspace 追加为允许目录。
+- 切换 TUI 工作目录不需要重启服务端。
+- 直接修改 `~/.kl/config.yaml` 中的 MCP 配置后，需要刷新 `/mcp` 或重启服务端。
+
+## 演示
+
+仓库内 demo 位于 `examples/`，全部使用 mock LLM，不需要真实 API Key：
+
+```text
+examples/context_demo.py
+examples/feedback_demo.py
+examples/guardrail_demo.py
+examples/tool_error_demo.py
+examples/skill_demo.py
+examples/mcp_demo.py
+```
+
+运行单个 demo：
+
+```bash
+python examples/context_demo.py
+python examples/feedback_demo.py
+python examples/skill_demo.py
+python examples/mcp_demo.py
+```
+
+运行全部 demo：
+
+```powershell
+Get-ChildItem examples\*_demo.py | ForEach-Object { python $_.FullName }
+```
+
+## 目录结构
+
+```text
+server/     Python FastAPI 服务端 kl-server
+cli/        TypeScript Ink/Commander CLI kl-code-cli
+examples/   mock-LLM 演示脚本
+docs/       设计、SPEC、发布与风险文档
+```
+
+## 开发与测试
+
+```bash
+make ci        # 安装依赖
+make test      # 服务端测试 + CLI 测试
+make dev       # 构建 CLI 并启动 TUI
 ```
 
 等价命令：
 
-```powershell
-python -m pytest server/tests -q
-cd cli
-npm test
-```
-
-### 使用虚拟环境（venv）
-
-> **必须用项目虚拟环境（venv），不要用系统 `python`**：系统 Python 可能未装依赖，或装有旧版本的 kl-server，会导致接口报错（如创建 session 返回 500）。
-
-venv 是项目目录里的一个隔离 Python 环境，本项目的依赖（fastapi / uvicorn / aiosqlite 等）都已装在其中。本仓库开发 venv 位于 `.superpowers\sdd\PLAN\venv\`。
-
-#### 方式一：激活 venv 后使用（推荐）
-
-在 PowerShell 中激活（激活后**当前终端**的提示符会变成 `(venv) PS ...>`，之后 `python` 命令就指向 venv）：
-
-```powershell
-& E:\projects\SimpleCodingAgent\.superpowers\sdd\PLAN\venv\Scripts\Activate.ps1
-```
-
-如果报错 `...因为在此系统上禁止运行脚本...`，先放开执行策略（仅对当前用户生效，执行一次即可）：
-
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-```
-
-然后**重新执行激活命令**。验证是否激活成功：
-
-```powershell
-Get-Command python
-# 路径应显示 ...\.superpowers\sdd\PLAN\venv\Scripts\python.exe 而不是系统 Python
-```
-
-激活后即可直接使用 `python` 启动服务端：
-
-```powershell
-python -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700 --timeout-graceful-shutdown 3
-```
-
-> 注意：激活只对**当前终端窗口**生效，新开终端需要重新激活；退出环境用 `deactivate`。
-
-#### 方式二：不激活，直接调用 venv 的 python.exe（最简单，无需任何前置）
-
-```powershell
-E:\projects\SimpleCodingAgent\.superpowers\sdd\PLAN\venv\Scripts\python.exe -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700 --timeout-graceful-shutdown 3
-```
-
-复制整行运行即可，不需要激活、不需要执行策略设置。
-
-#### 如果还没有 venv，创建并安装依赖
-
-```powershell
-python -m venv .venv
-.venv\Scripts\python.exe -m pip install -e "server[dev]"
-```
-
-### 启动服务端（daemon）
-
-venv 就绪后（方式一或方式二均可），启动服务端：
-
-```powershell
-# 方式二（不激活，直接调用 venv 的 python.exe）：
-E:\projects\SimpleCodingAgent\.superpowers\sdd\PLAN\venv\Scripts\python.exe -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700 --timeout-graceful-shutdown 3
-# 方式一（已激活 venv）：
-python -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700 --timeout-graceful-shutdown 3
-# 或已安装 server[dev] 后使用 console 入口：
-kl-server
-```
-
-`make dev`（已可用）：构建 CLI 并启动 TUI；服务端未启动时，TUI 会自动拉起 daemon。需要真实 TTY。
-
-### CLI
-
-CLI 程序名为 `kl`（`cli/src/main.ts` 中 `program.name('kl')`）。已配置 `bin` 与 esbuild 构建（`npm run build` → `cli/dist/main.js`）。开发期可从 `cli/` 目录直接运行：
-
-```powershell
-cd cli
-npx tsx src/main.ts --help
-```
-
-或构建后链接为全局命令：
-
-```powershell
-cd cli
-npm run build   # 生成 dist/main.js
-npm link        # 之后可用 kl <命令>
-```
-
-已接线的子命令：
-
-- `kl server start|stop|status`：管理本地守护进程。`start` 自动探测可用的 python（venv 优先，其次 `python`/`python3`/`py`，要求能导入 uvicorn/fastapi/kl_server），用探测到的 python 以 `-m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700 --timeout-graceful-shutdown 3` 拉起服务，PID 写入 `~/.kl/daemon.pid`；无可用 python 时返回明确错误提示。
-- `kl init`：查询初始化状态。**服务端未运行时自动拉起 daemon**（复用 server start 探测/拉起逻辑，轮询 /health 就绪后重试）——全新机器一条命令即可冷启动；仅网络错误触发自动启动，HTTP 类错误原样报出。
-- `kl run <task>`：提交一次性任务。自动创建 session（workspace 为当前目录）后提交，任务在服务端后台执行。
-- `kl config <area> <action> ...`：管理 provider 与 key（如 `kl config provider list`、`kl config key show <ref>`）。`kl config key set` 写入服务端凭据库（keyring 优先，AES 加密文件回退）；`kl config provider add` 注册 provider 并写回 `.kl/config.yaml`（重启后仍生效）。
-- `kl tui`：启动交互式 TUI（见下文"启动 TUI"）。
-
-### 启动 TUI（交互界面）
-
-先启动服务端（见上），然后打开 TUI：
-
-```powershell
-# 最简单：仓库根目录一条命令（自动构建并启动，等价于 node cli/dist/main.js tui）
-npm run tui
-
-# 或从 cli/ 目录：
-cd cli
-npx tsx src/main.ts tui          # 开发模式（免构建）
-node dist/main.js tui            # 已构建过时
-```
-
-TUI 启动后自动创建 session（workspace 为当前目录）并连接服务端。若默认 provider 未配置 API Key，会提示先使用 `/connect` 配置，也可用 `/model` 切换为 `mock`。支持：
-
-- 输入任务回车 → 创建任务并在服务端后台执行，实时显示事件流（loop / tool / feedback / task_end）
-- 危险动作弹出审批菜单：方向键选择 approve/reject/abort，Enter 确认；快捷键 `a`/`r`/`x`
-- 滚轮（需 `/mouse`）、方向键按行连续滚动，PageUp/PageDown 半屏滚动
-- 斜杠指令（16 个，经 CommandRegistry 注册）：`/session`（会话管理）、`/skills`、`/mcp`、`/connect`、`/status`、`/model`、`/context`、`/compact`、`/help`、`/abort`、`/note`（给任务追加说明）、`/pause`、`/continue`、`/debug`、`/mouse`、`/exit`
-- **双向状态门控**：/session、/connect、/compact 任务运行时禁用；/abort、/note、/pause、/continue 无任务时禁用
-- **/exit 运行中二次确认**：任务运行时第一次输入提示"再次输入 /exit 确认退出"，第二次才退出
-- 参数错误显示该指令的用法（注册表生成式提示）
-
-斜杠命令菜单和配置向导会停靠在消息区下方的固定面板中，不覆盖已有对话；输入区始终保留在面板下方。
-
-> 需要真实终端（TTY）：ink 在非交互管道（如 `echo | kl tui`）下会提示 raw mode 不支持，请在交互式终端中运行。
-
-## 分发命令
-
 ```bash
-make install   # 本地可编辑安装（server 使用 pip editable，CLI 使用 npm install）
-make ci        # CI 依赖安装（CLI 使用 npm ci）
-make test      # 运行 server pytest 与 CLI vitest
-make dev       # 构建 CLI 并启动 TUI；服务端未启动时自动拉起 daemon
+python -m pytest server/tests -q
+cd cli && npm test
+cd cli && npx tsc --noEmit
 ```
 
-打包配置已就绪（Task 5.3）：
+当前基线：
 
-- server：`server/pyproject.toml`，`python -m build server` 产出 wheel/sdist，console 入口 `kl-server`
-- CLI：`cli/package.json` 配置 `bin`/`files`/`prepack`，`npm pack` 只发布 `dist` 构建产物
+- Server：`555 passed, 1 skipped`
+- CLI：`124 passed`
+- TypeScript：通过
 
-CI 包含两个 job：`unit-test`（make ci + make test）与 `dist-check`（wheel/sdist 构建 + 包内容断言 + cli build + --help 可运行性检查）。
+## 发布
 
-实际发布（push 到 PyPI / npm）尚未执行，属后续规划。
+- npm：`kl-code-cli`
+- PyPI：`kl-server`
+- GitHub Release：`v0.1.0`
 
-## 目录结构
+Release workflow 位于：
 
-- `server/`：Python FastAPI 包 `kl-server`，模块 `kl_server`，Python >= 3.11
-  - `api/`：应用工厂、REST 路由与 WebSocket
-  - `config/`：配置模型、YAML loader、凭证存储（keyring/AES 加密文件）
-  - `core/`：AgentLoop、守卫（ScopeFence/DangerClassifier/HITL）、沙箱（SandboxPolicy）、上下文（ContextAssembler/分桶压缩/关键词提取）、反馈、指令沉淀、审计日志、会话/任务管理
-  - `hooks/`、`mcp/`、`memory/`、`models/`、`plugins/`、`providers/`、`skills/`、`storage/`、`tools/`：对应扩展子系统
-  - `tests/`：pytest 测试
-- `cli/`：TypeScript Ink/Commander CLI（`kl-code-cli`，Node >= 22）
-  - `src/commands/`、`src/tui/`（含 commands.ts 指令注册表）、`src/api/`：命令、TUI 屏、HTTP 客户端
-  - `test/`：vitest 测试
-- `examples/`：mock-LLM 机制演示脚本（守卫、反馈、上下文、工具错误、skill、MCP workspace）
-- `docs/`：项目文档（SPEC 承诺跟踪 `promise_state.md`、上下文重构方案 `context-redesign.md`）
-- 根文件：`Makefile`、`README.md`、`SPEC.md`、`PLAN.md`、`SPEC_PROCESS.md`、`AGENT_LOG.md`、CI 配置
+```text
+.github/workflows/release.yml
+```
+
+推送 `v<version>` tag 后会自动：
+
+- 运行测试
+- 构建 server wheel/sdist
+- 构建 CLI tarball
+- 发布 npm 与 PyPI
+- 创建 GitHub Release 并附带资产
+
+发布详情见 `RELEASE_NOTES.md` 和 `docs/release-package.md`。
 
 ## 安全边界
 
-- 服务仅绑定 `127.0.0.1:8700`，不对外网监听。
-- 守护进程 token 存储在 `~/.kl/daemon.token`；HTTP API 中间件校验 `Authorization: Bearer <token>`。
-- 命令执行受 `kl_server.core.guardrail`（ScopeFence、DangerClassifier、HITLManager）与 `kl_server.core.sandbox`（SandboxPolicy：白/黑名单、二进制混淆防护、环境变量裁剪、CPU/内存资源限制、配置损坏时 fail-closed）约束。
-- 危险等级按工具权限声明分级（`destructive` / `unmanaged_escalation`），新插件工具声明权限即自动受控。
-- 审计日志由 `kl_server.core.event_logger` 写入（append-only），敏感字段脱敏；治理决策、审批请求/完成均有独立审计事件。
-- hook payload 经 `redact_payload` 脱敏后外发。
-- 凭证通过 `kl_server.config.credentials` 管理（keyring 优先 → AES 加密文件回退），仓库不提交任何真实凭证。
-- 部署前仍需按 `SPEC.md` 完成最终安全审计。
-
-## 关键配置
-
-- 示例配置见 `examples/config.example.yaml`，默认 provider 为 `deepseek`。首次使用先通过 `/connect` 配置 API Key，也可用 `/model` 切换到 `mock`；如果确实需要配置文件默认 mock，再显式设置 `default_provider: mock`。
-- 配置加载：`kl_server.config.loader.load_app_config`，配置模型 `kl_server.config.config.AppConfig`（YAML，`extra="forbid"`，含 `sandbox` 配置节）。
-- 全局工具输出：默认写入 `~/.kl/tool_outputs/`，可通过 `storage.tool_outputs_dir` 覆盖，并支持 `storage.tool_outputs_retention_days` / `storage.tool_outputs_max_mb` 清理策略。
-- 凭证存储：`kl_server.config.credentials`（keyring 后端，AES 加密文件回退，支持 .env）。
-- 配置 YAML 由 `bootstrap.build_app_dependencies` 在服务启动时加载（含 fail-closed 兜底：配置损坏时以 deny_all 沙箱启动并暴露错误）。
+- 服务仅绑定 `127.0.0.1:8700`
+- daemon token 存储在 `~/.kl/daemon.token`
+- HTTP API 校验 `Authorization: Bearer <token>`
+- 命令执行受 Guardrail 与 SandboxPolicy 约束
+- 危险工具按权限声明分级
+- 审计日志 append-only 且敏感字段脱敏
+- hook payload 自动脱敏
+- 凭证优先 keyring，回退 AES 加密文件
 
 ## 注意事项
 
-- **Skill 文件无需重启**：`~/.kl/skills/` 下的 skill 每次 `/skills` 或新任务都会重新扫描，新增/修改 `SKILL.md` 后下个新任务直接生效。
-- **插件工具需要重启**：`~/.kl/tools/` 下的用户 Python 插件在服务端启动时加载，新增插件后需要重启 `kl server`。
-- **MCP 配置文件不自动热更新**：直接修改 `~/.kl/config.yaml` 中的 MCP 配置后，需要重启服务端，或使用 `/mcp` 刷新对应 server。
-- **代码改动需要重启**：服务端 Python / CLI 代码变更后需要重启 `kl server` 才会生效。
-- **filesystem MCP 跟随 workspace**：MCP filesystem 会按当前 session 的 workspace 自动创建允许目录，切换 TUI 目录不需要重启。
+- Skill 文件无需重启后端。
+- 用户插件 `~/.kl/tools/` 在服务端启动时加载，新增插件需要重启。
+- MCP 配置文件修改后需要刷新或重启服务端。
+- 代码改动需要重启服务端。
+- filesystem MCP 自动跟随 workspace。
 
 ## 已知限制
 
-- `run_command` 不是 OS 级沙箱：当前默认 `sandbox.allow` 为空时，除 `deny` 列表外可执行任意本机命令，也能读写 workspace 外文件。当前按“本地完整权限模式”使用，不建议在不可信目录或多人共享环境中运行。
-- 凭据保护存在本地文件读取风险：keyring 不可用时，AES 加密回退的主密码与密文同存于 `~/.kl`；配置也允许明文 `api_key`。这主要用于防止误提交/意外泄露，不能防御能读取 `~/.kl` 的攻击者。API Key 仍建议优先通过 `/connect` 或 keyring 保存。
-- 上下文 token 预算：当前使用估算，没有模型真实 tokenizer/usage，也没有循环级 token 硬停止；长任务主要靠 `max_iterations` 兜底，当前版本不处理。
-- Hook 执行同步阻塞：command/http hook 会在 async 事件循环内同步执行，慢 hook 可能阻塞其他任务和 WS 事件，当前版本不处理。
-- 快照/Git 边界：非 Git 快照失败时任务仍继续；Git 模式不自动创建任务分支，`run_command` 允许普通 `git push`，当前版本不处理。
-- `kl server start` 探测 python 需要能导入 uvicorn/fastapi/kl_server；若本机只有缺依赖的系统 python，请用项目 venv 手动启动。
-- 服务端凭据库在 keyring 与加密文件都不可用时才回退为内存存储（不持久化），初始化时会提示。
-- 审批请求默认 300 秒超时，超时自动拒绝；可在 `config.yaml` 的 `guardrail.approval_timeout_seconds` 调整。
-- WebUI、subagent 分派、远程部署与 Docker **不在** `SPEC.md`/`PLAN.md` 授权范围内，仓库不会承诺这些能力。
+- `run_command` 不是 OS 级沙箱：当前默认 `sandbox.allow` 为空时，除 deny 列表外可执行任意本机命令，也能读写 workspace 外文件。不建议在不可信目录或多人共享环境中运行。
+- 凭据保护存在本地文件读取风险：keyring 不可用时，AES 加密回退的主密码与密文同存于 `~/.kl`；配置也允许明文 `api_key`。API Key 仍建议优先通过 `/connect` 或 keyring 保存。
+- 上下文 token 预算：当前使用估算，没有模型真实 tokenizer/usage，也没有循环级 token 硬停止；长任务主要靠 `max_iterations` 兜底。
+- Hook 执行同步阻塞：慢 hook 可能阻塞其他任务和 WS 事件。
+- 快照/Git 边界：非 Git 快照失败时任务仍继续；Git 模式不自动创建任务分支。
+- `kl server start` 探测 Python 需要能导入 `uvicorn`、`fastapi`、`websockets`、`kl_server`。
+- 审批请求默认 300 秒超时，超时自动拒绝。
+- WebUI、subagent 分派、远程部署与 Docker 不在当前授权范围内。
