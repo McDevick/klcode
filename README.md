@@ -320,6 +320,14 @@ CI 包含两个 job：`unit-test`（make ci + make test）与 `dist-check`（whe
 - 凭证存储：`kl_server.config.credentials`（keyring 后端，AES 加密文件回退，支持 .env）。
 - 配置 YAML 由 `bootstrap.build_app_dependencies` 在服务启动时加载（含 fail-closed 兜底：配置损坏时以 deny_all 沙箱启动并暴露错误）。
 
+## 注意事项
+
+- **Skill 文件无需重启**：`~/.kl/skills/` 下的 skill 每次 `/skills` 或新任务都会重新扫描，新增/修改 `SKILL.md` 后下个新任务直接生效。
+- **插件工具需要重启**：`~/.kl/tools/` 下的用户 Python 插件在服务端启动时加载，新增插件后需要重启 `kl server`。
+- **MCP 配置文件不自动热更新**：直接修改 `~/.kl/config.yaml` 中的 MCP 配置后，需要重启服务端，或使用 `/mcp` 刷新对应 server。
+- **代码改动需要重启**：服务端 Python / CLI 代码变更后需要重启 `kl server` 才会生效。
+- **filesystem MCP 跟随 workspace**：MCP filesystem 会按当前 session 的 workspace 自动创建允许目录，切换 TUI 目录不需要重启。
+
 ## 已知限制
 
 - `run_command` 不是 OS 级沙箱：当前默认 `sandbox.allow` 为空时，除 `deny` 列表外可执行任意本机命令，也能读写 workspace 外文件。当前按“本地完整权限模式”使用，不建议在不可信目录或多人共享环境中运行。

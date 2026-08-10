@@ -131,7 +131,7 @@ async def register_mcp_tools(
     registry,
     adapter: McpAdapter,
     servers: list[str] | None = None,
-    discovery_timeout: float = 10.0,
+    discovery_timeout: float = 30.0,
 ) -> list[dict]:
     configured_servers = getattr(adapter, "servers", None)
     if not configured_servers:
