@@ -30,7 +30,7 @@ npm --version
 python -m pip --version
 ```
 
-如果命令不可用，请先安装 Node.js `>=22` 和 Python `>=3.11`。
+如果命令不可用，请先安装 Node.js `>=22` 和 Python `>=3.11`（推荐 3.11，当前最稳定版本）。
 
 ### 无法自动拉起 server 时
 
@@ -106,7 +106,7 @@ GitHub 自动生成的 `Source code (zip)` / `Source code (tar.gz)` 是源码归
 
 ### Upgrade Notes
 
-1. 安装要求：Python `>=3.11`、Node.js `>=22`。
+1. 安装要求：Python `>=3.11`（推荐 3.11，当前最稳定版本）、Node.js `>=22`。
 2. 首次运行前复制 `examples/config.example.yaml` 到 `~/.kl/config.yaml`，并按需配置 provider。
 3. 真实 API key 优先通过 `kl connect` 或 `kl config key set` 写入，不要直接写进配置文件。
 4. 旧项目的 `.kl/config.yaml`、`kl.db`、`memory.db`、`audit.jsonl` 不再由当前 daemon 使用；迁移到 `~/.kl/` 后再启动。

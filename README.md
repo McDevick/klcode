@@ -24,7 +24,7 @@ KL Code 是一个本地 Coding Agent：在已有代码库中用自然语言接�
 
 ## 环境要求
 
-- Python `>= 3.11`
+- Python `>= 3.11`（推荐 3.11，当前最稳定版本）
 - Node.js `>= 22`
 - npm
 
@@ -62,7 +62,7 @@ npm --version
 python -m pip --version
 ```
 
-如果命令不可用，请先安装 Node.js `>=22` 和 Python `>=3.11`。
+如果命令不可用，请先安装 Node.js `>=22` 和 Python `>=3.11`（推荐 3.11，当前最稳定版本）。
 
 ### 无法自动拉起 server 时
 
