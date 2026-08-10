@@ -1,6 +1,6 @@
 # Problem：`kl init` 首次自动安装 server 卡住
 
-> 状态：待修复
+> 状态：代码已修复，待发布后验证
 > 日期：2026-08-10
 > 范围：`cli/src/commands/server.ts` 的 `bootstrapGlobalVenv`
 > 关联：docs/server-redesign.md（自动拉起）、docs/release-test.md（发布后测试）
@@ -220,3 +220,24 @@ kl tui
 - `kl tui` 在 server 未就绪时不会直接进入完整界面，或会先显示等待/安装状态。
 - 自动安装失败时清理坏 venv，并提示手动安装命令。
 - 手动安装 server 后，`kl init` / `kl tui` 仍可正常自动拉起。
+## 8. 修复记录
+
+已实现：
+
+- `cli/src/commands/server.ts`
+  - 新增 `runProcess()`，venv 创建与 pip 安装改为异步 `spawn`，实时输出日志，并设置超时；
+  - Python 探测增加 `>=3.11` 版本校验，不限制具体后续版本；
+  - `bootstrapGlobalVenv` 安装失败或超时后清理损坏的 `~/.kl/venv`；
+- `cli/src/main.ts`
+  - `kl tui` 进入 TUI 前先执行 `ensureServerReady()`；
+  - server 未运行时先自动拉起/安装，就绪后再进入 TUI；
+  - 启动失败时打印错误并退出，不进入 TUI。
+
+验证：
+
+- CLI 测试：`129 passed`
+- TypeScript：通过
+
+仍需发布后验证：
+
+- 全新机器只安装 CLI 时，`kl init` / `kl tui` 能显示安装进度并完成 server 自举。

@@ -6,7 +6,7 @@ KL Code 是一个本地 Coding Agent：在已有代码库中用自然语言接�
 
 核心机制（agent 主循环、工具分发、治理、反馈、记忆、上下文管理）全部由项目自己的代码实现，不依赖现成 agent 编排框架；移除真实 LLM 后仍可通过 mock provider 做确定性验证。
 
-当前版本：`v0.1.0`。已发布 npm 包 `kl-code-cli`、PyPI 包 `kl-server` 与 GitHub Release。
+当前版本：`v0.1.1`。已发布 npm 包 `kl-code-cli`、PyPI 包 `kl-server` 与 GitHub Release。
 
 ## 功能特性
 

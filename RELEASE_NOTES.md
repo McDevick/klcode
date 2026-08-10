@@ -1,5 +1,21 @@
 # Release Notes
 
+
+## 0.1.1 (2026-08-10)
+
+> 修复发布后首次自动安装 server 卡住的问题。
+
+### Fixed
+
+- `kl init` 自动创建 venv / pip install 改为异步执行，实时显示安装进度，并增加超时。
+- Python 探测要求 `>=3.11`；不限制后续具体版本。
+- 自动安装失败时清理损坏的 `~/.kl/venv`。
+- `kl tui` 进入界面之前先检查/拉起 server，不再先渲染 TUI 再后台安装。
+
+### Upgrade
+
+- 安装 CLI：`npm install -g kl-code-cli@0.1.1`
+- 手动安装 server：`python -m pip install kl-server==0.1.1`
 ## 0.1.0 (2026-08-10)
 
 > 已发布：npm `kl-code-cli@0.1.0`、PyPI `kl-server@0.1.0`、GitHub Release `v0.1.0`。
