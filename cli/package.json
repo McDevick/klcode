@@ -1,0 +1,45 @@
+{
+  "name": "kl-code-cli",
+  "version": "0.1.0",
+  "license": "MIT",
+  "description": "KL Code CLI",
+  "type": "module",
+  "bin": {
+    "kl": "./dist/main.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/McDevick/klcode.git"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node scripts/sync-server-version.mjs && esbuild src/main.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/main.js --banner:js=\"#!/usr/bin/env node\" --packages=external",
+    "prepack": "npm run build",
+    "test": "vitest run",
+    "check:server-version": "node scripts/sync-server-version.mjs --check"
+  },
+  "dependencies": {
+    "@inkjs/ui": "^2.0.0",
+    "commander": "^15.0.0",
+    "ink": "^7.1.1",
+    "marked": "^18.0.9",
+    "react": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "@types/react": "^19.2.18",
+    "esbuild": "^0.28.0",
+    "ink-testing-library": "^4.0.0",
+    "tsx": "^4.23.5",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

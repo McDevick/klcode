@@ -1,0 +1,11 @@
+{
+  "name": "kl-code-root",
+  "private": true,
+  "license": "MIT",
+  "description": "KL Code repository root convenience scripts (the CLI package lives in cli/)",
+  "scripts": {
+    "build": "npm --prefix cli run build",
+    "dev": "npm run tui",
+    "tui": "npm --prefix cli run build && node cli/dist/main.js tui"
+  }
+}

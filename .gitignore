@@ -1,0 +1,23 @@
+# 需求文件
+requirement_file/
+
+# Claude Code worktrees / scratch
+.claude/
+
+# 项目运行时数据（config.yaml / kl.db / audit.jsonl / memory.db）
+.kl/
+
+# 临时目录
+tmp/
+
+# Python
+__pycache__/
+*.egg-info/
+.pytest_cache/
+
+# Node
+node_modules/
+
+# Build artifacts
+dist/
+cli/*.tgz

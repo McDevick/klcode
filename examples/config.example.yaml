@@ -1,0 +1,50 @@
+# KL Code 示例配置
+# 复制到 ~/.kl/config.yaml 后按需修改。
+# 不要提交真实 api_key；优先通过 TUI 的 /connect 保存。
+# 默认 provider 为 deepseek；首次运行请先 /connect 配置 API Key，
+# 也可以使用 /model 切换为 mock 进行无 key 试跑。
+
+default_provider: deepseek
+default_model: deepseek-v4-flash
+
+providers:
+  deepseek:
+    type: openai-compatible #目前只支持这一个格式
+    base_url: https://api.deepseek.com
+    default_model: deepseek-v4-flash
+    max_context: 20000
+    models:
+      - deepseek-v4-flash
+      - deepseek-v4-pro
+    credential_ref: null #通过 /connect 配置后会写入 credential_ref
+    api_key: null #api可以显式配置，不过在agent内部配置可以获得更好的保密性，推荐在agent内部配置
+
+# MCP 示例：取消注释并安装对应 MCP server 后，启动时会自动发现工具。
+# filesystem MCP 会在工具调用时自动把当前 session.workspace 追加为允许目录，
+# 因此默认不需要手写路径；如果还想允许其他目录，也可以显式追加到 args。
+# mcp:
+#   filesystem:
+#     command: npx
+#     args:
+#       - "-y"
+#       - "@modelcontextprotocol/server-filesystem"
+
+# 全局工具输出存储：默认放在 ~/.kl/tool_outputs/。
+# retention_days/max_mb 任一项为 null 表示不限制。
+storage:
+  tool_outputs_dir: null
+  tool_outputs_retention_days: 30
+  tool_outputs_max_mb: 500
+
+sandbox:
+  allow: []
+  deny:
+    - rm
+    - docker
+  deny_all: false
+  timeout: 120
+  max_cpu_seconds: 300
+  max_memory_mb: 1024
+
+guardrail:
+  approval_timeout_seconds: 300
