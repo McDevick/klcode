@@ -111,6 +111,34 @@ npm run tui
 >
 > skill、用户工具与大输出也全局化：`~/.kl/skills/`、`~/.kl/tools/`、`~/.kl/tool_outputs/`；服务端启动不再在启动目录创建 `.kl`。
 
+## 演示
+
+### Demo 脚本
+
+demo 位于仓库 `examples/` 目录，全部使用 mock LLM，不需要真实 API Key：
+
+- `context_demo.py`：上下文预算与摘要
+- `feedback_demo.py`：反馈闭环驱动 agent 改变下一步
+- `guardrail_demo.py`：危险命令分级
+- `tool_error_demo.py`：工具异常隔离
+- `skill_demo.py`：skill 渐进式披露与 `read_skill`
+- `mcp_demo.py`：MCP filesystem 按 workspace 隔离 transport
+
+运行单个 demo：
+
+```powershell
+python examples\context_demo.py
+python examples\feedback_demo.py
+python examples\skill_demo.py
+python examples\mcp_demo.py
+```
+
+运行全部 demo：
+
+```powershell
+Get-ChildItem examples\*_demo.py | ForEach-Object { python $_.FullName }
+```
+
 ## 安装
 
 推荐在有 `make` 的环境执行：
@@ -314,7 +342,7 @@ CI 包含两个 job：`unit-test`（make ci + make test）与 `dist-check`（whe
 
 ## 关键配置
 
-- 示例配置见 `examples/config.example.yaml`，默认 provider 为 `deepseek`。首次使用先通过 `/connect` 配置 API Key，也可用 `/model` 切换到 `mock`；如果确实需要配置文件默认 mock，再显式设置 `default_provider: mock`。
+- 机制演示见 `examples/config.example.yaml`，默认 provider 为 `deepseek`。首次使用先通过 `/connect` 配置 API Key，也可用 `/model` 切换到 `mock`；如果确实需要配置文件默认 mock，再显式设置 `default_provider: mock`。
 - 配置加载：`kl_server.config.loader.load_app_config`，配置模型 `kl_server.config.config.AppConfig`（YAML，`extra="forbid"`，含 `sandbox` 配置节）。
 - 全局工具输出：默认写入 `~/.kl/tool_outputs/`，可通过 `storage.tool_outputs_dir` 覆盖，并支持 `storage.tool_outputs_retention_days` / `storage.tool_outputs_max_mb` 清理策略。
 - 凭证存储：`kl_server.config.credentials`（keyring 后端，AES 加密文件回退，支持 .env）。

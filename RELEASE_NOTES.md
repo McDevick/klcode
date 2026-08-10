@@ -1,8 +1,36 @@
 # Release Notes
 
-## 0.1.0 (2026-08-09)
+## 0.1.0 (2026-08-10)
 
-> 当前为开发快照，尚未发布到 PyPI / npm。此文件用于正式发布前核对变更、已知问题和升级注意事项。
+> 已发布：npm `kl-code-cli@0.1.0`、PyPI `kl-server@0.1.0`、GitHub Release `v0.1.0`。
+
+
+### 安装
+
+普通用户直接安装 CLI，首次启动会自动准备 server：
+
+```powershell
+npm install -g kl-code-cli
+kl init
+kl tui
+```
+
+如果希望手动安装 server，可以额外执行：
+
+```powershell
+python -m pip install kl-server
+```
+
+### Release Assets
+
+GitHub Release `v0.1.0` 提供以下资产：
+
+- `checksums.sha256`
+- `kl-code-cli-0.1.0.tgz`
+- `kl_server-0.1.0-py3-none-any.whl`
+- `kl_server-0.1.0.tar.gz`
+
+GitHub 自动生成的 `Source code (zip)` / `Source code (tar.gz)` 是源码归档，主要用于审计或从源码运行。
 
 ### Added
 
