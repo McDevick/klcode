@@ -254,10 +254,14 @@ async def test_loop_memory_keeps_feedback_tail(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_loop_uses_tool_summary_in_history():
+async def test_loop_uses_tool_summary_in_history(tmp_path):
     registry = ToolRegistry()
     registry.register(BigOutputTool())
-    executor = ToolExecutor(registry, summarizer=FakeToolSummarizer())
+    executor = ToolExecutor(
+        registry,
+        summarizer=FakeToolSummarizer(),
+        output_dir=tmp_path / "tool_outputs",
+    )
     provider = MockProvider(responses=['{"tool":"big_output","args":{}}', "DONE"])
     loop = AgentLoop(
         provider=provider,
@@ -265,7 +269,7 @@ async def test_loop_uses_tool_summary_in_history():
         settings=LoopSettings(max_iterations=3),
     )
 
-    await loop.run(Session(id="s1", workspace="."), "task")
+    await loop.run(Session(id="s1", workspace=str(tmp_path)), "task")
 
     second_messages = provider.calls[1].messages
     tool_messages = [
@@ -279,10 +283,10 @@ async def test_loop_uses_tool_summary_in_history():
 
 
 @pytest.mark.asyncio
-async def test_loop_keeps_file_references_in_truncated_tool_history():
+async def test_loop_keeps_file_references_in_truncated_tool_history(tmp_path):
     registry = ToolRegistry()
     registry.register(BigReferencedOutputTool())
-    executor = ToolExecutor(registry)
+    executor = ToolExecutor(registry, output_dir=tmp_path / "tool_outputs")
     provider = MockProvider(
         responses=['{"tool":"big_referenced","args":{}}', "DONE"]
     )
@@ -292,7 +296,7 @@ async def test_loop_keeps_file_references_in_truncated_tool_history():
         settings=LoopSettings(max_iterations=3),
     )
 
-    await loop.run(Session(id="s1", workspace="."), "task")
+    await loop.run(Session(id="s1", workspace=str(tmp_path)), "task")
 
     tool_messages = [
         message

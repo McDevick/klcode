@@ -1,12 +1,70 @@
 image: python:3.11
 
-unit-test:
-  stage: test
+stages:
+  - test
+  - distribution
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  npm_config_cache: "$CI_PROJECT_DIR/.cache/npm"
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+default:
   before_script:
     - apt-get update
-    - apt-get install -y curl
+    - apt-get install -y curl make
     - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
     - apt-get install -y nodejs
+
+unit-test:
+  stage: test
   script:
     - make ci
     - make test
+  cache:
+    key:
+      files:
+        - server/pyproject.toml
+        - cli/package-lock.json
+    paths:
+      - .cache/pip
+      - .cache/npm
+      - cli/node_modules/
+
+dist-check:
+  stage: distribution
+  script:
+    - make ci
+    - python -m build server
+    - ls -la server/dist/
+    - |
+      python - <<'EOF'
+      import glob, zipfile
+      wheels = glob.glob("server/dist/*.whl")
+      sdists = glob.glob("server/dist/*.tar.gz")
+      assert wheels, "no wheel artifact"
+      assert sdists, "no sdist artifact"
+      with zipfile.ZipFile(wheels[0]) as archive:
+          names = archive.namelist()
+          assert any(name.startswith("kl_server/") for name in names), (
+              f"wheel missing kl_server package: {names[:10]}"
+          )
+      print("server artifacts ok:", wheels[0], sdists[0])
+      EOF
+    - cd cli && npm run build
+    - cd cli && npm run check:server-version
+    - test -f cli/dist/main.js
+    - node cli/dist/main.js --help | head -20
+  cache:
+    key:
+      files:
+        - server/pyproject.toml
+        - cli/package-lock.json
+    paths:
+      - .cache/pip
+      - .cache/npm
+      - cli/node_modules/

@@ -185,11 +185,15 @@ async def test_cancelled_error_propagates():
 
 
 @pytest.mark.asyncio
-async def test_executor_truncates_large_output():
+async def test_executor_truncates_large_output(tmp_path):
     registry = ToolRegistry()
     registry.register(BigTool())
-    executor = ToolExecutor(registry, max_output_chars=10_000)
-    result = await executor.execute("big", {}, ToolContext(workspace="."))
+    executor = ToolExecutor(
+        registry,
+        max_output_chars=10_000,
+        output_dir=tmp_path / "tool_outputs",
+    )
+    result = await executor.execute("big", {}, ToolContext(workspace=str(tmp_path)))
     assert len(result.output) == 10_000
     assert result.output.endswith("\n...[truncated]")
     assert result.output.startswith("x")
@@ -396,16 +400,17 @@ class RecordingLogger:
 
 
 @pytest.mark.asyncio
-async def test_executor_attaches_summary_for_large_output():
+async def test_executor_attaches_summary_for_large_output(tmp_path):
     registry = ToolRegistry()
     registry.register(BigTool())
     executor = ToolExecutor(
         registry,
         max_output_chars=10_000,
         summarizer=FakeSummarizer(),
+        output_dir=tmp_path / "tool_outputs",
     )
 
-    result = await executor.execute("big", {}, ToolContext(workspace="."))
+    result = await executor.execute("big", {}, ToolContext(workspace=str(tmp_path)))
 
     assert result.summary == "summarized output"
     assert result.truncated is True
