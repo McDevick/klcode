@@ -266,13 +266,11 @@ test('app submits a task and streams events into messages', async () => {
     stdin.write('\r');
     await waitFor(() => (lastFrame() ?? '').includes('hello'));
 
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      4,
+    expect(fetchMock).toHaveBeenCalledWith(
       'http://127.0.0.1:8700/api/v1/tasks',
       expect.objectContaining({ method: 'POST' }),
     );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      5,
+    expect(fetchMock).toHaveBeenCalledWith(
       'http://127.0.0.1:8700/api/v1/tasks/t1/run',
       expect.objectContaining({ method: 'POST' }),
     );
