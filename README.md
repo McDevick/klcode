@@ -342,7 +342,7 @@ CI 包含两个 job：`unit-test`（make ci + make test）与 `dist-check`（whe
 
 ## 关键配置
 
-- 机制演示见 `examples/config.example.yaml`，默认 provider 为 `deepseek`。首次使用先通过 `/connect` 配置 API Key，也可用 `/model` 切换到 `mock`；如果确实需要配置文件默认 mock，再显式设置 `default_provider: mock`。
+- 示例配置见 `examples/config.example.yaml`，默认 provider 为 `deepseek`。首次使用先通过 `/connect` 配置 API Key，也可用 `/model` 切换到 `mock`；如果确实需要配置文件默认 mock，再显式设置 `default_provider: mock`。
 - 配置加载：`kl_server.config.loader.load_app_config`，配置模型 `kl_server.config.config.AppConfig`（YAML，`extra="forbid"`，含 `sandbox` 配置节）。
 - 全局工具输出：默认写入 `~/.kl/tool_outputs/`，可通过 `storage.tool_outputs_dir` 覆盖，并支持 `storage.tool_outputs_retention_days` / `storage.tool_outputs_max_mb` 清理策略。
 - 凭证存储：`kl_server.config.credentials`（keyring 后端，AES 加密文件回退，支持 .env）。
