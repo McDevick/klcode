@@ -1,27 +1,6 @@
 # Release Notes
 
-
-## 0.1.1 (2026-08-10)
-
-> 修复发布后首次自动安装 server 卡住的问题。
-
-### Fixed
-
-- `kl init` 自动创建 venv / pip install 改为异步执行，实时显示安装进度，并增加超时。
-- Python 探测要求 `>=3.11`；不限制后续具体版本。
-- 自动安装失败时清理损坏的 `~/.kl/venv`。
-- `kl tui` 进入界面之前先检查/拉起 server，不再先渲染 TUI 再后台安装。
-
-### Upgrade
-
-- 安装 CLI：`npm install -g kl-code-cli@0.1.1`
-- 手动安装 server：`python -m pip install kl-server==0.1.1`
-## 0.1.0 (2026-08-10)
-
-> 已发布：npm `kl-code-cli@0.1.0`、PyPI `kl-server@0.1.0`、GitHub Release `v0.1.0`。
-
-
-### 安装
+## 安装
 
 普通用户直接安装 CLI，首次启动会自动准备 server：
 
@@ -64,16 +43,36 @@ kl tui
 python -m uvicorn kl_server.main:app --host 127.0.0.1 --port 8700 --timeout-graceful-shutdown 3
 ```
 
-### Release Assets
+## Release Assets
 
-GitHub Release `v0.1.0` 提供以下资产：
+GitHub Release 提供以下资产：
 
 - `checksums.sha256`
-- `kl-code-cli-0.1.0.tgz`
-- `kl_server-0.1.0-py3-none-any.whl`
-- `kl_server-0.1.0.tar.gz`
+- `kl-code-cli-<version>.tgz`
+- `kl_server-<version>-py3-none-any.whl`
+- `kl_server-<version>.tar.gz`
 
 GitHub 自动生成的 `Source code (zip)` / `Source code (tar.gz)` 是源码归档，主要用于审计或从源码运行。
+
+## 0.1.1 (2026-08-10)
+
+> 修复发布后首次自动安装 server 卡住的问题。
+
+### Fixed
+
+- `kl init` 自动创建 venv / pip install 改为异步执行，实时显示安装进度，并增加超时。
+- Python 探测要求 `>=3.11`；不限制后续具体版本。
+- 自动安装失败时清理损坏的 `~/.kl/venv`。
+- `kl tui` 进入界面之前先检查/拉起 server，不再先渲染 TUI 再后台安装。
+
+### Upgrade
+
+- 安装 CLI：`npm install -g kl-code-cli@0.1.1`
+- 手动安装 server：`python -m pip install kl-server==0.1.1`
+## 0.1.0 (2026-08-10)
+
+> 已发布：npm `kl-code-cli@0.1.0`、PyPI `kl-server@0.1.0`、GitHub Release `v0.1.0`。
+
 
 ### Added
 
