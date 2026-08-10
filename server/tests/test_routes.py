@@ -46,9 +46,17 @@ def test_lifespan_closes_database_and_memory(tmp_path):
 class TrackingMcpAdapter:
     def __init__(self):
         self.closed = False
+        self.released_servers = []
+        self.released_workspaces = []
 
     async def close(self):
         self.closed = True
+
+    async def release_server(self, server):
+        self.released_servers.append(server)
+
+    async def release_workspace(self, workspace):
+        self.released_workspaces.append(workspace)
 
 
 class DiscoveryMcpAdapter(TrackingMcpAdapter):
@@ -132,6 +140,7 @@ def test_mcp_management_add_list_refresh_remove(tmp_path):
         refreshed = client.post("/api/v1/mcp/demo/refresh")
         assert refreshed.status_code == 200
         assert refreshed.json()["tools"][0]["name"] == "mcp_demo_echo"
+        assert "demo" in deps.mcp.released_servers
 
         deleted = client.delete("/api/v1/mcp/demo")
         assert deleted.status_code == 204
@@ -225,7 +234,15 @@ def test_skills_endpoint_lists_global_skills(tmp_path):
 
     assert response.status_code == 200
     assert response.json() == [
-        {"name": "leetcode", "description": "解决 LeetCode C++ 题目"}
+        {
+            "name": "leetcode",
+            "description": "解决 LeetCode C++ 题目",
+            "keywords": ["leetcode"],
+            "when_to_use": "",
+            "summary": "解决 LeetCode C++ 题目",
+            "always_on": False,
+            "sections": [],
+        }
     ]
 
 
@@ -1379,3 +1396,22 @@ def test_approval_hub_uses_config_timeout(tmp_path):
     client = TestClient(create_app(deps=deps))
 
     assert client.app.state.approval_hub.timeout == 123.0
+def test_delete_session_releases_mcp_workspace(tmp_path):
+    deps = build_app_dependencies(
+        config_path=tmp_path / "config.yaml",
+        db_path=tmp_path / "kl.db",
+        workspace=str(tmp_path),
+        log_path=tmp_path / "audit.jsonl",
+        credential_store=InMemoryCredentialStore(),
+    )
+    deps.mcp = TrackingMcpAdapter()
+
+    client = TestClient(create_app(deps=deps))
+    with client:
+        created = create_session(client, workspace="C:\\work")
+        session_id = created.json()["id"]
+
+        deleted = client.delete(f"/api/v1/sessions/{session_id}")
+
+        assert deleted.status_code == 204
+        assert deps.mcp.released_workspaces == ["C:\\work"]

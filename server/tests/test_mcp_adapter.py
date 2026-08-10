@@ -4,6 +4,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
+from pathlib import Path
+
 from kl_server.mcp.adapter import McpAdapter
 
 
@@ -99,7 +101,7 @@ class ErrorTextTransport:
 @pytest.mark.asyncio
 async def test_tool_is_error_keeps_real_text_output():
     adapter = McpAdapter({"demo": {}})
-    adapter._transports["demo"] = ErrorTextTransport()
+    adapter._transports[("demo", "")] = ErrorTextTransport()
 
     result = await adapter.tool("demo", "shell", {})
 
@@ -112,7 +114,7 @@ async def test_tool_is_error_keeps_real_text_output():
 async def test_tool_reconnects_after_connection_error():
     adapter = McpAdapter({"demo": {}})
     transport = StickyTransport()
-    adapter._transports["demo"] = transport
+    adapter._transports[("demo", "")] = transport
 
     first = await adapter.tool("demo", "echo", {})
     second = await adapter.tool("demo", "echo", {})
@@ -266,3 +268,208 @@ async def test_streamable_http_unavailable_returns_not_connected():
 
     assert result.ok is False
     assert result.error.startswith("not connected")
+
+from kl_server.mcp import adapter as adapter_module
+
+
+class RecordingTransport:
+    instances = []
+
+    def __init__(self, config):
+        self.config = config
+        self.connected = False
+        self.closed = 0
+        type(self).instances.append(self)
+
+    @property
+    def is_connected(self):
+        return self.connected
+
+    async def connect(self):
+        self.connected = True
+
+    async def call_tool(self, name, arguments):
+        return {
+            "content": [{"type": "text", "text": f"{name}:{self.config.get('args', [])}"}],
+            "isError": False,
+        }
+
+    async def list_tools(self):
+        return []
+
+    async def close(self):
+        self.closed += 1
+        self.connected = False
+
+
+@pytest.mark.asyncio
+async def test_filesystem_tool_injects_workspace_into_args(tmp_path, monkeypatch):
+    monkeypatch.setattr(adapter_module, "McpTransport", RecordingTransport)
+    RecordingTransport.instances = []
+    adapter = McpAdapter(
+        {
+            "filesystem": {
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+            }
+        }
+    )
+
+    try:
+        result = await adapter.tool(
+            "filesystem",
+            "list_directory",
+            {},
+            workspace=str(tmp_path),
+        )
+    finally:
+        await adapter.close()
+
+    assert result.ok is True
+    assert len(RecordingTransport.instances) == 1
+    injected = RecordingTransport.instances[0].config["args"][-1]
+    assert Path(injected).resolve() == tmp_path.resolve()
+
+
+@pytest.mark.asyncio
+async def test_filesystem_tool_reuses_workspace_transport(tmp_path, monkeypatch):
+    monkeypatch.setattr(adapter_module, "McpTransport", RecordingTransport)
+    RecordingTransport.instances = []
+    adapter = McpAdapter(
+        {
+            "filesystem": {
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+            }
+        }
+    )
+
+    try:
+        await adapter.tool("filesystem", "list_directory", {}, workspace=str(tmp_path))
+        await adapter.tool("filesystem", "read_file", {}, workspace=str(tmp_path))
+    finally:
+        await adapter.close()
+
+    assert len(RecordingTransport.instances) == 1
+
+
+@pytest.mark.asyncio
+async def test_filesystem_uses_distinct_transport_per_workspace(tmp_path, monkeypatch):
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    monkeypatch.setattr(adapter_module, "McpTransport", RecordingTransport)
+    RecordingTransport.instances = []
+    adapter = McpAdapter(
+        {
+            "filesystem": {
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+            }
+        }
+    )
+
+    try:
+        await adapter.tool("filesystem", "list_directory", {}, workspace=str(first))
+        await adapter.tool("filesystem", "list_directory", {}, workspace=str(second))
+    finally:
+        await adapter.close()
+
+    assert len(RecordingTransport.instances) == 2
+    assert RecordingTransport.instances[0].config["args"][-1] == str(first.resolve())
+    assert RecordingTransport.instances[1].config["args"][-1] == str(second.resolve())
+
+
+@pytest.mark.asyncio
+async def test_non_filesystem_tool_does_not_inject_workspace(monkeypatch):
+    monkeypatch.setattr(adapter_module, "McpTransport", RecordingTransport)
+    RecordingTransport.instances = []
+    adapter = McpAdapter({"demo": {"command": "python", "args": ["server.py"]}})
+
+    try:
+        await adapter.tool("demo", "echo", {}, workspace="C:\\some\\workspace")
+    finally:
+        await adapter.close()
+
+    assert RecordingTransport.instances[0].config["args"] == ["server.py"]
+
+
+@pytest.mark.asyncio
+async def test_release_workspace_closes_only_matching_transport(tmp_path, monkeypatch):
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    monkeypatch.setattr(adapter_module, "McpTransport", RecordingTransport)
+    RecordingTransport.instances = []
+    adapter = McpAdapter(
+        {
+            "filesystem": {
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+            }
+        }
+    )
+
+    try:
+        await adapter.tool("filesystem", "list_directory", {}, workspace=str(first))
+        await adapter.tool("filesystem", "list_directory", {}, workspace=str(second))
+        await adapter.release_workspace(str(first))
+    finally:
+        await adapter.close()
+
+    assert RecordingTransport.instances[0].closed == 1
+    assert RecordingTransport.instances[1].closed == 1
+
+
+@pytest.mark.asyncio
+async def test_release_server_closes_all_workspace_transports(tmp_path, monkeypatch):
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    monkeypatch.setattr(adapter_module, "McpTransport", RecordingTransport)
+    RecordingTransport.instances = []
+    adapter = McpAdapter(
+        {
+            "filesystem": {
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+            }
+        }
+    )
+
+    try:
+        await adapter.tool("filesystem", "list_directory", {}, workspace=str(first))
+        await adapter.tool("filesystem", "list_directory", {}, workspace=str(second))
+        await adapter.release_server("filesystem")
+    finally:
+        await adapter.close()
+
+    assert RecordingTransport.instances[0].closed == 1
+    assert RecordingTransport.instances[1].closed == 1
+
+
+@pytest.mark.asyncio
+async def test_filesystem_list_tools_uses_probe_and_closes(monkeypatch):
+    monkeypatch.setattr(adapter_module, "McpTransport", RecordingTransport)
+    RecordingTransport.instances = []
+    adapter = McpAdapter(
+        {
+            "filesystem": {
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+            }
+        }
+    )
+
+    try:
+        tools = await adapter.list_tools("filesystem")
+    finally:
+        await adapter.close()
+
+    assert tools == []
+    assert len(RecordingTransport.instances) == 1
+    assert RecordingTransport.instances[0].closed == 1
+    assert adapter._transports == {}

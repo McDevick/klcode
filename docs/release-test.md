@@ -126,6 +126,16 @@ kl tui
 - [ ] 相同 `event_id` 不会重复处理。
 - [ ] MCP 不可达时 `/mcp` 面板显示 `status: error` 和具体原因。
 - [ ] MCP 可用时工具能正常发现并调用。
+- [ ] filesystem MCP 的 allowed directories 跟随 TUI workspace，`list_allowed_directories` 包含当前工作区。
+- [ ] 切换不同 workspace 后，filesystem MCP 使用对应工作区的 transport；session 删除或 MCP refresh 会释放旧 transport。
+
+### 4.6 Skills
+
+- [ ] `/skills` 只展示 skill 名称，不展示完整内容。
+- [ ] 新任务输入 skill 名称时，上下文出现 L1 摘要而不是完整 SKILL.md。
+- [ ] agent 能调用 `read_skill(name)` 展开完整说明。
+- [ ] 大型 skill 可通过 `read_skill(name, section=...)` 分节读取。
+- [ ] 新增加 skill 后无需重启后端，下次 `/skills` 或新任务即可生效。
 
 ## 5. 安全与数据检查
 

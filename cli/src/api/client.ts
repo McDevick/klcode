@@ -57,6 +57,11 @@ export interface ProviderResult {
 export interface SkillInfo {
   name: string;
   description: string;
+  keywords?: string[];
+  when_to_use?: string;
+  summary?: string;
+  always_on?: boolean;
+  sections?: string[];
 }
 
 export interface McpToolInfo {

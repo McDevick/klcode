@@ -38,10 +38,7 @@ export function SkillsMenu({
   }
   return (
     <CommandMenu
-      commands={skills.map((skill) => ({
-        name: skill.name,
-        desc: skill.description,
-      }))}
+      commands={skills.map((skill) => ({ name: skill.name, desc: '' }))}
       menuIndex={menuIndex}
     />
   );

@@ -83,7 +83,11 @@ async def test_loop_injects_skills_and_fires_hooks(tmp_path):
 class FakeMcpAdapter:
     servers = {"demo": {}}
 
-    async def tool(self, server, name, args):
+    def __init__(self):
+        self.last_workspace = None
+
+    async def tool(self, server, name, args, workspace=None):
+        self.last_workspace = workspace
         return ToolResult(ok=True, output=f"{server}:{name}")
 
     async def list_tools(self, server):
@@ -119,6 +123,7 @@ async def test_register_mcp_tools_registers_remote_tools():
     )
     assert result.ok is True
     assert result.output == "demo:echo"
+    assert adapter.last_workspace == "."
 
 
 class SlowMcpAdapter:

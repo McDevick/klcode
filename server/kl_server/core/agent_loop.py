@@ -79,6 +79,13 @@ SYSTEM_PROMPT = """你是运行在本地工作区中的自主编码 Agent。
 2. 能验证就给出验证结果；不能验证就明确说明“未验证”。
 3. 验证失败时，先修复，再重新验证，不要直接宣告完成。
 
+## Skill 使用
+
+1. 如果上下文出现 [可用 Skills] 或 [任务相关 Skill]，先判断哪个 skill 适用。
+2. 确认适用后，调用 read_skill(name) 获取完整说明，再按其中流程执行。
+3. 大型 skill 只需要某部分时，可以传 section 参数。
+4. 不要只凭摘要就编造 skill 内容。
+
 ## 最终回答
 
 1. 使用与用户相同的语言回复。
@@ -601,7 +608,7 @@ class AgentLoop:
                         history=[],
                         task_id=task_id,
                         skills=(
-                            self.skills.load([task])
+                            self.skills.context_for_task(task)
                             if self.skills is not None
                             else ""
                         ),

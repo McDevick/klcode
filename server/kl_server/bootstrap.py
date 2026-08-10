@@ -24,6 +24,7 @@ from kl_server.providers.registry import ProviderRegistry
 from kl_server.skills.loader import SkillLoader
 from kl_server.storage.database import Database
 from kl_server.tools.builtin import register_builtin_tools
+from kl_server.tools.builtin.skills import register_skill_tools
 from kl_server.tools.registry import ToolRegistry
 
 
@@ -147,6 +148,7 @@ def build_app_dependencies(
     skills_root = global_kl_dir / "skills"
     skills_root.mkdir(parents=True, exist_ok=True)
     skills = SkillLoader(str(skills_root))
+    register_skill_tools(tools, skills)
     mcp = McpAdapter(config.mcp)
     plugins_root = global_kl_dir / "tools"
     plugins_root.mkdir(parents=True, exist_ok=True)

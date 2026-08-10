@@ -430,7 +430,6 @@ test('app /skills opens a command-style skill menu', async () => {
     stdin.write('/skills');
     stdin.write('\r');
     await waitFor(() => (lastFrame() ?? '').includes('leetcode'));
-    expect(lastFrame()).toContain('解决 LeetCode C++ 题目');
     expect(lastFrame()).toContain('python');
     expect(lastFrame()).toContain('▸');
 

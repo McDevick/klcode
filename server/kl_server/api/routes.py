@@ -217,6 +217,9 @@ def _mcp_servers(deps) -> list[dict]:
 async def _refresh_mcp_server(deps, server: str) -> dict | None:
     from kl_server.extensions import register_mcp_tools, unregister_mcp_tools
 
+    release_server = getattr(deps.mcp, "release_server", None)
+    if release_server is not None:
+        await release_server(server)
     unregister_mcp_tools(deps.tool_registry, server)
     if server not in deps.mcp.servers:
         errors = getattr(deps.mcp, "last_errors", None)
@@ -689,11 +692,12 @@ def build_router() -> APIRouter:
                         + ", ".join(task.id for task in active_tasks)
                     ),
                 )
-            task_ids = [task.id for task in tasks]
             try:
-                await deps.sessions.delete(session_id)
+                session = await deps.sessions.get(session_id)
             except KeyError:
                 raise HTTPException(status_code=404, detail="session not found")
+            task_ids = [task.id for task in tasks]
+            await deps.sessions.delete(session_id)
             memory = getattr(deps, "memory", None)
             if memory is not None and hasattr(memory, "delete_state"):
                 for kind in (
@@ -711,6 +715,10 @@ def build_router() -> APIRouter:
             if logger is not None and hasattr(logger, "delete_task_history"):
                 for task_id in task_ids:
                     logger.delete_task_history(task_id)
+            mcp = getattr(deps, "mcp", None)
+            release_workspace = getattr(mcp, "release_workspace", None) if mcp is not None else None
+            if release_workspace is not None:
+                await release_workspace(session.workspace)
             return Response(status_code=204)
         if sessions.pop(session_id, None) is None:
             raise HTTPException(status_code=404, detail="session not found")
@@ -957,7 +965,7 @@ def build_router() -> APIRouter:
         deps = getattr(request.app.state, "deps", None)
         skills = getattr(deps, "skills", None)
         if deps is not None and skills is not None:
-            return skills.list()
+            return skills.index() if hasattr(skills, "index") else skills.list()
         return []
 
     @router.get("/mcp")

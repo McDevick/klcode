@@ -108,7 +108,12 @@ class McpRemoteTool(Tool):
     async def execute(self, args: dict, ctx: ToolContext) -> ToolResult:
         if not isinstance(args, dict):
             return ToolResult(ok=False, output="", error="mcp tool args must be an object")
-        return await self.adapter.tool(self.server, self.remote_name, args)
+        return await self.adapter.tool(
+            self.server,
+            self.remote_name,
+            args,
+            workspace=ctx.workspace,
+        )
 
 
 def _set_mcp_discovery_error(adapter, server: str, error: str | None) -> None:
