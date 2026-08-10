@@ -4,7 +4,6 @@
   "license": "MIT",
   "description": "KL Code CLI",
   "type": "module",
-  "private": true,
   "bin": {
     "kl": "./dist/main.js"
   },

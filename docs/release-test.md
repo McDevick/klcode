@@ -9,7 +9,7 @@
 
 | 检查 | 命令 | 结果参考 |
 |---|---|---|
-| Server 测试 | `python -m pytest server/tests -q` | `538 passed, 1 skipped` |
+| Server 测试 | `python -m pytest server/tests -q` | `555 passed, 1 skipped` |
 | CLI 测试 | `cd cli && npm test` | `124 passed` |
 | TypeScript | `cd cli && npx tsc --noEmit` | 通过 |
 | 版本一致性 | `cd cli && npm run check:server-version` | `0.1.0` |
@@ -187,3 +187,40 @@ kl tui
 - 通过/失败项
 - 阻塞问题
 - 发布结论
+
+### 2026-08-10 执行记录（commit 6b14f40）
+
+已完成：
+
+- [x] Server 测试：`555 passed, 1 skipped`
+- [x] CLI 测试：`124 passed`
+- [x] TypeScript：`npx tsc --noEmit` 通过
+- [x] 版本一致性：`server/pyproject.toml` / `cli/package.json` / `check:server-version` 均为 `0.1.0`
+- [x] `python -m build server` 成功生成 wheel + sdist
+- [x] wheel 包含 `kl_server/`，sdist 包含 `kl_server` 源码；未发现 `.kl`/key/token/secret 文件
+- [x] `npm pack` 成功，tarball 仅包含 `dist/main.js` 和 `package.json`
+- [x] 临时全新 npm 环境安装 tgz 成功，`kl --help` 可运行
+- [x] 临时全新 Python venv 安装 wheel 成功，`kl_server`/依赖可导入
+- [x] `pip-audit`：无已知漏洞（审计前已升级 venv 内 pip/setuptools）
+- [x] `npm audit --registry=https://registry.npmjs.org`：0 vulnerabilities
+- [x] 敏感信息扫描：未发现真实 API Key；命中均为文档/测试占位值
+- [x] `examples/config.example.yaml` 可加载，默认 provider 为 `deepseek`
+
+已修复复核：
+
+- [x] `cli/package.json` 已移除 `"private": true`
+- [x] `kl-server --help` / `kl-server --version` 可正常退出并打印帮助/版本
+- [x] npm 包名 `@kl-code/cli` 未注册（registry 404）
+- [x] PyPI 包名 `kl-server` 未注册（PyPI 404）
+- [x] npm 本地登录可用：`npm whoami` 返回账号
+- [x] GitHub Secrets 已配置：`NPM_TOKEN`、`PYPI_TOKEN`
+- [x] `npm audit --registry=https://registry.npmjs.org`：0 vulnerabilities
+- [x] `pip-audit`：无已知漏洞
+- [x] `examples/config.example.yaml` 可加载，默认 provider 为 `deepseek`
+
+需要人工/账号协助：
+
+- [ ] 本地 PyPI token 未在环境变量、`~/.pypirc`、keyring、`.netrc` 中检测到，请确认本地发布凭据的实际保存位置
+- [ ] GitHub Release workflow / tag / `release/checksums.sha256` 尚未创建
+- [ ] 真实 provider/API Key 任务、TUI 手动流程、审批面板、MCP filesystem 端到端仍需真实环境人工验收
+- [ ] 全新环境 `kl init` / `kl tui` 自动拉起需要一台干净机器或隔离 HOME 验证

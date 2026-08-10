@@ -92,3 +92,22 @@ def test_main_app_lifespan_builds_runtime(tmp_path, monkeypatch):
         assert client.app.state.deps is not None
         assert client.app.state.auth_token
         assert client.get("/health").status_code == 200
+
+def test_main_help_prints_usage_without_starting_server(capsys):
+    from kl_server.main import main
+
+    with pytest.raises(SystemExit) as exc:
+        main(["--help"])
+
+    assert exc.value.code == 0
+    assert "KL Code server daemon" in capsys.readouterr().out
+
+
+def test_main_version_prints_package_version(capsys):
+    from kl_server.main import main
+
+    with pytest.raises(SystemExit) as exc:
+        main(["--version"])
+
+    assert exc.value.code == 0
+    assert "kl-server" in capsys.readouterr().out

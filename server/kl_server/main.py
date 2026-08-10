@@ -1,4 +1,6 @@
+import argparse
 import os
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from kl_server.api.app import create_app
@@ -43,14 +45,40 @@ app = create_app(
 )
 
 
-def main() -> None:
+def _package_version() -> str:
+    try:
+        return version("kl-server")
+    except PackageNotFoundError:
+        return "0.0.0"
+
+
+def main(argv: list[str] | None = None) -> None:
     import uvicorn
+
+    parser = argparse.ArgumentParser(
+        prog="kl-server",
+        description="KL Code server daemon",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {_package_version()}",
+    )
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8700)
+    parser.add_argument(
+        "--timeout-graceful-shutdown",
+        type=int,
+        default=3,
+        dest="timeout_graceful_shutdown",
+    )
+    args = parser.parse_args(argv)
 
     # timeout_graceful_shutdown: Ctrl+C 时优雅关闭有上限（默认 None 会无限等待
     # 活动连接，例如挂着的 WebSocket，导致进程成僵尸并占住 8700 端口）。
     uvicorn.run(
         app,
-        host="127.0.0.1",
-        port=8700,
-        timeout_graceful_shutdown=3,
+        host=args.host,
+        port=args.port,
+        timeout_graceful_shutdown=args.timeout_graceful_shutdown,
     )
